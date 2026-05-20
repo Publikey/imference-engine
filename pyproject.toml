@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imference-engine"
+version = "0.0.1"
+description = "Unified Diffusers-based inference engine for SDXL and Z-Image models."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Publikey" }]
+
+# Runtime deps. PyTorch and diffusers are required for any real use; they're
+# listed under [optional-dependencies].runtime so the package itself can be
+# imported and unit-tested without pulling 5GB of wheels on dev machines that
+# only need the pure-Python pieces (BatchSizer, catalog loader, etc.).
+dependencies = [
+    "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+# Real inference. Install with: pip install -e ".[runtime,dev]"
+# Note: install CUDA-enabled torch separately first on Windows:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#
+# sd-embed (weighted prompt embeddings + BREAK keyword) is NOT on PyPI; only
+# distributed via git. Engine works without it (falls back to raw prompts in
+# prompting/weighted.py). To enable it, install manually AFTER this package:
+#   pip install "sd-embed @ git+https://github.com/xhinker/sd_embed.git@main"
+# ML versions are pinned to the gen-image-worker prod combo. Tightly coupled:
+# diffusers+transformers+accelerate+peft must be upgraded together with care
+# (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
+runtime = [
+    "torch>=2.6",
+    "diffusers==0.37.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
+azure = ["azure-storage-blob>=12"]
+dev = ["pytest>=8", "pytest-mock", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["imference_engine*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
