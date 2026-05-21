@@ -114,7 +114,7 @@ class SDXLBackend(PipelineBackend):
             kwargs["clip_skip"] = clip_skip
         return kwargs
 
-    def make_generator(self, seed: int) -> Any:
+    def make_generator(self, seed: int, device: str) -> Any:  # noqa: ARG002
         import torch
-        # CPU generator is fine for SDXL and avoids device contention.
+        # CPU generator works fine for SDXL and avoids device-pool contention.
         return torch.Generator().manual_seed(seed)

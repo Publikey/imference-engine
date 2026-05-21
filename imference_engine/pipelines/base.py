@@ -88,8 +88,11 @@ class PipelineBackend(ABC):
         """
 
     @abstractmethod
-    def make_generator(self, seed: int) -> Any:
+    def make_generator(self, seed: int, device: str) -> Any:
         """Build a torch.Generator on the right device for this backend.
 
-        SDXL: CPU generator works. Z-Image: needs device='cuda'.
+        `device` is the engine's resolved torch device string ("cuda:0", "mps",
+        "cpu"). Backends may ignore it (SDXL works fine with CPU generator) or
+        honor it (Z-Image flow-matching needs the generator on the same device
+        as the transformer).
         """

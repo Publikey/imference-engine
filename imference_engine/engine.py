@@ -102,7 +102,11 @@ class Engine:
             self._tune_cuda()
 
         from imference_engine.pipelines.sdxl import SDXLBackend
-        self._backends = {SDXLBackend.engine: SDXLBackend()}
+        from imference_engine.pipelines.zimage import ZImageBackend
+        self._backends = {
+            SDXLBackend.engine: SDXLBackend(),
+            ZImageBackend.engine: ZImageBackend(),
+        }
 
         self._models = ModelManager(self._backends, self._device)
         self._loaded = True
@@ -225,7 +229,10 @@ class Engine:
         while idx < batch_total:
             chunk_size = min(max_gpu_batch, batch_total - idx)
             chunk_seeds = seeds[idx:idx + chunk_size]
-            generators = [backend.make_generator(s) for s in chunk_seeds]
+            generators = [
+                backend.make_generator(s, self._device.torch_str)
+                for s in chunk_seeds
+            ]
             generator = generators[0] if len(generators) == 1 else generators
 
             logger.info(
