@@ -11,9 +11,10 @@ Early extraction from `gen-image-worker/workers/sdxl-multimodel` and
 unifies them behind a single `Engine` API and adds the abstraction needed for
 future desktop / MPS / quantization support.
 
-The package shape is stabilizing; **inference is not wired up yet** — the
-`Engine` class currently raises `NotImplementedError`. Lifting `ModelManager`,
-`LoRAManager`, and the two concrete backends comes in subsequent commits.
+Inference + backends are wired (SDXL + Z-Image). The multi-tier `ModelManager`
+(GPU LRU + optional CPU LRU) is in. Remaining gaps: `LoRAManager`, img2img
+(`Engine.generate(source_image=...)` still raises `NotImplementedError`), and
+the catalog YAML loader (callers register models one by one for now).
 
 ## Scope
 
@@ -43,19 +44,18 @@ pip install -e ".[runtime,dev]"
 pip install -e ".[dev]"
 ```
 
-## Usage (target API)
+## Usage
+
+### Desktop / single-user (defaults — single resident model)
 
 ```python
 from imference_engine import Engine, RuntimeConfig
 
-engine = Engine(
-    catalog_path="models.yml",
-    runtime=RuntimeConfig(device="auto", max_gpu_models=1),
-)
-engine.load()
+engine = Engine(runtime=RuntimeConfig(device="auto")).load()
+engine.register_model("sdxl", backend="sdxl", weights_path="/path/to/sdxl.safetensors")
 
 result = engine.generate(
-    model="illustrijevo",
+    model="sdxl",
     prompt="masterpiece, best quality, ...",
     negative_prompt="lowres, ...",
     width=1024, height=1024,
@@ -67,6 +67,31 @@ result = engine.generate(
 # result.images: list[PIL.Image | None]
 # result.seeds:  list[int]
 # result.errors: list[GenerationError]
+```
+
+### Cloud worker / multi-model (GPU LRU + CPU warm cache)
+
+```python
+engine = Engine(runtime=RuntimeConfig(
+    device="auto",
+    max_gpu_models=2,    # up to 2 pipes concurrently in VRAM
+    max_cpu_models=8,    # up to 8 demoted-but-warm pipes in CPU RAM
+)).load()
+
+# Plug disk-cache lifecycle so .safetensors actively in use can't be
+# garbage-collected by a separate disk-pressure monitor.
+engine.set_lifecycle_hooks(
+    on_model_loaded=disk_cache.protect,
+    on_model_evicted=disk_cache.unprotect,
+)
+
+for model_meta in catalog.entries():
+    engine.register_model(model_meta.name, backend=model_meta.engine,
+                          weights_path=model_meta.path, base_model=model_meta.base)
+
+# Repeated switches between A/B/C are now ~0.5s swaps instead of 10-30s disk reads,
+# as long as they fit in (max_gpu + max_cpu) total residency.
+result = engine.generate(model="some-model", prompt="...", ...)
 ```
 
 ## Layout
@@ -81,8 +106,8 @@ imference_engine/
     zimage.py          # (PR2) Z-Image backend
   managers/
     batch.py           # BatchSizer (lifted, generalized)
-    model.py           # (PR2) ModelManager — CPU/GPU LRU
-    lora.py            # (PR2) LoRAManager — dynamic stacking
+    model.py           # ModelManager — GPU + optional CPU LRU
+    lora.py            # (TBD) LoRAManager — dynamic stacking
   catalog/
     loader.py          # (PR2) YAML model registry
     disk_cache.py      # (PR2) on-disk LRU for downloaded weights

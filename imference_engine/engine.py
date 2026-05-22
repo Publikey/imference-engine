@@ -20,6 +20,7 @@ from imference_engine.types import GenerationError, GenerationResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
+    from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,15 @@ class RuntimeConfig:
     """auto | cuda | cuda:N | mps | cpu"""
 
     max_cpu_models: Optional[int] = None
-    """Override CPU-resident model cap; None auto-detects (PR-next)."""
+    """Cap on CPU-resident pipes kept warm for fast GPU re-promotion. None
+    or 0 = no CPU tier (evicted-from-GPU pipes are dropped immediately).
+    Workers should set this to fit available RAM (e.g. 8 SDXL pipes ~ 50 GB).
+    """
 
     max_gpu_models: Optional[int] = None
-    """Override concurrently-on-GPU cap; None auto-detects (PR-next)."""
+    """Cap on pipes concurrently resident on GPU. None or 1 = single-resident
+    (every model switch evicts the previous one). Workers with big VRAM
+    (e.g. 2x SDXL on a 24 GB A10) can bump this to amortize swap cost."""
 
     model_cache_dir: Optional[Union[str, Path]] = None
     lora_cache_dir: Optional[Union[str, Path]] = None
@@ -47,13 +53,13 @@ class RuntimeConfig:
 class Engine:
     """High-level diffusion inference engine.
 
-    V1 scope: single GPU, one model resident at a time, no LRU, no LoRA,
-    no catalog YAML (use register_model). Substantial production-worker
-    pieces — CPU/GPU LRU, LoRA stacking, model downloads, img2img — are
-    lifted in follow-up PRs.
+    Supports single-resident (desktop default) and multi-tier LRU (worker
+    via RuntimeConfig.max_gpu_models / max_cpu_models). LoRA, catalog YAML,
+    and img2img remain TBD.
 
     Lifecycle:
-        engine = Engine().load()
+        engine = Engine(runtime=RuntimeConfig(...)).load()
+        engine.set_lifecycle_hooks(on_model_loaded=..., on_model_evicted=...)
         engine.register_model("sdxl", backend="sdxl", weights_path="...")
         result = engine.generate(model="sdxl", prompt="cat", ...)
 
@@ -73,6 +79,11 @@ class Engine:
         self._models: Optional[ModelManager] = None
         self._batch_sizer = BatchSizer()
         self._loaded = False
+        # Lifecycle hooks may be set before OR after load(); we wire them
+        # into the ModelManager at load() time, and set_lifecycle_hooks
+        # reaches into the manager if it already exists.
+        self._on_model_loaded: Optional["Callable[[str], None]"] = None
+        self._on_model_evicted: Optional["Callable[[str], None]"] = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -108,8 +119,42 @@ class Engine:
             ZImageBackend.engine: ZImageBackend(),
         }
 
-        self._models = ModelManager(self._backends, self._device)
+        max_gpu = self._runtime.max_gpu_models or 1
+        max_cpu = self._runtime.max_cpu_models or 0
+        self._models = ModelManager(
+            self._backends,
+            self._device,
+            max_gpu_models=max_gpu,
+            max_cpu_models=max_cpu,
+            on_loaded=self._on_model_loaded,
+            on_evicted=self._on_model_evicted,
+        )
         self._loaded = True
+        return self
+
+    def set_lifecycle_hooks(
+        self,
+        *,
+        on_model_loaded: Optional["Callable[[str], None]"] = None,
+        on_model_evicted: Optional["Callable[[str], None]"] = None,
+    ) -> "Engine":
+        """Wire callbacks invoked when a model is loaded from disk
+        (`on_model_loaded`) or dropped from memory (`on_model_evicted`).
+
+        Workers plug `disk_cache.protect` / `disk_cache.unprotect` to
+        prevent the disk cache from evicting a .safetensors that's
+        currently in use. Desktop callers typically leave these None.
+
+        Idempotent; can be called before or after load(). For consistent
+        tracking, prefer calling BEFORE the first generate() so the load
+        of the first model fires on_model_loaded properly.
+        """
+        self._on_model_loaded = on_model_loaded
+        self._on_model_evicted = on_model_evicted
+        if self._models is not None:
+            # Manager already exists (load() ran); patch its hooks in place.
+            self._models._on_loaded = on_model_loaded
+            self._models._on_evicted = on_model_evicted
         return self
 
     @staticmethod
