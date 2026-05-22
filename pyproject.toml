@@ -21,12 +21,15 @@ dependencies = [
 [project.optional-dependencies]
 # Real inference. Install with: pip install -e ".[runtime,dev]"
 # Note: install CUDA-enabled torch separately first on Windows:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
 #
-# sd-embed (weighted prompt embeddings + BREAK keyword) is NOT on PyPI; only
-# distributed via git. Engine works without it (falls back to raw prompts in
-# prompting/weighted.py). To enable it, install manually AFTER this package:
-#   pip install "sd-embed @ git+https://github.com/xhinker/sd_embed.git@main"
+# sd-embed (weighted prompt embeddings + BREAK keyword) is GitHub-only and
+# its setup.py declares unconstrained torch + torchvision deps that would
+# clobber an existing CUDA torch with the CPU wheel. INTENTIONALLY NOT in
+# this extras list — install it with --no-deps separately:
+#   pip install --no-deps "sd-embed @ https://github.com/xhinker/sd_embed/archive/refs/heads/main.tar.gz"
+# The engine falls back to raw prompts if sd-embed is missing.
+#
 # ML versions are pinned to the gen-image-worker prod combo. Tightly coupled:
 # diffusers+transformers+accelerate+peft must be upgraded together with care
 # (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
