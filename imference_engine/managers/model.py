@@ -69,6 +69,7 @@ class ModelManager:
         max_cpu_models: int = 0,
         on_loaded: Optional[Callable[[str], None]] = None,
         on_evicted: Optional[Callable[[str], None]] = None,
+        enable_cpu_offload: bool = False,
     ) -> None:
         self._backends = backends
         self._device = device
@@ -81,10 +82,12 @@ class ModelManager:
         self._max_cpu = max(0, max_cpu_models)
         self._on_loaded = on_loaded
         self._on_evicted = on_evicted
+        self._enable_cpu_offload = enable_cpu_offload
 
         logger.info(
             f"ModelManager configured: max_gpu_models={self._max_gpu}, "
-            f"max_cpu_models={self._max_cpu}"
+            f"max_cpu_models={self._max_cpu}, "
+            f"enable_cpu_offload={self._enable_cpu_offload}"
         )
 
     # ------------------------------------------------------------------
@@ -165,6 +168,18 @@ class ModelManager:
         while len(self._gpu) >= self._max_gpu:
             evict_name = next(iter(self._gpu))  # oldest = LRU
             evict_pipe = self._gpu.pop(evict_name)
+
+            if self._enable_cpu_offload:
+                # Accelerate's hooks are attached to the pipe's submodules.
+                # Calling pipe.to("cpu") manually would corrupt the offloader's
+                # device-pinning state. Drop the pipe entirely — GC frees the
+                # hook-attached state along with the submodules. (Engine.load()
+                # forces max_cpu_models=0 in this mode so the CPU tier branch
+                # below is unreachable anyway.)
+                logger.info(f"GPU LRU eviction (cpu_offload): {evict_name!r} → drop")
+                self._drop_pipe(evict_name, evict_pipe)
+                continue
+
             logger.info(f"GPU LRU eviction: {evict_name!r} → CPU")
             self._swap_pipe_to_cpu(evict_pipe, evict_name)
 
@@ -225,47 +240,68 @@ class ModelManager:
     def _swap_pipe_to_gpu(self, pipe: Any, name: str) -> None:
         """Promote a pipe to the active device, with OOM retry. Lifted
         from v1's swap_model_to_gpu — two retry attempts, then bail and
-        purge the pipe entirely if VRAM is genuinely insufficient."""
-        device = self._device.torch_str
+        purge the pipe entirely if VRAM is genuinely insufficient.
 
-        # Critical for big models (Z-Image ~12 GB barely fits in 20 GB VRAM):
-        # force cleanup of residual allocations from the previous tenant
-        # BEFORE attempting the move.
+        When `enable_cpu_offload=True`, takes the accelerate path instead:
+        diffusers' `pipe.enable_model_cpu_offload(device=...)` installs
+        hooks that shuttle individual submodels (text_encoder, unet, vae)
+        between CPU and GPU on demand. Peak VRAM drops to the largest
+        single submodel (~5 GB for SDXL unet vs ~7 GB for the full pipe).
+        """
+        device = self._device.torch_str
         self._free_device_cache()
 
-        try:
-            pipe.to(device)
-        except RuntimeError as e:
-            if "out of memory" not in str(e).lower():
-                raise
-            logger.warning(f"OOM moving {name!r} to {device}; aggressive cleanup + retry")
+        if self._enable_cpu_offload:
+            # Accelerate manages device placement per-submodel from here on —
+            # we do NOT call pipe.to(device), the hook system would conflict.
             try:
-                pipe.to("cpu")
-            except Exception:
-                pass
-            self._free_device_cache()
-            try:
-                import torch
-                torch.cuda.synchronize()
-            except Exception:
-                pass
+                pipe.enable_model_cpu_offload(device=device)
+                logger.info(
+                    f"{name!r}: enable_model_cpu_offload(device={device!r}) — "
+                    "submodels will shuttle on demand"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"enable_model_cpu_offload failed for {name!r}; "
+                    f"falling back to direct .to({device}): {e}"
+                )
+                pipe.to(device)
+        else:
             try:
                 pipe.to(device)
-            except RuntimeError as e2:
-                if "out of memory" not in str(e2).lower():
+            except RuntimeError as e:
+                if "out of memory" not in str(e).lower():
                     raise
-                logger.error(f"OOM retry failed for {name!r}; pipe will be dropped")
+                logger.warning(f"OOM moving {name!r} to {device}; aggressive cleanup + retry")
                 try:
                     pipe.to("cpu")
                 except Exception:
                     pass
                 self._free_device_cache()
-                raise RuntimeError(
-                    f"OOM: {name!r} too large for {device}; pipe was purged from memory"
-                ) from e2
+                try:
+                    import torch
+                    torch.cuda.synchronize()
+                except Exception:
+                    pass
+                try:
+                    pipe.to(device)
+                except RuntimeError as e2:
+                    if "out of memory" not in str(e2).lower():
+                        raise
+                    logger.error(f"OOM retry failed for {name!r}; pipe will be dropped")
+                    try:
+                        pipe.to("cpu")
+                    except Exception:
+                        pass
+                    self._free_device_cache()
+                    raise RuntimeError(
+                        f"OOM: {name!r} too large for {device}; pipe was purged from memory"
+                    ) from e2
 
         # Enable VAE optimizations AFTER the move — lowers peak VRAM
         # during batch decode (slicing) and large-resolution decode (tiling).
+        # Safe under cpu_offload too: tiling/slicing are about how the decode
+        # chunks its work, orthogonal to device placement.
         if hasattr(pipe, "vae") and pipe.vae is not None:
             try:
                 pipe.vae.enable_slicing()

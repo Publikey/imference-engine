@@ -49,6 +49,23 @@ class RuntimeConfig:
     model_cache_dir: Optional[Union[str, Path]] = None
     lora_cache_dir: Optional[Union[str, Path]] = None
 
+    use_tiny_vae: bool = False
+    """When True, SDXL backends substitute the full VAE with TAESDxl (Tiny
+    AutoEncoder, ~5 MB). Decode goes from ~20 s to ~2 s on tight-VRAM GPUs,
+    at the cost of slight quality loss. Recommended for previews / dev
+    iteration; toggle off for final-quality renders. No effect on Z-Image
+    (which uses a different VAE architecture without a TAESD equivalent)."""
+
+    enable_cpu_offload: bool = False
+    """When True, ModelManager calls `pipe.enable_model_cpu_offload(device=...)`
+    instead of moving the whole pipe to GPU. Diffusers/accelerate then
+    shuttles individual submodels (text_encoder, unet, vae) between CPU and
+    GPU as inference progresses — peak VRAM drops to the largest single
+    submodel (~5 GB for SDXL unet) instead of the sum (~7 GB).
+    Cost: ~10-30 % slower per gen due to per-forward CPU↔GPU transfers.
+    Strongly recommended on ≤8 GB VRAM where the model otherwise saturates.
+    Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
+
 
 class Engine:
     """High-level diffusion inference engine.
@@ -115,12 +132,18 @@ class Engine:
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
         self._backends = {
-            SDXLBackend.engine: SDXLBackend(),
+            SDXLBackend.engine: SDXLBackend(use_tiny_vae=self._runtime.use_tiny_vae),
             ZImageBackend.engine: ZImageBackend(),
         }
 
         max_gpu = self._runtime.max_gpu_models or 1
         max_cpu = self._runtime.max_cpu_models or 0
+        if self._runtime.enable_cpu_offload and max_cpu > 0:
+            logger.warning(
+                "enable_cpu_offload=True forces max_cpu_models=0 — the CPU LRU tier "
+                "would shadow accelerate's hook-based offloader and confuse residency."
+            )
+            max_cpu = 0
         self._models = ModelManager(
             self._backends,
             self._device,
@@ -128,6 +151,7 @@ class Engine:
             max_cpu_models=max_cpu,
             on_loaded=self._on_model_loaded,
             on_evicted=self._on_model_evicted,
+            enable_cpu_offload=self._runtime.enable_cpu_offload,
         )
         self._loaded = True
         return self

@@ -10,15 +10,27 @@ logger = logging.getLogger(__name__)
 
 
 class SDXLBackend(PipelineBackend):
-    """Backend for SDXL checkpoints (.safetensors single-file)."""
+    """Backend for SDXL checkpoints (.safetensors single-file).
+
+    Knobs (set at construction time, propagated by Engine from RuntimeConfig):
+      use_tiny_vae : swap the heavyweight VAE for TAESDxl (~5 MB, fp16-native).
+                     Decode goes from ~20 s to ~2 s on tight-VRAM GPUs at the
+                     cost of slight quality loss on photo-realistic prompts.
+                     Tolerated well on anime/illustration models.
+    """
 
     engine: ClassVar[str] = "sdxl"
 
-    def __init__(self) -> None:
+    # HuggingFace repo id for the SDXL tiny autoencoder. Tiny (~5 MB), fp16-safe,
+    # designed by madebyollin specifically as a fast drop-in for SDXL's VAE.
+    TINY_VAE_REPO: ClassVar[str] = "madebyollin/taesdxl"
+
+    def __init__(self, *, use_tiny_vae: bool = False) -> None:
         # Cache scheduler instances keyed by (id(pipe.scheduler.config), scheduler_name).
         # The id() key isolates per-pipe configs so multiple loaded models can each
         # have their own cached scheduler without cross-contamination.
         self._scheduler_cache: dict[tuple[int, str], Any] = {}
+        self._use_tiny_vae = use_tiny_vae
 
     def load_pipeline(
         self, *, local_path: str, base_model: Optional[str] = None
@@ -36,6 +48,40 @@ class SDXLBackend(PipelineBackend):
         # from_single_file, causing "Input type (Half) and bias type (float)"
         # mismatches at inference. Force every parameter to float16.
         pipe = pipe.to(torch.float16)
+
+        # VAE handling — two mutually exclusive paths:
+        if self._use_tiny_vae:
+            # TAESDxl: ~5 MB fp16 autoencoder, ~10× faster decode at the cost of
+            # slight quality loss (visible on photoreal, transparent on illust).
+            # Replaces the lazy upcast_vae path entirely.
+            from diffusers import AutoencoderTiny
+            logger.info(f"Swapping VAE for TAESD ({self.TINY_VAE_REPO}) — faster decode, slight quality loss")
+            pipe.vae = AutoencoderTiny.from_pretrained(
+                self.TINY_VAE_REPO, torch_dtype=torch.float16
+            )
+        else:
+            # Full VAE pre-cast to fp32. Diffusers' SDXL pipeline otherwise does
+            # an implicit upcast at decode time (the source of the
+            # `FutureWarning: upcast_vae is deprecated` log line we see every
+            # generation), which allocates +300 MB transiently and adds latency.
+            # Pre-casting once at load makes that allocation persistent (steady
+            # state, no decode-time churn) and shaves a few seconds per gen.
+            try:
+                pipe.vae.to(torch.float32)
+                logger.info("VAE pre-cast to float32 (bypasses upcast_vae lazy path)")
+            except Exception as e:
+                logger.warning(f"VAE fp32 pre-cast failed (non-fatal): {e}")
+
+        # channels_last memory format on the U-Net: trades a few MB of metadata
+        # for ~10-20% throughput on Ampere+ conv-heavy nets. Memory format is
+        # preserved across .to(device) calls, so applying it here (still on
+        # CPU) carries through to the GPU promotion in ModelManager.
+        try:
+            pipe.unet.to(memory_format=torch.channels_last)
+            logger.info("U-Net moved to channels_last memory format")
+        except Exception as e:
+            logger.warning(f"channels_last on U-Net failed (non-fatal): {e}")
+
         return pipe
 
     def make_img2img(self, t2i_pipe: Any) -> Any:
