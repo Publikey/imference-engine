@@ -25,6 +25,11 @@ class SDXLBackend(PipelineBackend):
     # designed by madebyollin specifically as a fast drop-in for SDXL's VAE.
     TINY_VAE_REPO: ClassVar[str] = "madebyollin/taesdxl"
 
+    # madebyollin/sdxl-vae-fp16-fix: SDXL VAE retrained to be numerically stable
+    # in fp16 (no overflow → no NaNs). Its config sets force_upcast=False, so
+    # diffusers decodes directly in fp16 with no Half/float dtype mismatch.
+    FP16_VAE_REPO: ClassVar[str] = "madebyollin/sdxl-vae-fp16-fix"
+
     def __init__(self, *, use_tiny_vae: bool = False) -> None:
         # Cache scheduler instances keyed by (id(pipe.scheduler.config), scheduler_name).
         # The id() key isolates per-pipe configs so multiple loaded models can each
@@ -60,17 +65,18 @@ class SDXLBackend(PipelineBackend):
                 self.TINY_VAE_REPO, torch_dtype=torch.float16
             )
         else:
-            # Full VAE pre-cast to fp32. Diffusers' SDXL pipeline otherwise does
-            # an implicit upcast at decode time (the source of the
-            # `FutureWarning: upcast_vae is deprecated` log line we see every
-            # generation), which allocates +300 MB transiently and adds latency.
-            # Pre-casting once at load makes that allocation persistent (steady
-            # state, no decode-time churn) and shaves a few seconds per gen.
-            try:
-                pipe.vae.to(torch.float32)
-                logger.info("VAE pre-cast to float32 (bypasses upcast_vae lazy path)")
-            except Exception as e:
-                logger.warning(f"VAE fp32 pre-cast failed (non-fatal): {e}")
+            # Swap in the fp16-fix VAE. The previous `pipe.vae.to(torch.float32)`
+            # left the VAE in fp32 while latents stayed fp16; diffusers 0.37 only
+            # realigns latent dtype when needs_upcasting (vae fp16 + force_upcast)
+            # is true, so a pre-cast VAE skipped that path and crashed at
+            # post_quant_conv with "Input type (Half) and bias type (float)
+            # should be the same". The fp16-fix VAE keeps everything in fp16 —
+            # no upcast, no dtype mismatch, no decode-time churn.
+            from diffusers import AutoencoderKL
+            logger.info(f"Swapping VAE for fp16-fix ({self.FP16_VAE_REPO})")
+            pipe.vae = AutoencoderKL.from_pretrained(
+                self.FP16_VAE_REPO, torch_dtype=torch.float16
+            )
 
         # channels_last memory format on the U-Net: trades a few MB of metadata
         # for ~10-20% throughput on Ampere+ conv-heavy nets. Memory format is

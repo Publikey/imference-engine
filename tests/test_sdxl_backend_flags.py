@@ -11,7 +11,7 @@ from imference_engine.pipelines.sdxl import SDXLBackend
 
 
 def test_sdxl_backend_default_no_tiny_vae():
-    """Default construction = full VAE path (fp32 pre-cast)."""
+    """Default construction = full VAE path (fp16-fix swap)."""
     backend = SDXLBackend()
     assert backend._use_tiny_vae is False
 
@@ -26,6 +26,12 @@ def test_tiny_vae_repo_is_madebyollin_sdxl():
     """Pin the TAESD repo as a class constant so a typo in a future
     refactor doesn't silently pull the SD1.5 variant."""
     assert SDXLBackend.TINY_VAE_REPO == "madebyollin/taesdxl"
+
+
+def test_fp16_vae_repo_is_madebyollin_fix():
+    """Pin the fp16-fix VAE repo so a refactor can't silently revert the
+    default decode path to the broken fp32 pre-cast (Half/float mismatch)."""
+    assert SDXLBackend.FP16_VAE_REPO == "madebyollin/sdxl-vae-fp16-fix"
 
 
 def test_engine_runtime_config_propagates_tiny_vae():
