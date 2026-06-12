@@ -50,6 +50,29 @@ runtime = [
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
+# Wan2.2 video stack — the validated combo (diffusers 0.38 + gguf). Kept SEPARATE
+# from [runtime] because Wan needs diffusers 0.38 while the image side (SDXL/
+# Z-Image) is pinned to 0.37. Install with: pip install "imference-engine[wan]".
+# torch>=2.6 is required (the FA3 custom op breaks the import on torch 2.4);
+# install the CUDA build from your base image.
+wan = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers>=5.1",
+    "accelerate>=1.12",
+    "peft>=0.18",
+    "gguf>=0.10",
+    "ftfy>=6.3",
+    "sentencepiece>=0.2",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "imageio>=2.34",
+    "imageio-ffmpeg>=0.5",
+    "requests>=2.31",
+]
+
 [tool.setuptools.packages.find]
 include = ["imference_engine*"]
 exclude = ["tests*"]
