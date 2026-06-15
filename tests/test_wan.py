@@ -15,6 +15,17 @@ def _variant(name: str, mode: str = "t2v") -> WanVariant:
                       gguf_repo="gguf", lightning_baked=True)
 
 
+def test_builtins_have_offline_safe_templates():
+    # Every built-in must resolve GGUF names deterministically (no list_repo_files
+    # at runtime) so it can run under HF_HUB_OFFLINE=1 from a mirrored cache.
+    from imference_engine.wan.presets import BUILTIN_VARIANTS
+    for name, v in BUILTIN_VARIANTS.items():
+        assert v.gguf_high_template and v.gguf_low_template, name
+        hi = v.gguf_high_template.format(quant="Q8_0")
+        lo = v.gguf_low_template.format(quant="Q6_K")
+        assert hi.endswith("-Q8_0.gguf") and lo.endswith("-Q6_K.gguf")
+
+
 def test_memory_profile_mapping():
     assert MemoryProfile.GGUF_Q8.gguf_quant == "Q8_0"
     assert MemoryProfile.GGUF_Q6.gguf_quant == "Q6_K"

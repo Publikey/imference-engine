@@ -48,9 +48,15 @@ class WanVariant:
     lightning_baked: bool = False   # True for merges (SmoothMix/DaSiWa) → no LoRA
     loras: list[WanLora] = field(default_factory=list)
     flow_shift: float = 3.0         # 3.0 ≈ 480p, 5.0 ≈ 720p
-    # explicit GGUF filenames (for nested repos like BigDannyPt); else auto-discover
+    # GGUF filename resolution, in priority order:
+    #  1. gguf_*_name  — exact, quant-fixed (for odd repos)
+    #  2. gguf_*_template — has a "{quant}" placeholder; DETERMINISTIC + offline-safe
+    #     (no list_repo_files API call → works with HF_HUB_OFFLINE=1 from a mirror)
+    #  3. neither → online auto-discovery (convenience; needs network)
     gguf_high_name: Optional[str] = None
     gguf_low_name: Optional[str] = None
+    gguf_high_template: Optional[str] = None
+    gguf_low_template: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.mode not in ("t2v", "i2v"):
@@ -69,26 +75,36 @@ def _lightning_lora(mode: str) -> WanLora:
 
 
 # Built-in presets (validated). Callers can register their own via WanEngine.
+# GGUF templates make filename resolution deterministic (no list_repo_files at
+# runtime) → these variants run fully offline from a mirrored cache.
 BUILTIN_VARIANTS: dict[str, WanVariant] = {
     "wan22-t2v-lightning": WanVariant(
         name="wan22-t2v-lightning", mode="t2v",
         base_repo=BASE_T2V, gguf_repo=GGUF_T2V,
         loras=[_lightning_lora("t2v")], flow_shift=3.0,
+        gguf_high_template="HighNoise/Wan2.2-T2V-A14B-HighNoise-{quant}.gguf",
+        gguf_low_template="LowNoise/Wan2.2-T2V-A14B-LowNoise-{quant}.gguf",
     ),
     "wan22-i2v-lightning": WanVariant(
         name="wan22-i2v-lightning", mode="i2v",
         base_repo=BASE_I2V, gguf_repo=GGUF_I2V,
         loras=[_lightning_lora("i2v")], flow_shift=3.0,
+        gguf_high_template="HighNoise/Wan2.2-I2V-A14B-HighNoise-{quant}.gguf",
+        gguf_low_template="LowNoise/Wan2.2-I2V-A14B-LowNoise-{quant}.gguf",
     ),
     # Example Civitai merges with Lightning baked in (→ lightning_baked, no LoRA).
     "smoothmix-i2v": WanVariant(
         name="smoothmix-i2v", mode="i2v",
         base_repo=BASE_I2V, gguf_repo="Bedovyy/smoothMixWan22-I2V-GGUF",
         lightning_baked=True, flow_shift=3.0,
+        gguf_high_template="HighNoise/smoothMixWan22I2VT2V_i2vHigh-{quant}.gguf",
+        gguf_low_template="LowNoise/smoothMixWan22I2VT2V_i2vLow-{quant}.gguf",
     ),
     "dasiwa-i2v": WanVariant(
         name="dasiwa-i2v", mode="i2v",
         base_repo=BASE_I2V, gguf_repo="Bedovyy/dasiwaWAN22I2V14B-GGUF",
         lightning_baked=True, flow_shift=3.0,
+        gguf_high_template="HighNoise/dasiwaWAN22I2V14B_midnightflirtHigh-{quant}.gguf",
+        gguf_low_template="LowNoise/dasiwaWAN22I2V14B_midnightflirtLow-{quant}.gguf",
     ),
 }

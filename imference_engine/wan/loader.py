@@ -44,19 +44,31 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -
     return SharedComponents(base_repo, text_encoder, tokenizer, vae)
 
 
-def _resolve_gguf(repo: str, quant: str, which: str, explicit_name: Optional[str]) -> str:
+def _resolve_gguf(
+    repo: str, quant: str, which: str,
+    explicit_name: Optional[str] = None, template: Optional[str] = None,
+) -> str:
     """Return a local path to the high/low GGUF for a quant level.
 
-    Downloads an exact ``explicit_name`` if given (needed for repos that nest
-    files in subfolders), else auto-discovers by 'high'/'low' + quant substring.
-    Avoids the tree API where possible; ``list_repo_files`` needs ``hf auth login``.
+    Resolution order:
+      1. ``explicit_name`` — exact path (quant-fixed).
+      2. ``template`` with a ``{quant}`` placeholder — DETERMINISTIC, no API call,
+         so it works under ``HF_HUB_OFFLINE=1`` from a mirrored cache.
+      3. online auto-discovery via ``list_repo_files`` (needs network + auth).
+
+    Only path 3 contacts the tree API; prefer 1/2 for offline/CDN deployments.
     """
-    from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import hf_hub_download
 
     if explicit_name:
         logger.info("  %s [%s] -> %s", repo, which, explicit_name)
         return hf_hub_download(repo, explicit_name)
+    if template:
+        name = template.format(quant=quant)
+        logger.info("  %s [%s] -> %s (template)", repo, which, name)
+        return hf_hub_download(repo, name)
 
+    from huggingface_hub import list_repo_files
     files = [f for f in list_repo_files(repo) if f.endswith(".gguf")]
     cand = [f for f in files
             if which in f.lower() and f.lower().endswith(f"-{quant.lower()}.gguf")]
@@ -134,8 +146,10 @@ def build_pipeline(
                            WanPipeline)
 
     logger.info("Building variant %r (%s, gguf=%s)", variant.name, variant.mode, quant)
-    high = _resolve_gguf(variant.gguf_repo, quant, "high", variant.gguf_high_name)
-    low = _resolve_gguf(variant.gguf_repo, quant, "low", variant.gguf_low_name)
+    high = _resolve_gguf(variant.gguf_repo, quant, "high",
+                         variant.gguf_high_name, variant.gguf_high_template)
+    low = _resolve_gguf(variant.gguf_repo, quant, "low",
+                        variant.gguf_low_name, variant.gguf_low_template)
     transformer = _load_gguf_transformer(high, variant.base_repo, "transformer")
     transformer_2 = _load_gguf_transformer(low, variant.base_repo, "transformer_2")
 
