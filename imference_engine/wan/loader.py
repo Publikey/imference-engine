@@ -51,7 +51,6 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     huggingface_hub), so it works alongside HF_HUB_OFFLINE=1.
     """
     import os
-    import shutil
     import urllib.error
     import urllib.request
 
@@ -66,6 +65,7 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     dest = os.path.join(root, repo, filename)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
+        import sys
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
         tmp = dest + ".part"
@@ -73,9 +73,21 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
         # CDNs return 403 to the default "Python-urllib/x" agent.
         req = urllib.request.Request(
             url, headers={"User-Agent": "Mozilla/5.0 (imference-engine wan)"})
+        label = os.path.basename(filename)
         try:
             with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
-                shutil.copyfileobj(r, f, length=1024 * 1024)
+                total = int(r.headers.get("Content-Length") or 0)
+                done = 0
+                while True:
+                    buf = r.read(8 * 1024 * 1024)
+                    if not buf:
+                        break
+                    f.write(buf)
+                    done += len(buf)
+                    pct = f" ({done * 100 // total}%)" if total else ""
+                    print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
+                          end="", file=sys.stderr, flush=True)
+                print("", file=sys.stderr, flush=True)
         except urllib.error.HTTPError as e:
             raise RuntimeError(f"CDN {e.code} for {url}") from e
         os.replace(tmp, dest)
