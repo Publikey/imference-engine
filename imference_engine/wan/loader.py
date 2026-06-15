@@ -52,6 +52,7 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     """
     import os
     import shutil
+    import urllib.error
     import urllib.request
 
     # CDN files cache under cache_dir, else $HF_HOME/wan-cdn (same big volume as
@@ -68,8 +69,15 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
         tmp = dest + ".part"
-        with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
-            shutil.copyfileobj(r, f, length=1024 * 1024)
+        # Send a browser-like User-Agent: Cloudflare (R2 custom domains) and many
+        # CDNs return 403 to the default "Python-urllib/x" agent.
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (imference-engine wan)"})
+        try:
+            with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f, length=1024 * 1024)
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"CDN {e.code} for {url}") from e
         os.replace(tmp, dest)
     return dest
 
