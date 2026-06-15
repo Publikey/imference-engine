@@ -34,6 +34,7 @@ class ResidencyManager:
         vae_tiling: bool,
         max_resident: int,
         cache_dir: Optional[str] = None,
+        cdn_base: Optional[str] = None,
         shared_base_repo: str = "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         on_evicted: Optional[Callable[[str], None]] = None,
     ) -> None:
@@ -43,6 +44,7 @@ class ResidencyManager:
         self._vae_tiling = vae_tiling
         self._max_resident = max(1, max_resident)
         self._cache_dir = cache_dir
+        self._cdn_base = cdn_base
         self._shared_base_repo = shared_base_repo
         self._on_evicted = on_evicted
         self._shared: Optional[SharedComponents] = None
@@ -70,6 +72,7 @@ class ResidencyManager:
             enable_offload=self._enable_offload,
             vae_tiling=self._vae_tiling,
             cache_dir=self._cache_dir,
+            cdn_base=self._cdn_base,
         )
         self._pipes[name] = pipe
         self._pipes.move_to_end(name)

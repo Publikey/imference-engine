@@ -44,31 +44,61 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -
     return SharedComponents(base_repo, text_encoder, tokenizer, vae)
 
 
+def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[str]) -> str:
+    """Download <cdn_base>/<repo>/<filename> to a local cache (skip if present).
+
+    The CDN must mirror the HF repo/filename layout. Uses urllib (not
+    huggingface_hub), so it works alongside HF_HUB_OFFLINE=1.
+    """
+    import os
+    import shutil
+    import urllib.request
+
+    root = cache_dir or os.path.join(os.path.expanduser("~"), ".cache", "wan-cdn")
+    dest = os.path.join(root, repo, filename)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    if not os.path.exists(dest):
+        url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
+        logger.info("  CDN fetch %s", url)
+        tmp = dest + ".part"
+        with urllib.request.urlopen(url) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f, length=1024 * 1024)
+        os.replace(tmp, dest)
+    return dest
+
+
+def _fetch(repo: str, filename: str, cdn_base: Optional[str], cache_dir: Optional[str]) -> str:
+    """Local path for a model file — from the CDN mirror if set, else HF."""
+    if cdn_base:
+        return _cdn_download(cdn_base, repo, filename, cache_dir)
+    from huggingface_hub import hf_hub_download
+    return hf_hub_download(repo, filename, **({"cache_dir": cache_dir} if cache_dir else {}))
+
+
 def _resolve_gguf(
     repo: str, quant: str, which: str,
     explicit_name: Optional[str] = None, template: Optional[str] = None,
+    cdn_base: Optional[str] = None, cache_dir: Optional[str] = None,
 ) -> str:
     """Return a local path to the high/low GGUF for a quant level.
 
     Resolution order:
       1. ``explicit_name`` — exact path (quant-fixed).
-      2. ``template`` with a ``{quant}`` placeholder — DETERMINISTIC, no API call,
-         so it works under ``HF_HUB_OFFLINE=1`` from a mirrored cache.
-      3. online auto-discovery via ``list_repo_files`` (needs network + auth).
+      2. ``template`` with a ``{quant}`` placeholder — DETERMINISTIC, no API call.
+      3. online auto-discovery via ``list_repo_files`` (HF only; needs network).
 
-    Only path 3 contacts the tree API; prefer 1/2 for offline/CDN deployments.
+    The resolved file is fetched from ``cdn_base`` if set, else HF. CDN mode needs
+    a name/template (no listing over a CDN).
     """
-    from huggingface_hub import hf_hub_download
+    name = explicit_name or (template.format(quant=quant) if template else None)
+    if name:
+        logger.info("  %s [%s] -> %s%s", repo, which, name, " (cdn)" if cdn_base else "")
+        return _fetch(repo, name, cdn_base, cache_dir)
+    if cdn_base:
+        raise ValueError(
+            f"{repo}: CDN mode needs gguf_*_name/template for the {which} expert")
 
-    if explicit_name:
-        logger.info("  %s [%s] -> %s", repo, which, explicit_name)
-        return hf_hub_download(repo, explicit_name)
-    if template:
-        name = template.format(quant=quant)
-        logger.info("  %s [%s] -> %s (template)", repo, which, name)
-        return hf_hub_download(repo, name)
-
-    from huggingface_hub import list_repo_files
+    from huggingface_hub import hf_hub_download, list_repo_files
     files = [f for f in list_repo_files(repo) if f.endswith(".gguf")]
     cand = [f for f in files
             if which in f.lower() and f.lower().endswith(f"-{quant.lower()}.gguf")]
@@ -103,28 +133,34 @@ def _load_gguf_transformer(path: str, base_repo: str, subfolder: str) -> Any:
         raise
 
 
-def _apply_loras(pipe: Any, loras: list) -> None:
+def _apply_loras(pipe: Any, loras: list,
+                 cdn_base: Optional[str] = None, cache_dir: Optional[str] = None) -> None:
     """Stack LoRAs onto the (possibly quantized) experts with set_adapters — no fuse.
 
     Validated on GGUF in P1d: each LoRA's high file → transformer, low file →
     transformer_2 (load_into_transformer_2=True); set_adapters keeps them as live
-    bf16 adapters over the quantized weights.
+    bf16 adapters over the quantized weights. When ``cdn_base`` is set, the LoRA
+    file is fetched from the CDN to a local path and loaded from there.
     """
     names: list[str] = []
     weights: list[float] = []
     for i, lora in enumerate(loras):
-        if lora.high_weight_name:
-            adapter = f"lora{i}_high"
-            pipe.load_lora_weights(lora.repo, weight_name=lora.high_weight_name,
-                                   adapter_name=adapter)
+        for wn, weight, into2, suffix in (
+            (lora.high_weight_name, lora.high_weight, False, "high"),
+            (lora.low_weight_name, lora.low_weight, True, "low"),
+        ):
+            if not wn:
+                continue
+            adapter = f"lora{i}_{suffix}"
+            if cdn_base:
+                path = _cdn_download(cdn_base, lora.repo, wn, cache_dir)
+                pipe.load_lora_weights(path, adapter_name=adapter,
+                                       load_into_transformer_2=into2)
+            else:
+                pipe.load_lora_weights(lora.repo, weight_name=wn, adapter_name=adapter,
+                                       load_into_transformer_2=into2)
             names.append(adapter)
-            weights.append(lora.high_weight)
-        if lora.low_weight_name:
-            adapter = f"lora{i}_low"
-            pipe.load_lora_weights(lora.repo, weight_name=lora.low_weight_name,
-                                   adapter_name=adapter, load_into_transformer_2=True)
-            names.append(adapter)
-            weights.append(lora.low_weight)
+            weights.append(weight)
     if names:
         pipe.set_adapters(names, adapter_weights=weights)
         logger.info("  applied %d LoRA adapter(s), not fused: %s", len(names), names)
@@ -139,17 +175,24 @@ def build_pipeline(
     enable_offload: bool,
     vae_tiling: bool,
     cache_dir: Optional[str] = None,
+    cdn_base: Optional[str] = None,
 ) -> Any:
-    """Build a ready-to-run Wan pipeline for ``variant`` at GGUF ``quant``."""
+    """Build a ready-to-run Wan pipeline for ``variant`` at GGUF ``quant``.
+
+    ``cdn_base`` (env WAN_MODEL_CDN) makes the GGUF experts + LoRAs come from a CDN
+    mirror instead of HF — the shared base still loads from the (cached) HF repo.
+    """
     import torch
     from diffusers import (UniPCMultistepScheduler, WanImageToVideoPipeline,
                            WanPipeline)
 
     logger.info("Building variant %r (%s, gguf=%s)", variant.name, variant.mode, quant)
     high = _resolve_gguf(variant.gguf_repo, quant, "high",
-                         variant.gguf_high_name, variant.gguf_high_template)
+                         variant.gguf_high_name, variant.gguf_high_template,
+                         cdn_base=cdn_base, cache_dir=cache_dir)
     low = _resolve_gguf(variant.gguf_repo, quant, "low",
-                        variant.gguf_low_name, variant.gguf_low_template)
+                        variant.gguf_low_name, variant.gguf_low_template,
+                        cdn_base=cdn_base, cache_dir=cache_dir)
     transformer = _load_gguf_transformer(high, variant.base_repo, "transformer")
     transformer_2 = _load_gguf_transformer(low, variant.base_repo, "transformer_2")
 
@@ -171,7 +214,7 @@ def build_pipeline(
     if variant.lightning_baked:
         logger.info("  lightning baked in checkpoint — no LoRA applied")
     else:
-        _apply_loras(pipe, variant.loras)
+        _apply_loras(pipe, variant.loras, cdn_base=cdn_base, cache_dir=cache_dir)
 
     if enable_offload:
         pipe.enable_model_cpu_offload(device=device)

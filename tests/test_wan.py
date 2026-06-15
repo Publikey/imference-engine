@@ -15,6 +15,23 @@ def _variant(name: str, mode: str = "t2v") -> WanVariant:
                       gguf_repo="gguf", lightning_baked=True)
 
 
+def test_cdn_routing(monkeypatch):
+    # With a CDN base + a template, the GGUF is fetched from <cdn>/<repo>/<file>.
+    from imference_engine.wan import loader as L
+    seen = {}
+    monkeypatch.setattr(L, "_cdn_download",
+                        lambda cdn, repo, fn, cache: seen.setdefault("url", f"{cdn}/{repo}/{fn}"))
+    L._resolve_gguf("org/repo-GGUF", "Q8_0", "high", None,
+                    "HighNoise/foo-{quant}.gguf", cdn_base="https://cdn.x/wan")
+    assert seen["url"] == "https://cdn.x/wan/org/repo-GGUF/HighNoise/foo-Q8_0.gguf"
+
+
+def test_cdn_requires_name_or_template():
+    from imference_engine.wan import loader as L
+    with pytest.raises(ValueError):
+        L._resolve_gguf("org/repo", "Q8_0", "high", None, None, cdn_base="https://cdn.x")
+
+
 def test_builtins_have_offline_safe_templates():
     # Every built-in must resolve GGUF names deterministically (no list_repo_files
     # at runtime) so it can run under HF_HUB_OFFLINE=1 from a mirrored cache.
