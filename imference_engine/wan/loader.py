@@ -29,19 +29,56 @@ class SharedComponents:
     vae: Any
 
 
+# Files needed from a diffusers base repo. NEVER the transformer weights (we use
+# GGUF). The shared base also needs the UMT5 text_encoder + tokenizer + VAE.
+_SHARED_PATTERNS = ["model_index.json", "scheduler/*", "text_encoder/*",
+                    "tokenizer/*", "vae/*",
+                    "transformer/config.json", "transformer_2/config.json"]
+_BASE_CFG_PATTERNS = ["model_index.json", "scheduler/*",
+                      "transformer/config.json", "transformer_2/config.json"]
+
+
+def _flat_root(cache_dir: Optional[str]) -> str:
+    """Root of the FLAT, symlink-free model tree (<root>/<repo>/<file>).
+
+    Unified for the base configs AND the GGUF/LoRA. Defaults next to the HF cache
+    on the big volume; overridable via cache_dir (WAN_MODEL_CACHE)."""
+    import os
+    if cache_dir:
+        return cache_dir
+    hf = os.environ.get("HF_HOME")
+    return os.path.join(hf, "wan") if hf else os.path.join(
+        os.path.expanduser("~"), ".cache", "wan")
+
+
+def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str]) -> str:
+    """Ensure a base repo's needed files are in a FLAT local dir and return it.
+
+    Uses ``snapshot_download(local_dir=...)``, which writes real files (NO
+    symlinks) on every OS -> the tree is portable Windows<->Mac<->Linux, unlike
+    the symlinked HF cache. Idempotent; offline once populated (from_pretrained
+    then just reads local files)."""
+    import os
+    from huggingface_hub import snapshot_download
+    d = os.path.join(_flat_root(cache_dir), repo)
+    snapshot_download(repo, allow_patterns=patterns, local_dir=d)
+    return d
+
+
 def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -> SharedComponents:
     import torch
     from diffusers import AutoencoderKLWan
     from transformers import AutoTokenizer, UMT5EncoderModel
 
-    logger.info("Loading shared components (text_encoder + vae) from %s", base_repo)
-    kw = {"cache_dir": cache_dir} if cache_dir else {}
+    d = _local_repo_dir(base_repo, _SHARED_PATTERNS, cache_dir)
+    logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
-        base_repo, subfolder="text_encoder", torch_dtype=torch.bfloat16, **kw)
-    tokenizer = AutoTokenizer.from_pretrained(base_repo, subfolder="tokenizer", **kw)
+        d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+    tokenizer = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(
-        base_repo, subfolder="vae", torch_dtype=torch.float32, **kw)
+        d, subfolder="vae", torch_dtype=torch.float32)
     return SharedComponents(base_repo, text_encoder, tokenizer, vae)
+
 
 
 def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[str]) -> str:
@@ -54,15 +91,9 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     import urllib.error
     import urllib.request
 
-    # CDN files cache under cache_dir, else $HF_HOME/wan-cdn (same big volume as
-    # the HF cache), else ~/.cache/wan-cdn. Avoids filling a small container disk.
-    if cache_dir:
-        root = cache_dir
-    elif os.environ.get("HF_HOME"):
-        root = os.path.join(os.environ["HF_HOME"], "wan-cdn")
-    else:
-        root = os.path.join(os.path.expanduser("~"), ".cache", "wan-cdn")
-    dest = os.path.join(root, repo, filename)
+    # Same FLAT tree as the base configs: <root>/<repo>/<file>. Unified so one
+    # shippable, symlink-free tree holds everything (base + GGUF + LoRA).
+    dest = os.path.join(_flat_root(cache_dir), repo, filename)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
         import concurrent.futures
@@ -142,11 +173,16 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
 
 
 def _fetch(repo: str, filename: str, cdn_base: Optional[str], cache_dir: Optional[str]) -> str:
-    """Local path for a model file — from the CDN mirror if set, else HF."""
+    """Local path for a model file — into the FLAT tree, from the CDN if set else HF.
+
+    Both paths land at <flat_root>/<repo>/<filename> (no symlinks), so the whole
+    tree is portable + shippable + offline once present."""
     if cdn_base:
         return _cdn_download(cdn_base, repo, filename, cache_dir)
+    import os
     from huggingface_hub import hf_hub_download
-    return hf_hub_download(repo, filename, **({"cache_dir": cache_dir} if cache_dir else {}))
+    return hf_hub_download(
+        repo, filename, local_dir=os.path.join(_flat_root(cache_dir), repo))
 
 
 def _resolve_gguf(
@@ -172,7 +208,7 @@ def _resolve_gguf(
         raise ValueError(
             f"{repo}: CDN mode needs gguf_*_name/template for the {which} expert")
 
-    from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import list_repo_files
     files = [f for f in list_repo_files(repo) if f.endswith(".gguf")]
     cand = [f for f in files
             if which in f.lower() and f.lower().endswith(f"-{quant.lower()}.gguf")]
@@ -182,7 +218,7 @@ def _resolve_gguf(
         raise FileNotFoundError(
             f"no '{which}' '{quant}' .gguf in {repo}; available: {files}")
     logger.info("  %s [%s] -> %s", repo, which, cand[0])
-    return hf_hub_download(repo, cand[0])
+    return _fetch(repo, cand[0], None, cache_dir)
 
 
 def _load_gguf_transformer(path: str, base_repo: str, subfolder: str) -> Any:
@@ -213,8 +249,8 @@ def _apply_loras(pipe: Any, loras: list,
 
     Validated on GGUF in P1d: each LoRA's high file → transformer, low file →
     transformer_2 (load_into_transformer_2=True); set_adapters keeps them as live
-    bf16 adapters over the quantized weights. When ``cdn_base`` is set, the LoRA
-    file is fetched from the CDN to a local path and loaded from there.
+    bf16 adapters over the quantized weights. The LoRA file is fetched into the
+    flat tree (CDN or HF) and loaded from that local path.
     """
     names: list[str] = []
     weights: list[float] = []
@@ -226,13 +262,9 @@ def _apply_loras(pipe: Any, loras: list,
             if not wn:
                 continue
             adapter = f"lora{i}_{suffix}"
-            if cdn_base:
-                path = _cdn_download(cdn_base, lora.repo, wn, cache_dir)
-                pipe.load_lora_weights(path, adapter_name=adapter,
-                                       load_into_transformer_2=into2)
-            else:
-                pipe.load_lora_weights(lora.repo, weight_name=wn, adapter_name=adapter,
-                                       load_into_transformer_2=into2)
+            path = _fetch(lora.repo, wn, cdn_base, cache_dir)
+            pipe.load_lora_weights(path, adapter_name=adapter,
+                                   load_into_transformer_2=into2)
             names.append(adapter)
             weights.append(weight)
     if names:
@@ -261,26 +293,27 @@ def build_pipeline(
                            WanPipeline)
 
     logger.info("Building variant %r (%s, gguf=%s)", variant.name, variant.mode, quant)
+    # base configs (model_index, scheduler, transformer configs) in a FLAT dir —
+    # also used as the GGUF transformer `config=` so loading is fully local/offline.
+    base_dir = _local_repo_dir(variant.base_repo, _BASE_CFG_PATTERNS, cache_dir)
     high = _resolve_gguf(variant.gguf_repo, quant, "high",
                          variant.gguf_high_name, variant.gguf_high_template,
                          cdn_base=cdn_base, cache_dir=cache_dir)
     low = _resolve_gguf(variant.gguf_repo, quant, "low",
                         variant.gguf_low_name, variant.gguf_low_template,
                         cdn_base=cdn_base, cache_dir=cache_dir)
-    transformer = _load_gguf_transformer(high, variant.base_repo, "transformer")
-    transformer_2 = _load_gguf_transformer(low, variant.base_repo, "transformer_2")
+    transformer = _load_gguf_transformer(high, base_dir, "transformer")
+    transformer_2 = _load_gguf_transformer(low, base_dir, "transformer_2")
 
     pipe_cls = WanPipeline if variant.mode == "t2v" else WanImageToVideoPipeline
-    kw = {"cache_dir": cache_dir} if cache_dir else {}
     pipe = pipe_cls.from_pretrained(
-        variant.base_repo,
+        base_dir,
         transformer=transformer,
         transformer_2=transformer_2,
         vae=shared.vae,
         text_encoder=shared.text_encoder,
         tokenizer=shared.tokenizer,
         torch_dtype=torch.bfloat16,
-        **kw,
     )
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config, flow_shift=variant.flow_shift)
