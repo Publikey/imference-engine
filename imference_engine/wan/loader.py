@@ -59,8 +59,12 @@ def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str]) -> str:
     the symlinked HF cache. Idempotent; offline once populated (from_pretrained
     then just reads local files)."""
     import os
-    from huggingface_hub import snapshot_download
     d = os.path.join(_flat_root(cache_dir), repo)
+    # Already populated (shipped tree)? Return without any network/snapshot call,
+    # so a pre-shipped tree works fully offline.
+    if os.path.exists(os.path.join(d, "model_index.json")):
+        return d
+    from huggingface_hub import snapshot_download
     snapshot_download(repo, allow_patterns=patterns, local_dir=d)
     return d
 
