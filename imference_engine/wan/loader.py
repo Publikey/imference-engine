@@ -86,93 +86,17 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -
 
 
 def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[str]) -> str:
-    """Download <cdn_base>/<repo>/<filename> to a local cache (skip if present).
+    """Fetch <cdn_base>/<repo>/<filename> into the flat tree (skip if present).
 
-    The CDN must mirror the HF repo/filename layout. Uses urllib (not
-    huggingface_hub), so it works alongside HF_HUB_OFFLINE=1.
-    """
+    Uses the parallel multi-stream downloader (plain HTTP), so it works alongside
+    HF_HUB_OFFLINE=1 and saturates the CDN link."""
     import os
-    import urllib.error
-    import urllib.request
-
-    # Same FLAT tree as the base configs: <root>/<repo>/<file>. Unified so one
-    # shippable, symlink-free tree holds everything (base + GGUF + LoRA).
     dest = os.path.join(_flat_root(cache_dir), repo, filename)
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
-        import concurrent.futures
-        import sys
-        import threading
-        import time
+        from imference_engine.wan.download import download_parallel
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
-        tmp = dest + ".part"
-        label = os.path.basename(filename)
-        # Browser-like UA: Cloudflare 403s the default "Python-urllib/x" agent.
-        ua = "Mozilla/5.0 (imference-engine wan)"
-        nstreams = max(1, int(os.environ.get("WAN_CDN_THREADS", "8")))
-
-        def _head_total() -> int:
-            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": ua})
-            with urllib.request.urlopen(req) as r:
-                return int(r.headers.get("Content-Length") or 0)
-
-        last_err = None
-        for attempt in range(1, 4):
-            try:
-                total = _head_total()
-                if total <= 0:
-                    raise IOError("CDN gave no Content-Length")
-                got = [0]
-                lock = threading.Lock()
-                fd = os.open(tmp, os.O_CREAT | os.O_WRONLY, 0o644)
-                try:
-                    os.ftruncate(fd, total)
-
-                    def _range(start: int, end: int) -> None:
-                        req = urllib.request.Request(
-                            url, headers={"User-Agent": ua, "Range": f"bytes={start}-{end}"})
-                        with urllib.request.urlopen(req) as r:
-                            off = start
-                            while True:
-                                buf = r.read(4 * 1024 * 1024)
-                                if not buf:
-                                    break
-                                os.pwrite(fd, buf, off)  # thread-safe positional write
-                                off += len(buf)
-                                with lock:
-                                    got[0] += len(buf)
-
-                    # Parallel range requests saturate the link (a single GET is slow).
-                    size = (total + nstreams - 1) // nstreams
-                    spans = [(i * size, min((i + 1) * size - 1, total - 1))
-                             for i in range(nstreams) if i * size < total]
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(spans)) as ex:
-                        futs = [ex.submit(_range, s, e) for s, e in spans]
-                        while not all(f.done() for f in futs):
-                            d = got[0]
-                            print(f"\r  CDN {label}: {d//1024//1024}/{total//1024//1024} MiB "
-                                  f"({d*100//total}%) [{len(spans)} streams]   ",
-                                  end="", file=sys.stderr, flush=True)
-                            time.sleep(0.5)
-                        for f in futs:
-                            f.result()  # surface any worker error
-                    print("", file=sys.stderr, flush=True)
-                finally:
-                    os.close(fd)
-                if os.path.getsize(tmp) != total:
-                    raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
-                os.replace(tmp, dest)
-                return dest
-            except (urllib.error.URLError, IOError) as e:
-                last_err = e
-                logger.warning("  CDN attempt %d/3 failed (%s); retrying", attempt, e)
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
-                time.sleep(2 * attempt)
-        raise RuntimeError(f"CDN download failed for {url}: {last_err}")
+        download_parallel(url, dest, int(os.environ.get("WAN_CDN_THREADS", "8")))
     return dest
 
 
