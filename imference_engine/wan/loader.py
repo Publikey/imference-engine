@@ -70,40 +70,45 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
         tmp = dest + ".part"
-        # Browser-like User-Agent: Cloudflare (R2 custom domains) 403s the default
-        # "Python-urllib/x" agent.
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "Mozilla/5.0 (imference-engine wan)"})
         label = os.path.basename(filename)
         last_err = None
-        for attempt in range(1, 4):  # retry: big files over a CDN can drop mid-stream
+        # Resumable download: big GGUFs over Cloudflare can drop mid-stream. On
+        # each retry we continue from the partial .part via an HTTP Range request
+        # (R2 supports it), and only accept the file once its size == Content-Length.
+        for attempt in range(1, 6):
+            resume = os.path.getsize(tmp) if os.path.exists(tmp) else 0
+            # Browser-like UA: Cloudflare 403s the default "Python-urllib/x" agent.
+            headers = {"User-Agent": "Mozilla/5.0 (imference-engine wan)"}
+            if resume:
+                headers["Range"] = f"bytes={resume}-"
+            req = urllib.request.Request(url, headers=headers)
             try:
-                with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
-                    total = int(r.headers.get("Content-Length") or 0)
-                    done = 0
-                    while True:
-                        buf = r.read(8 * 1024 * 1024)
-                        if not buf:
-                            break
-                        f.write(buf)
-                        done += len(buf)
-                        pct = f" ({done * 100 // total}%)" if total else ""
-                        print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
-                              end="", file=sys.stderr, flush=True)
+                with urllib.request.urlopen(req) as r:
+                    if resume and getattr(r, "status", 200) == 206:
+                        cr = r.headers.get("Content-Range", "")
+                        total = int(cr.rsplit("/", 1)[-1]) if "/" in cr else 0
+                        mode, done = "ab", resume
+                    else:  # server ignored Range -> start over
+                        total = int(r.headers.get("Content-Length") or 0)
+                        mode, done = "wb", 0
+                    with open(tmp, mode) as f:
+                        while True:
+                            buf = r.read(8 * 1024 * 1024)
+                            if not buf:
+                                break
+                            f.write(buf)
+                            done += len(buf)
+                            pct = f" ({done * 100 // total}%)" if total else ""
+                            print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
+                                  end="", file=sys.stderr, flush=True)
                     print("", file=sys.stderr, flush=True)
-                # integrity: a truncated stream (CDN dropped the connection) would
-                # otherwise be saved as a corrupt file. Verify against Content-Length.
-                if total and done != total:
-                    raise IOError(f"truncated: got {done} of {total} bytes")
+                if total and os.path.getsize(tmp) != total:
+                    raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
                 os.replace(tmp, dest)
                 return dest
             except (urllib.error.URLError, IOError) as e:
                 last_err = e
-                logger.warning("  CDN attempt %d/3 failed (%s); retrying", attempt, e)
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
+                logger.warning("  CDN attempt %d/5 failed (%s); resuming", attempt, e)
                 time.sleep(2 * attempt)
         raise RuntimeError(f"CDN download failed for {url}: {last_err}")
     return dest
