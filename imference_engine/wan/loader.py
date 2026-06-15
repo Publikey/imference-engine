@@ -66,31 +66,46 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
         import sys
+        import time
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
         tmp = dest + ".part"
-        # Send a browser-like User-Agent: Cloudflare (R2 custom domains) and many
-        # CDNs return 403 to the default "Python-urllib/x" agent.
+        # Browser-like User-Agent: Cloudflare (R2 custom domains) 403s the default
+        # "Python-urllib/x" agent.
         req = urllib.request.Request(
             url, headers={"User-Agent": "Mozilla/5.0 (imference-engine wan)"})
         label = os.path.basename(filename)
-        try:
-            with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
-                total = int(r.headers.get("Content-Length") or 0)
-                done = 0
-                while True:
-                    buf = r.read(8 * 1024 * 1024)
-                    if not buf:
-                        break
-                    f.write(buf)
-                    done += len(buf)
-                    pct = f" ({done * 100 // total}%)" if total else ""
-                    print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
-                          end="", file=sys.stderr, flush=True)
-                print("", file=sys.stderr, flush=True)
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f"CDN {e.code} for {url}") from e
-        os.replace(tmp, dest)
+        last_err = None
+        for attempt in range(1, 4):  # retry: big files over a CDN can drop mid-stream
+            try:
+                with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
+                    total = int(r.headers.get("Content-Length") or 0)
+                    done = 0
+                    while True:
+                        buf = r.read(8 * 1024 * 1024)
+                        if not buf:
+                            break
+                        f.write(buf)
+                        done += len(buf)
+                        pct = f" ({done * 100 // total}%)" if total else ""
+                        print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
+                              end="", file=sys.stderr, flush=True)
+                    print("", file=sys.stderr, flush=True)
+                # integrity: a truncated stream (CDN dropped the connection) would
+                # otherwise be saved as a corrupt file. Verify against Content-Length.
+                if total and done != total:
+                    raise IOError(f"truncated: got {done} of {total} bytes")
+                os.replace(tmp, dest)
+                return dest
+            except (urllib.error.URLError, IOError) as e:
+                last_err = e
+                logger.warning("  CDN attempt %d/3 failed (%s); retrying", attempt, e)
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                time.sleep(2 * attempt)
+        raise RuntimeError(f"CDN download failed for {url}: {last_err}")
     return dest
 
 
