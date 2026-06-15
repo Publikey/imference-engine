@@ -65,50 +65,77 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     dest = os.path.join(root, repo, filename)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
+        import concurrent.futures
         import sys
+        import threading
         import time
         url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
         logger.info("  CDN fetch %s", url)
         tmp = dest + ".part"
         label = os.path.basename(filename)
+        # Browser-like UA: Cloudflare 403s the default "Python-urllib/x" agent.
+        ua = "Mozilla/5.0 (imference-engine wan)"
+        nstreams = max(1, int(os.environ.get("WAN_CDN_THREADS", "8")))
+
+        def _head_total() -> int:
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": ua})
+            with urllib.request.urlopen(req) as r:
+                return int(r.headers.get("Content-Length") or 0)
+
         last_err = None
-        # Resumable download: big GGUFs over Cloudflare can drop mid-stream. On
-        # each retry we continue from the partial .part via an HTTP Range request
-        # (R2 supports it), and only accept the file once its size == Content-Length.
-        for attempt in range(1, 6):
-            resume = os.path.getsize(tmp) if os.path.exists(tmp) else 0
-            # Browser-like UA: Cloudflare 403s the default "Python-urllib/x" agent.
-            headers = {"User-Agent": "Mozilla/5.0 (imference-engine wan)"}
-            if resume:
-                headers["Range"] = f"bytes={resume}-"
-            req = urllib.request.Request(url, headers=headers)
+        for attempt in range(1, 4):
             try:
-                with urllib.request.urlopen(req) as r:
-                    if resume and getattr(r, "status", 200) == 206:
-                        cr = r.headers.get("Content-Range", "")
-                        total = int(cr.rsplit("/", 1)[-1]) if "/" in cr else 0
-                        mode, done = "ab", resume
-                    else:  # server ignored Range -> start over
-                        total = int(r.headers.get("Content-Length") or 0)
-                        mode, done = "wb", 0
-                    with open(tmp, mode) as f:
-                        while True:
-                            buf = r.read(8 * 1024 * 1024)
-                            if not buf:
-                                break
-                            f.write(buf)
-                            done += len(buf)
-                            pct = f" ({done * 100 // total}%)" if total else ""
-                            print(f"\r  CDN {label}: {done // 1024 // 1024} MiB{pct}   ",
+                total = _head_total()
+                if total <= 0:
+                    raise IOError("CDN gave no Content-Length")
+                got = [0]
+                lock = threading.Lock()
+                fd = os.open(tmp, os.O_CREAT | os.O_WRONLY, 0o644)
+                try:
+                    os.ftruncate(fd, total)
+
+                    def _range(start: int, end: int) -> None:
+                        req = urllib.request.Request(
+                            url, headers={"User-Agent": ua, "Range": f"bytes={start}-{end}"})
+                        with urllib.request.urlopen(req) as r:
+                            off = start
+                            while True:
+                                buf = r.read(4 * 1024 * 1024)
+                                if not buf:
+                                    break
+                                os.pwrite(fd, buf, off)  # thread-safe positional write
+                                off += len(buf)
+                                with lock:
+                                    got[0] += len(buf)
+
+                    # Parallel range requests saturate the link (a single GET is slow).
+                    size = (total + nstreams - 1) // nstreams
+                    spans = [(i * size, min((i + 1) * size - 1, total - 1))
+                             for i in range(nstreams) if i * size < total]
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=len(spans)) as ex:
+                        futs = [ex.submit(_range, s, e) for s, e in spans]
+                        while not all(f.done() for f in futs):
+                            d = got[0]
+                            print(f"\r  CDN {label}: {d//1024//1024}/{total//1024//1024} MiB "
+                                  f"({d*100//total}%) [{len(spans)} streams]   ",
                                   end="", file=sys.stderr, flush=True)
+                            time.sleep(0.5)
+                        for f in futs:
+                            f.result()  # surface any worker error
                     print("", file=sys.stderr, flush=True)
-                if total and os.path.getsize(tmp) != total:
+                finally:
+                    os.close(fd)
+                if os.path.getsize(tmp) != total:
                     raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
                 os.replace(tmp, dest)
                 return dest
             except (urllib.error.URLError, IOError) as e:
                 last_err = e
-                logger.warning("  CDN attempt %d/5 failed (%s); resuming", attempt, e)
+                logger.warning("  CDN attempt %d/3 failed (%s); retrying", attempt, e)
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
                 time.sleep(2 * attempt)
         raise RuntimeError(f"CDN download failed for {url}: {last_err}")
     return dest
