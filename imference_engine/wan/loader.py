@@ -191,8 +191,12 @@ def _apply_loras(pipe: Any, loras: list,
                 continue
             adapter = f"lora{i}_{suffix}"
             path = _fetch(lora.repo, wn, cdn_base, cache_dir)
-            pipe.load_lora_weights(path, adapter_name=adapter,
-                                   load_into_transformer_2=into2)
+            # Pass (dir, weight_name) — a bare path makes diffusers guess the file
+            # name, which it refuses to do under HF_HUB_OFFLINE=1.
+            import os
+            pipe.load_lora_weights(
+                os.path.dirname(path), weight_name=os.path.basename(path),
+                adapter_name=adapter, load_into_transformer_2=into2)
             names.append(adapter)
             weights.append(weight)
     if names:
