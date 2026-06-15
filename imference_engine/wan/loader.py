@@ -54,7 +54,14 @@ def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[s
     import shutil
     import urllib.request
 
-    root = cache_dir or os.path.join(os.path.expanduser("~"), ".cache", "wan-cdn")
+    # CDN files cache under cache_dir, else $HF_HOME/wan-cdn (same big volume as
+    # the HF cache), else ~/.cache/wan-cdn. Avoids filling a small container disk.
+    if cache_dir:
+        root = cache_dir
+    elif os.environ.get("HF_HOME"):
+        root = os.path.join(os.environ["HF_HOME"], "wan-cdn")
+    else:
+        root = os.path.join(os.path.expanduser("~"), ".cache", "wan-cdn")
     dest = os.path.join(root, repo, filename)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     if not os.path.exists(dest):
