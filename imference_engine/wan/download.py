@@ -68,27 +68,16 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
         with urllib.request.urlopen(req) as r:
             return int(r.headers.get("Content-Length") or 0)
 
-    def _supports_ranges() -> bool:
-        # A server that honours Range answers a 1-byte request with 206 +
-        # Content-Range. If it returns 200 (whole body), parallel ranges would
-        # each re-download the entire file -> overflow/corruption (the 167% bug).
-        req = urllib.request.Request(
-            url, headers={"User-Agent": _UA, "Range": "bytes=0-0"})
-        try:
-            with urllib.request.urlopen(req) as r:
-                return r.getcode() == 206 or bool(r.headers.get("Content-Range"))
-        except urllib.error.HTTPError as e:
-            return e.code == 206
-
     last_err = None
     for attempt in range(1, 4):
         try:
             total = _head_total()
             if total <= 0:
                 raise IOError("no Content-Length from server")
-            if not _supports_ranges():
-                logger.info("  %s: server ignores Range -> single-stream", label)
-                return _download_single(url, dest, total, progress=progress)
+            # Optimistic: always TRY parallel ranges. Each worker checks for 206
+            # and bails to single-stream only if a chunk actually returns 200, so
+            # we never wrongly force single-stream on a server whose Range support
+            # is intermittent (e.g. Cloudflare DYNAMIC blips) — the common case.
             chunk = max(1, chunk_mb) * 1024 * 1024
             jobs: "queue.Queue" = queue.Queue()
             for start in range(0, total, chunk):
@@ -103,25 +92,27 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
             try:
                 os.ftruncate(fd, total)
 
-                def _worker() -> None:
-                    while not stop.is_set():
-                        try:
-                            start, end = jobs.get_nowait()
-                        except queue.Empty:
-                            return
+                def _fetch_chunk(start: int, end: int) -> bool:
+                    """Fetch one chunk, retrying transient blips. A 200 means the
+                    server ignored Range (would corrupt at `start`) — but on an
+                    intermittent CDN (Cloudflare DYNAMIC) the next try is often a
+                    206, so retry before giving up. Returns True on success; on a
+                    persistent 200 sets no_range, on a persistent error records it
+                    — either way signals the caller to stop + single-stream."""
+                    last_was_200 = False
+                    local_err = None
+                    for attempt in range(3):
+                        if stop.is_set():
+                            return False
                         try:
                             req = urllib.request.Request(
                                 url, headers={"User-Agent": _UA,
                                               "Range": f"bytes={start}-{end}"})
                             with urllib.request.urlopen(req) as r:
-                                # 200 means the server ignored Range and is
-                                # streaming the WHOLE file from byte 0 — writing
-                                # it at `start` would be silent corruption. Bail
-                                # and let the caller retry as a single stream.
                                 if r.getcode() != 206:
-                                    no_range.set()
-                                    stop.set()
-                                    return
+                                    last_was_200, local_err = True, None
+                                    time.sleep(0.5 * (attempt + 1))
+                                    continue
                                 off = start
                                 while True:
                                     buf = r.read(2 * 1024 * 1024)
@@ -133,9 +124,24 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                                     off += len(buf)
                                     with lock:
                                         got[0] += len(buf)
+                                return True
                         except Exception as ex:  # noqa: BLE001
-                            errors.append(ex)
-                            stop.set()
+                            last_was_200, local_err = False, ex
+                            time.sleep(0.5 * (attempt + 1))
+                    if last_was_200:
+                        no_range.set()
+                    elif local_err is not None:
+                        errors.append(local_err)
+                    stop.set()
+                    return False
+
+                def _worker() -> None:
+                    while not stop.is_set():
+                        try:
+                            start, end = jobs.get_nowait()
+                        except queue.Empty:
+                            return
+                        if not _fetch_chunk(start, end):
                             return
 
                 n = max(1, min(threads, jobs.qsize()))
