@@ -98,6 +98,7 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
             lock = threading.Lock()
             errors: list = []
             stop = threading.Event()
+            no_range = threading.Event()  # a chunk got 200 (server ignored Range)
             fd = os.open(tmp, os.O_CREAT | os.O_WRONLY, 0o644)
             try:
                 os.ftruncate(fd, total)
@@ -113,19 +114,21 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                                 url, headers={"User-Agent": _UA,
                                               "Range": f"bytes={start}-{end}"})
                             with urllib.request.urlopen(req) as r:
+                                # 200 means the server ignored Range and is
+                                # streaming the WHOLE file from byte 0 — writing
+                                # it at `start` would be silent corruption. Bail
+                                # and let the caller retry as a single stream.
+                                if r.getcode() != 206:
+                                    no_range.set()
+                                    stop.set()
+                                    return
                                 off = start
                                 while True:
                                     buf = r.read(2 * 1024 * 1024)
                                     if not buf:
                                         break
-                                    # Clamp to this chunk: a server that ignored
-                                    # Range would otherwise stream the whole file
-                                    # and overflow past `end`.
-                                    room = end - off + 1
-                                    if room <= 0:
-                                        break
-                                    if len(buf) > room:
-                                        buf = buf[:room]
+                                    if off + len(buf) - 1 > end:
+                                        buf = buf[:end - off + 1]
                                     os.pwrite(fd, buf, off)
                                     off += len(buf)
                                     with lock:
@@ -154,6 +157,13 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                     raise errors[0]
             finally:
                 os.close(fd)
+            if no_range.is_set():
+                logger.info("  %s: server ignored Range mid-flight -> single-stream", label)
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                return _download_single(url, dest, total, progress=progress)
             if os.path.getsize(tmp) != total:
                 raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
             os.replace(tmp, dest)
