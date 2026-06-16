@@ -18,6 +18,36 @@ logger = logging.getLogger(__name__)
 _UA = "Mozilla/5.0 (imference-engine wan)"
 
 
+def _download_single(url: str, dest: str, total: int, *, progress: bool = True) -> str:
+    """Sequential single-stream download — for servers that ignore Range."""
+    import time
+    import urllib.request
+
+    tmp = dest + ".part"
+    label = os.path.basename(dest)
+    req = urllib.request.Request(url, headers={"User-Agent": _UA})
+    got = 0
+    last = 0.0
+    with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
+        while True:
+            buf = r.read(2 * 1024 * 1024)
+            if not buf:
+                break
+            f.write(buf)
+            got += len(buf)
+            if progress and time.time() - last > 0.5:
+                last = time.time()
+                print(f"\r  {label}: {got//1024//1024}/{total//1024//1024} MiB "
+                      f"({got*100//total}%) [1 stream]   ",
+                      end="", file=sys.stderr, flush=True)
+    if progress:
+        print("", file=sys.stderr, flush=True)
+    if os.path.getsize(tmp) != total:
+        raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
+    os.replace(tmp, dest)
+    return dest
+
+
 def download_parallel(url: str, dest: str, threads: int = 8, *,
                       progress: bool = True, chunk_mb: int = 64) -> str:
     """Download ``url`` to ``dest`` with ``threads`` workers pulling fixed-size
@@ -38,12 +68,27 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
         with urllib.request.urlopen(req) as r:
             return int(r.headers.get("Content-Length") or 0)
 
+    def _supports_ranges() -> bool:
+        # A server that honours Range answers a 1-byte request with 206 +
+        # Content-Range. If it returns 200 (whole body), parallel ranges would
+        # each re-download the entire file -> overflow/corruption (the 167% bug).
+        req = urllib.request.Request(
+            url, headers={"User-Agent": _UA, "Range": "bytes=0-0"})
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.getcode() == 206 or bool(r.headers.get("Content-Range"))
+        except urllib.error.HTTPError as e:
+            return e.code == 206
+
     last_err = None
     for attempt in range(1, 4):
         try:
             total = _head_total()
             if total <= 0:
                 raise IOError("no Content-Length from server")
+            if not _supports_ranges():
+                logger.info("  %s: server ignores Range -> single-stream", label)
+                return _download_single(url, dest, total, progress=progress)
             chunk = max(1, chunk_mb) * 1024 * 1024
             jobs: "queue.Queue" = queue.Queue()
             for start in range(0, total, chunk):
@@ -73,6 +118,14 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                                     buf = r.read(2 * 1024 * 1024)
                                     if not buf:
                                         break
+                                    # Clamp to this chunk: a server that ignored
+                                    # Range would otherwise stream the whole file
+                                    # and overflow past `end`.
+                                    room = end - off + 1
+                                    if room <= 0:
+                                        break
+                                    if len(buf) > room:
+                                        buf = buf[:room]
                                     os.pwrite(fd, buf, off)
                                     off += len(buf)
                                     with lock:
