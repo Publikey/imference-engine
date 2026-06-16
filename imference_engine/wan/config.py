@@ -83,5 +83,10 @@ class WanRuntimeConfig:
     """HF cache dir (maps to HF_HOME). Put on a big volume — GGUF experts are
     ~15 GB each. None = default HF cache."""
 
+    model_cdn: Optional[str] = None
+    """Base URL of a CDN mirroring `<repo>/<filename>` paths. When set, GGUF
+    experts + LoRAs are fetched on demand from the CDN instead of HuggingFace
+    (the shared base still loads from the cached HF repo). None = use HF."""
+
     vae_tiling: bool = True
     """Enable VAE tiling + slicing (cuts decode VRAM for long/large videos)."""

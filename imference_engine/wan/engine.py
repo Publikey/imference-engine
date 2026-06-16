@@ -68,6 +68,7 @@ class WanEngine:
             vae_tiling=self._runtime.vae_tiling,
             max_resident=self._runtime.max_resident_variants or 1,
             cache_dir=cache_dir,
+            cdn_base=self._runtime.model_cdn,
         )
         self._loaded = True
         return self
