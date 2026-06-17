@@ -88,18 +88,42 @@ class ResidencyManager:
         while len(self._pipes) > max(0, target):
             evicted_name, evicted_pipe = self._pipes.popitem(last=False)  # LRU
             logger.info("Evicting resident variant %r (LRU)", evicted_name)
-            del evicted_pipe
+            self._teardown(evicted_pipe)
+            evicted_pipe = None
             self._free_cache()
             if self._on_evicted:
                 self._on_evicted(evicted_name)
 
     @staticmethod
+    def _teardown(pipe: Any) -> None:
+        """Actually release a pipeline's RAM before the next variant builds.
+
+        ``enable_model_cpu_offload`` leaves accelerate hooks + pinned host buffers
+        that a bare ``del`` does NOT return, so a switch kept ~2 variants' weights
+        in RAM -> OOM on small-RAM hosts even after eviction. Remove the hooks and
+        drop the big per-variant modules (the shared text_encoder/vae live on the
+        SharedComponents and are deliberately left untouched)."""
+        for fn in ("remove_all_hooks", "maybe_free_model_hooks"):
+            try:
+                getattr(pipe, fn)()
+            except Exception:  # noqa: BLE001
+                pass
+        for attr in ("transformer", "transformer_2"):
+            try:
+                if getattr(pipe, attr, None) is not None:
+                    setattr(pipe, attr, None)
+            except Exception:  # noqa: BLE001
+                pass
+
+    @staticmethod
     def _free_cache() -> None:
         gc.collect()
+        gc.collect()  # second pass collects cycles freed by the first
         try:
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                torch.cuda.synchronize()
         except ImportError:
             pass
 
