@@ -12,6 +12,7 @@ concurrent callers must serialize.
 from __future__ import annotations
 
 import logging
+import os
 import random
 from typing import TYPE_CHECKING, Optional
 
@@ -27,6 +28,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_SEED = 2 ** 31 - 1
+
+# Profiles ordered by RAM/VRAM footprint (higher = heavier) for clamping.
+_RANK = {MemoryProfile.GGUF_Q4: 1, MemoryProfile.GGUF_Q5: 2,
+         MemoryProfile.GGUF_Q6: 3, MemoryProfile.GGUF_Q8: 4,
+         MemoryProfile.BF16: 5}
+
+
+def _clamp_profile(by_vram: MemoryProfile, by_ram: MemoryProfile) -> MemoryProfile:
+    """Pick the lighter-footprint of the VRAM- and RAM-based choices."""
+    return by_vram if _RANK[by_vram] <= _RANK[by_ram] else by_ram
+
+
+def _total_ram_gb() -> float:
+    """Best-effort total CPU RAM in GiB — cgroup limit (container) else physical.
+
+    Mirrors the worker's cgroup-aware sizing so the auto profile sees the *real*
+    memory the process is allowed, not the host's. Unknown -> inf (don't clamp)."""
+    for path in ("/sys/fs/cgroup/memory.max",
+                 "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = open(path).read().strip()
+        except OSError:
+            continue
+        if raw == "max":
+            break
+        try:
+            val = int(raw) / 1024 ** 3
+        except ValueError:
+            break
+        # cgroup v1 "no limit" is a huge sentinel; ignore implausible values.
+        if 0 < val < 1024 * 1024:
+            return val
+        break
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024 ** 3
+    except (ValueError, OSError):
+        return float("inf")
 
 
 class WanEngine:
@@ -78,9 +116,15 @@ class WanEngine:
         if not is_cuda:
             return MemoryProfile.GGUF_Q4
         import torch
-        gb = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
-        profile = MemoryProfile.for_vram(gb)
-        logger.info("auto profile: %.0f GB VRAM -> %s", gb, profile.value)
+        vram = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+        ram = _total_ram_gb()
+        # Clamp to the lighter of the VRAM- and RAM-based picks: a big-VRAM/
+        # small-RAM box would OOM in CPU RAM on the VRAM-only pick (e.g. 24 GB
+        # GPU / 50 GB RAM -> Q8 OOM).
+        profile = _clamp_profile(MemoryProfile.for_vram(vram),
+                                 MemoryProfile.for_ram(ram))
+        logger.info("auto profile: %.0f GB VRAM / %.0f GB RAM -> %s",
+                    vram, ram, profile.value)
         return profile
 
     def register_variant(self, variant: WanVariant) -> None:

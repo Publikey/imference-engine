@@ -56,6 +56,23 @@ class MemoryProfile(str, Enum):
             return cls.GGUF_Q6   # 16 GB — recommended, minimal quality loss
         return cls.GGUF_Q4       # 12 GB — best effort
 
+    @classmethod
+    def for_ram(cls, total_gb: float) -> "MemoryProfile":
+        """Pick a GGUF quant for the host's CPU RAM.
+
+        Under ``enable_model_cpu_offload`` the experts live in RAM, so RAM — not
+        just VRAM — caps the quant. Measured: a resident variant + generation
+        working set is ~61 GB at Q8, ~54 GB at Q6, ~48 GB at Q4 (P1g). A box with
+        big VRAM but small RAM (e.g. 24 GB GPU / 50 GB RAM) OOMs on Q8, so the auto
+        profile must clamp by RAM too. Thresholds keep working-set headroom and
+        stay on uploaded quants (Q8/Q6/Q4, never Q5).
+        """
+        if total_gb >= 64:
+            return cls.GGUF_Q8
+        if total_gb >= 56:
+            return cls.GGUF_Q6
+        return cls.GGUF_Q4
+
 
 
 @dataclass
