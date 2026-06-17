@@ -107,3 +107,11 @@ class WanRuntimeConfig:
 
     vae_tiling: bool = True
     """Enable VAE tiling + slicing (cuts decode VRAM for long/large videos)."""
+
+    text_encoder_quant: str = "int8"
+    """Weight-only quant for the shared UMT5 text encoder: "int8" | "none".
+    int8 (torchao) saves ~4-6 GB CPU RAM at equivalent quality (the encoder runs
+    once per generation, so it tolerates quant well). GRACEFUL: if torchao is
+    absent or quantization fails, it falls back to bf16 automatically — so this is
+    safe to leave on everywhere. Set "none" to force bf16."""
+

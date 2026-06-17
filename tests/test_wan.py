@@ -153,3 +153,15 @@ def test_residency_evicts_before_build(monkeypatch):
     m.get_or_load(_variant("a"))
     m.get_or_load(_variant("b"))
     assert events == [("build", "a"), ("evict", "a"), ("build", "b")]
+
+
+def test_text_encoder_quant_graceful():
+    """_quantize_text_encoder must never raise: none -> unchanged; int8 with no
+    torchao (or any failure) -> falls back to the same (bf16) encoder."""
+    from imference_engine.wan.loader import _quantize_text_encoder
+    sentinel = object()
+    assert _quantize_text_encoder(sentinel, "none") is sentinel
+    assert _quantize_text_encoder(sentinel, None) is sentinel
+    # torchao not installed in CI -> graceful fallback, returns the same object
+    assert _quantize_text_encoder(sentinel, "int8") is sentinel
+    assert _quantize_text_encoder(sentinel, "fp8") is sentinel  # unsupported -> bf16
