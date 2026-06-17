@@ -86,12 +86,16 @@ def main() -> None:
     cdn = os.getenv("WAN_MODEL_CDN") or None
     name = args.variant or f"wan22-{args.mode}-lightning"
     variant = BUILTIN_VARIANTS[name]
+    # The text_encoder/VAE/tokenizer ship ONLY under the shared T2V base in the
+    # flat tree (P1g: they're interchangeable T2V<->I2V). The I2V dir has just
+    # configs. So load shared components from here, like the engine's manager.
+    shared_base = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
 
     base = _rss_gb()
     log.info("RSS baseline: %.1f GiB", base)
 
     # --- load the text encoder, measure bf16 then (optionally) quantized ---
-    d = _local_repo_dir(variant.base_repo, _SHARED_PATTERNS, cache_dir)
+    d = _local_repo_dir(shared_base, _SHARED_PATTERNS, cache_dir)
     te = UMT5EncoderModel.from_pretrained(d, subfolder="text_encoder",
                                           torch_dtype=torch.bfloat16)
     gc.collect()
