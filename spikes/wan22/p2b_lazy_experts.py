@@ -99,8 +99,9 @@ def main() -> None:
 
     # ---------------------------------------------------------------- Part B
     # Real baseline: both experts + int8 text encoder + offload, one generation.
-    shared = load_shared_components(variant.base_repo, cache_dir=cache_dir,
-                                    text_encoder_quant="int8")
+    # text_encoder/vae ship only under the shared T2V base in the flat tree (P1g).
+    shared = load_shared_components("Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+                                    cache_dir=cache_dir, text_encoder_quant="int8")
     pipe = build_pipeline(variant, quant=q, shared=shared, device="cuda",
                           enable_offload=True, vae_tiling=True,
                           cache_dir=cache_dir, cdn_base=cdn)
