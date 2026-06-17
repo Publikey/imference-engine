@@ -35,6 +35,7 @@ class ResidencyManager:
         max_resident: int,
         cache_dir: Optional[str] = None,
         cdn_base: Optional[str] = None,
+        text_encoder_quant: str = "none",
         shared_base_repo: str = "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         on_evicted: Optional[Callable[[str], None]] = None,
     ) -> None:
@@ -45,6 +46,7 @@ class ResidencyManager:
         self._max_resident = max(1, max_resident)
         self._cache_dir = cache_dir
         self._cdn_base = cdn_base
+        self._text_encoder_quant = text_encoder_quant
         self._shared_base_repo = shared_base_repo
         self._on_evicted = on_evicted
         self._shared: Optional[SharedComponents] = None
@@ -54,7 +56,8 @@ class ResidencyManager:
         # One global set, reused by every variant (P1g: T2V & I2V share these).
         if self._shared is None:
             self._shared = load_shared_components(
-                self._shared_base_repo, cache_dir=self._cache_dir)
+                self._shared_base_repo, cache_dir=self._cache_dir,
+                text_encoder_quant=self._text_encoder_quant)
         return self._shared
 
     def get_or_load(self, variant) -> Any:

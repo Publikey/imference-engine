@@ -69,7 +69,34 @@ def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str]) -> str:
     return d
 
 
-def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -> SharedComponents:
+def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
+    """Best-effort weight-only int8 quant of the UMT5 text encoder.
+
+    The encoder runs once per generation, so int8 weights hold quality while
+    cutting ~4-6 GB CPU RAM (validated spike P2a). GRACEFUL: torchao missing,
+    API drift, or any failure -> keep the bf16 encoder (never breaks a host)."""
+    if not quant or quant == "none":
+        return te
+    if quant != "int8":
+        logger.warning("text_encoder_quant=%r unsupported (use int8|none); bf16", quant)
+        return te
+    try:
+        from torchao.quantization import quantize_
+        try:
+            from torchao.quantization import Int8WeightOnlyConfig
+            cfg = Int8WeightOnlyConfig()
+        except ImportError:  # older torchao exposes a factory fn instead
+            from torchao.quantization import int8_weight_only
+            cfg = int8_weight_only()
+        quantize_(te, cfg)
+        logger.info("text_encoder quantized to int8 (torchao weight-only)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("text_encoder int8 quant unavailable (%s); using bf16", e)
+    return te
+
+
+def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
+                           text_encoder_quant: str = "none") -> SharedComponents:
     import torch
     from diffusers import AutoencoderKLWan
     from transformers import AutoTokenizer, UMT5EncoderModel
@@ -78,6 +105,7 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None) -
     logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
         d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+    text_encoder = _quantize_text_encoder(text_encoder, text_encoder_quant)
     tokenizer = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(
         d, subfolder="vae", torch_dtype=torch.float32)

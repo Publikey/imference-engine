@@ -107,6 +107,7 @@ class WanEngine:
             max_resident=self._runtime.max_resident_variants or 1,
             cache_dir=cache_dir,
             cdn_base=self._runtime.model_cdn,
+            text_encoder_quant=self._runtime.text_encoder_quant,
         )
         self._loaded = True
         return self
