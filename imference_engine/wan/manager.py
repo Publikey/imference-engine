@@ -64,6 +64,11 @@ class ResidencyManager:
             self._pipes.move_to_end(name)  # mark MRU
             return self._pipes[name]
 
+        # Free RAM BEFORE building the new pipeline so a switch never holds two
+        # variants resident at once. The old code built first then evicted, so a
+        # t2v->i2v switch briefly kept ~2x weights in RAM -> OOM on small-RAM
+        # hosts even with max_resident=1. Evict down to (max-1), then build.
+        self._evict_to(self._max_resident - 1)
         pipe = build_pipeline(
             variant,
             quant=self._quant,
@@ -76,11 +81,11 @@ class ResidencyManager:
         )
         self._pipes[name] = pipe
         self._pipes.move_to_end(name)
-        self._evict_if_needed()
         return pipe
 
-    def _evict_if_needed(self) -> None:
-        while len(self._pipes) > self._max_resident:
+    def _evict_to(self, target: int) -> None:
+        """Evict LRU pipelines until at most ``target`` remain (frees RAM first)."""
+        while len(self._pipes) > max(0, target):
             evicted_name, evicted_pipe = self._pipes.popitem(last=False)  # LRU
             logger.info("Evicting resident variant %r (LRU)", evicted_name)
             del evicted_pipe

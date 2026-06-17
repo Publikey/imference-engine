@@ -114,3 +114,42 @@ def test_residency_single_resident(monkeypatch):
     m.get_or_load(_variant("a"))
     m.get_or_load(_variant("b"))
     assert m.resident == ["b"]  # single-resident evicts immediately
+
+
+def test_memory_profile_for_ram():
+    assert MemoryProfile.for_ram(1024) == MemoryProfile.GGUF_Q8
+    assert MemoryProfile.for_ram(64) == MemoryProfile.GGUF_Q8
+    assert MemoryProfile.for_ram(60) == MemoryProfile.GGUF_Q6
+    assert MemoryProfile.for_ram(50) == MemoryProfile.GGUF_Q4  # the OOM box
+
+
+def test_auto_profile_clamps_to_lighter():
+    from imference_engine.wan.engine import _clamp_profile
+    Q8, Q6, Q4 = (MemoryProfile.GGUF_Q8, MemoryProfile.GGUF_Q6,
+                  MemoryProfile.GGUF_Q4)
+    # 24 GB GPU (Q8) but 50 GB RAM (Q4) -> clamp down to Q4 (avoids the OOM)
+    assert _clamp_profile(Q8, Q4) == Q4
+    assert _clamp_profile(Q8, Q6) == Q6
+    # plenty of RAM -> the VRAM pick wins
+    assert _clamp_profile(Q6, Q8) == Q6
+    assert _clamp_profile(Q8, Q8) == Q8
+
+
+def test_residency_evicts_before_build(monkeypatch):
+    """A switch must FREE the old variant before BUILDING the new one, so RAM
+    never holds two variants at once (the small-RAM OOM)."""
+    events: list = []
+    monkeypatch.setattr(mgr_mod, "load_shared_components",
+                        lambda base, cache_dir=None: object())
+
+    def fake_build(variant, **kw):
+        events.append(("build", variant.name))
+        return f"pipe:{variant.name}"
+
+    monkeypatch.setattr(mgr_mod, "build_pipeline", fake_build)
+    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
+                         vae_tiling=True, max_resident=1,
+                         on_evicted=lambda n: events.append(("evict", n)))
+    m.get_or_load(_variant("a"))
+    m.get_or_load(_variant("b"))
+    assert events == [("build", "a"), ("evict", "a"), ("build", "b")]
