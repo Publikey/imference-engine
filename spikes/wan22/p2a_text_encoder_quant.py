@@ -44,15 +44,39 @@ def _rss_gb() -> float:
         return float("nan")
 
 
+def _param_gib(model) -> float:
+    """Sum of parameter bytes (GiB) — reliable weight size (RSS lies under mmap)."""
+    total = 0
+    for p in model.parameters():
+        try:
+            total += p.numel() * p.element_size()
+        except Exception:  # noqa: BLE001 (quantized tensor subclasses)
+            pass
+    return total / 1024 ** 3
+
+
 def _apply_quant(model, quant: str) -> None:
-    from torchao.quantization import (float8_weight_only, int8_weight_only,
-                                      quantize_)
+    # torchao 0.17 moved to Config objects (Int8WeightOnlyConfig); older releases
+    # used factory fns (int8_weight_only). Try the new API, fall back to the old —
+    # and import ONLY the one we need so a missing fp8 symbol can't break int8.
+    from torchao.quantization import quantize_
     if quant == "int8":
-        quantize_(model, int8_weight_only())
+        try:
+            from torchao.quantization import Int8WeightOnlyConfig
+            cfg = Int8WeightOnlyConfig()
+        except ImportError:
+            from torchao.quantization import int8_weight_only
+            cfg = int8_weight_only()
     elif quant == "fp8":
-        quantize_(model, float8_weight_only())
+        try:
+            from torchao.quantization import Float8WeightOnlyConfig
+            cfg = Float8WeightOnlyConfig()
+        except ImportError:
+            from torchao.quantization import float8_weight_only
+            cfg = float8_weight_only()
     else:
         raise ValueError(quant)
+    quantize_(model, cfg)
 
 
 def main() -> None:
@@ -99,14 +123,14 @@ def main() -> None:
     te = UMT5EncoderModel.from_pretrained(d, subfolder="text_encoder",
                                           torch_dtype=torch.bfloat16)
     gc.collect()
-    rss_bf16 = _rss_gb()
-    log.info("text encoder bf16: +%.1f GiB (RSS %.1f)", rss_bf16 - base, rss_bf16)
+    w_bf16 = _param_gib(te)
+    log.info("text encoder bf16 weights: %.1f GiB (RSS %.1f)", w_bf16, _rss_gb())
     if args.quant != "none":
         _apply_quant(te, args.quant)
         gc.collect()
-        rss_q = _rss_gb()
-        log.info("text encoder %s : +%.1f GiB (RSS %.1f)  --> SAVED %.1f GiB",
-                 args.quant, rss_q - base, rss_q, rss_bf16 - rss_q)
+        w_q = _param_gib(te)
+        log.info("text encoder %s weights: %.1f GiB (RSS %.1f)  --> SAVED ~%.1f GiB",
+                 args.quant, w_q, _rss_gb(), w_bf16 - w_q)
 
     tok = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(d, subfolder="vae", torch_dtype=torch.float32)
