@@ -22,10 +22,15 @@ class ZImageBackend(PipelineBackend):
 
     engine: ClassVar[str] = "zimage"
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, cache_dir: Optional[str] = None, cdn_base: Optional[str] = None
+    ) -> None:
         # No scheduler cache: Z-Image only uses FlowMatchEulerDiscreteScheduler,
         # which we re-instantiate cheaply with the requested `shift` per request.
-        pass
+        # Flat offline tree root + optional CDN mirror, threaded from RuntimeConfig.
+        # Consumed by the offline base-component loading (the base_model path).
+        self._cache_dir = cache_dir
+        self._cdn_base = cdn_base
 
     # ------------------------------------------------------------------
     # Loading

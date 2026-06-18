@@ -47,6 +47,16 @@ class RuntimeConfig:
     (e.g. 2x SDXL on a 24 GB A10) can bump this to amortize swap cost."""
 
     model_cache_dir: Optional[Union[str, Path]] = None
+    """Root of the flat, symlink-free offline model tree (IMAGE_MODEL_CACHE). The
+    backends resolve shared base-components (SDXL config + tokenizers + fp16-fix
+    VAE; Z-Image base text_encoder/vae) into it, so a cold load is fully offline
+    under HF_HUB_OFFLINE=1 once the tree is populated (base tarball / prefetch)."""
+
+    model_cdn: Optional[str] = None
+    """Base URL of a CDN (R2) mirroring the same <repo>/<file> layout. When set,
+    on-demand base-components download from the CDN instead of HF. Mirror of
+    WanRuntimeConfig.model_cdn."""
+
     lora_cache_dir: Optional[Union[str, Path]] = None
 
     use_tiny_vae: bool = False
@@ -131,9 +141,15 @@ class Engine:
 
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
+        cache_dir = (str(self._runtime.model_cache_dir)
+                     if self._runtime.model_cache_dir else None)
+        cdn_base = self._runtime.model_cdn
         self._backends = {
-            SDXLBackend.engine: SDXLBackend(use_tiny_vae=self._runtime.use_tiny_vae),
-            ZImageBackend.engine: ZImageBackend(),
+            SDXLBackend.engine: SDXLBackend(
+                use_tiny_vae=self._runtime.use_tiny_vae,
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            ZImageBackend.engine: ZImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
         max_gpu = self._runtime.max_gpu_models or 1

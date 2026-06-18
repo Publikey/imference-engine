@@ -48,6 +48,41 @@ def test_engine_runtime_config_propagates_tiny_vae():
     assert engine2._backends["sdxl"]._use_tiny_vae is False
 
 
+def test_config_repo_pins_and_patterns_exclude_weights():
+    """from_single_file's layout comes from a mirrored config dir — pin the repo
+    and make sure the patterns pull config/tokenizers only, never the weights
+    (the checkpoint supplies those; mirroring weights would bloat the tree)."""
+    assert SDXLBackend.CONFIG_REPO == "stabilityai/stable-diffusion-xl-base-1.0"
+    pats = SDXLBackend.CONFIG_PATTERNS
+    assert "model_index.json" in pats
+    assert "tokenizer/*" in pats and "tokenizer_2/*" in pats
+    # config-only for the encoders/vae; no '*.safetensors' / weight globs.
+    assert "text_encoder/config.json" in pats
+    assert not any("safetensors" in p or "model.fp16" in p for p in pats)
+
+
+def test_engine_threads_cache_and_cdn_into_backends():
+    """model_cache_dir + model_cdn (IMAGE_MODEL_CACHE / IMAGE_MODEL_CDN) must flow
+    from RuntimeConfig into BOTH backends so cold loads resolve base-components
+    from the flat offline tree / CDN instead of HF."""
+    from imference_engine import Engine, RuntimeConfig
+
+    engine = Engine(runtime=RuntimeConfig(
+        device="cpu",
+        model_cache_dir="/data/image-tree",
+        model_cdn="https://cdn.example/image",
+    )).load()
+    for name in ("sdxl", "zimage"):
+        be = engine._backends[name]
+        assert be._cache_dir == "/data/image-tree"
+        assert be._cdn_base == "https://cdn.example/image"
+
+    # Defaults: None (HF-cache behaviour) when unset.
+    engine2 = Engine(runtime=RuntimeConfig(device="cpu")).load()
+    assert engine2._backends["sdxl"]._cache_dir is None
+    assert engine2._backends["sdxl"]._cdn_base is None
+
+
 def test_engine_runtime_config_propagates_cpu_offload():
     """enable_cpu_offload flag flows from RuntimeConfig into the ModelManager
     so _swap_pipe_to_gpu takes the accelerate path instead of pipe.to(device)."""

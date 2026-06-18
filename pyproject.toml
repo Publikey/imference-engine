@@ -33,9 +33,13 @@ dependencies = [
 # ML versions are pinned to the gen-image-worker prod combo. Tightly coupled:
 # diffusers+transformers+accelerate+peft must be upgraded together with care
 # (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
+# diffusers is on 0.38.0 (the latest release) — the SAME version the [wan] extra
+# uses, so the image and video stacks now share one diffusers. SDXL/Z-Image
+# from_single_file(config=<local dir>) is thus exercised on the exact diffusers
+# the Wan side already validated offline.
 runtime = [
     "torch>=2.6",
-    "diffusers==0.37.0",
+    "diffusers==0.38.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -50,9 +54,9 @@ runtime = [
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
-# Wan2.2 video stack — the validated combo (diffusers 0.38 + gguf). Kept SEPARATE
-# from [runtime] because Wan needs diffusers 0.38 while the image side (SDXL/
-# Z-Image) is pinned to 0.37. Install with: pip install "imference-engine[wan]".
+# Wan2.2 video stack — the validated combo (diffusers 0.38 + gguf). Shares the
+# same diffusers pin as [runtime] now (both 0.38.0); kept as a SEPARATE extra
+# only for the extra gguf/imageio video deps. Install: pip install "imference-engine[wan]".
 # torch>=2.6 is required (the FA3 custom op breaks the import on torch 2.4);
 # install the CUDA build from your base image.
 wan = [
