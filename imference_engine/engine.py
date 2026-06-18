@@ -262,10 +262,18 @@ class Engine:
             raise RuntimeError("Call Engine.load() before generate")
         if loras:
             logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
-        if source_image is not None:
-            raise NotImplementedError("img2img lifted in a follow-up PR")
 
         pipe, backend = self._models.get_or_load(model)
+        # img2img: wrap the resident t2i pipe in the backend's img2img pipeline.
+        # make_img2img reuses the SAME in-memory modules (vae/text_encoder/unet|
+        # transformer/scheduler), so it's a cheap reference wrapper on the already-
+        # resident weights — no extra disk load and no separate device accounting
+        # (the shared modules are already on the active device). Built per request
+        # rather than cached: the wrapper is light and this avoids shadowing the
+        # ModelManager's residency bookkeeping.
+        is_img2img = source_image is not None
+        if is_img2img:
+            pipe = backend.make_img2img(pipe)
         backend.apply_scheduler(pipe, scheduler, **(backend_options or {}))
         prompt_kwargs = backend.encode_prompts(pipe, prompt, negative_prompt)
 
@@ -284,7 +292,9 @@ class Engine:
             guidance_scale=guidance_scale,
             clip_skip=clip_skip,
             seeds=seeds,
-            is_img2img=False,
+            is_img2img=is_img2img,
+            source_image=source_image,
+            strength=strength,
         )
 
     def _run_chunked(
@@ -300,6 +310,8 @@ class Engine:
         clip_skip: Optional[int],
         seeds: list[int],
         is_img2img: bool,
+        source_image: Optional["Image"] = None,
+        strength: float = 0.75,
     ) -> GenerationResult:
         batch_total = len(seeds)
         max_gpu_batch = self._batch_sizer.get_max_batch_size(backend.engine, is_img2img)
@@ -342,6 +354,8 @@ class Engine:
                     clip_skip=clip_skip,
                     chunk_size=chunk_size,
                     generator=generator,
+                    image=source_image,
+                    strength=strength,
                 )
                 produced = pipe(**prompt_kwargs, **kwargs).images
 

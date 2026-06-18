@@ -81,10 +81,14 @@ class PipelineBackend(ABC):
         clip_skip: Optional[int],
         chunk_size: int,
         generator: Any,
+        image: Any = None,
+        strength: float = 0.75,
     ) -> dict:
         """Build positional kwargs for pipe(...) for one batch chunk.
 
-        SDXL passes clip_skip; Z-Image does not.
+        SDXL passes clip_skip; Z-Image does not. When ``image`` is not None the
+        call is img2img: include ``image`` + ``strength`` and let the pipeline
+        take the output size from the source image (omit width/height).
         """
 
     @abstractmethod

@@ -192,15 +192,22 @@ class SDXLBackend(PipelineBackend):
         clip_skip: Optional[int],
         chunk_size: int,
         generator: Any,
+        image: Any = None,
+        strength: float = 0.75,
     ) -> dict:
         kwargs = {
-            "width": width,
-            "height": height,
             "num_inference_steps": num_steps,
             "guidance_scale": guidance_scale,
             "generator": generator,
             "num_images_per_prompt": chunk_size,
         }
+        if image is not None:
+            # img2img: the pipeline derives the output size from the source image.
+            kwargs["image"] = image
+            kwargs["strength"] = strength
+        else:
+            kwargs["width"] = width
+            kwargs["height"] = height
         if clip_skip is not None and clip_skip > 0:
             kwargs["clip_skip"] = clip_skip
         return kwargs
