@@ -73,7 +73,7 @@ def test_residency_lru(monkeypatch):
     built: list[str] = []
     evicted: list[str] = []
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none": object())
 
     def fake_build(variant, **kwargs):
         built.append(variant.name)
@@ -106,7 +106,7 @@ def test_residency_lru(monkeypatch):
 
 def test_residency_single_resident(monkeypatch):
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none": object())
     monkeypatch.setattr(mgr_mod, "build_pipeline",
                         lambda variant, **kw: f"pipe:{variant.name}")
     m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
@@ -140,7 +140,7 @@ def test_residency_evicts_before_build(monkeypatch):
     never holds two variants at once (the small-RAM OOM)."""
     events: list = []
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none": object())
 
     def fake_build(variant, **kw):
         events.append(("build", variant.name))

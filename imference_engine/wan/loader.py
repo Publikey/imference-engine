@@ -38,35 +38,18 @@ _BASE_CFG_PATTERNS = ["model_index.json", "scheduler/*",
                       "transformer/config.json", "transformer_2/config.json"]
 
 
+# The flat-tree resolver + downloader now live in imference_engine.runtime.offline
+# (shared with the image side). These thin wrappers pin namespace="wan" so the Wan
+# tree stays at <HF_HOME>/wan exactly as before — internal callers keep the local
+# names and signatures, so nothing else in this module changes.
 def _flat_root(cache_dir: Optional[str]) -> str:
-    """Root of the FLAT, symlink-free model tree (<root>/<repo>/<file>).
-
-    Unified for the base configs AND the GGUF/LoRA. Defaults next to the HF cache
-    on the big volume; overridable via cache_dir (WAN_MODEL_CACHE)."""
-    import os
-    if cache_dir:
-        return cache_dir
-    hf = os.environ.get("HF_HOME")
-    return os.path.join(hf, "wan") if hf else os.path.join(
-        os.path.expanduser("~"), ".cache", "wan")
+    from imference_engine.runtime.offline import flat_root
+    return flat_root(cache_dir, namespace="wan")
 
 
 def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str]) -> str:
-    """Ensure a base repo's needed files are in a FLAT local dir and return it.
-
-    Uses ``snapshot_download(local_dir=...)``, which writes real files (NO
-    symlinks) on every OS -> the tree is portable Windows<->Mac<->Linux, unlike
-    the symlinked HF cache. Idempotent; offline once populated (from_pretrained
-    then just reads local files)."""
-    import os
-    d = os.path.join(_flat_root(cache_dir), repo)
-    # Already populated (shipped tree)? Return without any network/snapshot call,
-    # so a pre-shipped tree works fully offline.
-    if os.path.exists(os.path.join(d, "model_index.json")):
-        return d
-    from huggingface_hub import snapshot_download
-    snapshot_download(repo, allow_patterns=patterns, local_dir=d)
-    return d
+    from imference_engine.runtime.offline import local_repo_dir
+    return local_repo_dir(repo, patterns, cache_dir, namespace="wan")
 
 
 def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
@@ -114,25 +97,14 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
 
 
 def _cdn_download(cdn_base: str, repo: str, filename: str, cache_dir: Optional[str]) -> str:
-    """Fetch <cdn_base>/<repo>/<filename> into the flat tree (skip if present).
-
-    Uses the parallel multi-stream downloader (plain HTTP), so it works alongside
-    HF_HUB_OFFLINE=1 and saturates the CDN link."""
-    import os
-    dest = os.path.join(_flat_root(cache_dir), repo, filename)
-    if not os.path.exists(dest):
-        from imference_engine.wan.download import download_parallel
-        url = f"{cdn_base.rstrip('/')}/{repo}/{filename}"
-        logger.info("  CDN fetch %s", url)
-        download_parallel(url, dest, int(os.environ.get("WAN_CDN_THREADS", "8")))
-    return dest
+    from imference_engine.runtime.offline import cdn_download
+    return cdn_download(cdn_base, repo, filename, cache_dir, namespace="wan")
 
 
 def _fetch(repo: str, filename: str, cdn_base: Optional[str], cache_dir: Optional[str]) -> str:
-    """Local path for a model file — into the FLAT tree, from the CDN if set else HF.
-
-    Both paths land at <flat_root>/<repo>/<filename> (no symlinks), so the whole
-    tree is portable + shippable + offline once present."""
+    """Local path for a model file — CDN if set else HF. Branches locally (rather
+    than delegating wholesale) so the local ``_cdn_download`` stays the seam that
+    callers/tests monkeypatch."""
     if cdn_base:
         return _cdn_download(cdn_base, repo, filename, cache_dir)
     import os
