@@ -76,6 +76,33 @@ class RuntimeConfig:
     Strongly recommended on ≤8 GB VRAM where the model otherwise saturates.
     Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
 
+    @classmethod
+    def from_env(cls) -> "RuntimeConfig":
+        """Build a config from the documented image-side env contract.
+
+        Every field falls back to its dataclass default when the env var is
+        unset, so this is safe to call with NO environment at all (the desktop
+        path constructs ``RuntimeConfig(...)`` directly instead). Workers call
+        ``from_env()`` then override ``max_gpu_models`` / ``max_cpu_models`` with
+        hardware-detected values (``config/resource_detection.py``) — that is the
+        decoupling seam: the engine honours a static env/param contract; the
+        worker layers hardware detection on top.
+
+        ``MAX_GPU_MODELS`` / ``MAX_CPU_MODELS`` accept an integer; ``auto`` or
+        unset leaves the field ``None`` (engine default = 1 GPU / 0 CPU). See
+        ``imference_engine/pipelines/README.md`` for the full table.
+        """
+        from imference_engine.runtime.env import env_bool, env_int_or_none, env_str
+        return cls(
+            device=env_str("IMAGE_DEVICE", "auto"),
+            model_cache_dir=env_str("IMAGE_MODEL_CACHE"),
+            model_cdn=env_str("IMAGE_MODEL_CDN"),
+            max_gpu_models=env_int_or_none("MAX_GPU_MODELS"),
+            max_cpu_models=env_int_or_none("MAX_CPU_MODELS"),
+            use_tiny_vae=env_bool("IMAGE_USE_TINY_VAE", False),
+            enable_cpu_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+        )
+
 
 class Engine:
     """High-level diffusion inference engine.

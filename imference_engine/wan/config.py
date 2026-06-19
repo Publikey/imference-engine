@@ -115,3 +115,26 @@ class WanRuntimeConfig:
     absent or quantization fails, it falls back to bf16 automatically — so this is
     safe to leave on everywhere. Set "none" to force bf16."""
 
+    @classmethod
+    def from_env(cls) -> "WanRuntimeConfig":
+        """Build a config from the documented Wan env contract.
+
+        Safe with NO environment (desktop builds ``WanRuntimeConfig(...)``
+        directly). Workers call ``from_env()`` then override
+        ``max_resident_variants`` with a cgroup-aware value. Note
+        ``memory_profile`` defaults to ``"auto"`` here (resolve the GGUF quant
+        from VRAM/RAM at ``load()``) — the worker-friendly choice, unlike the
+        dataclass default ``GGUF_Q8``. See ``imference_engine/wan/README.md``.
+        """
+        from imference_engine.runtime.env import env_bool, env_int_or_none, env_str
+        return cls(
+            device=env_str("WAN_DEVICE", "auto"),
+            memory_profile=env_str("WAN_PROFILE", "auto"),
+            max_resident_variants=env_int_or_none("WAN_MAX_RESIDENT") or 1,
+            model_cache_dir=env_str("WAN_MODEL_CACHE"),
+            model_cdn=env_str("WAN_MODEL_CDN"),
+            text_encoder_quant=env_str("WAN_TEXT_ENCODER_QUANT", "int8"),
+            vae_tiling=env_bool("WAN_VAE_TILING", True),
+            enable_offload=env_bool("WAN_ENABLE_OFFLOAD", True),
+        )
+
