@@ -75,6 +75,29 @@ def local_repo_dir(
     return d
 
 
+def write_manifest(repo_dir: str, *, name: str = ".manifest.json") -> list:
+    """Write the CDN manifest for a flat repo dir and return the file list.
+
+    The manifest is a JSON list of repo-relative, forward-slash file paths — the
+    exact list ``_cdn_snapshot`` reads back to populate a tree from the CDN. Kept
+    next to the reader so writer/reader can't drift. Excludes the manifest file
+    itself. Called by the workers' ``prefetch.py`` after staging each repo.
+    """
+    import json
+
+    files = []
+    for dirpath, _, filenames in os.walk(repo_dir):
+        for fn in filenames:
+            if fn == name:
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, fn), repo_dir)
+            files.append(rel.replace(os.sep, "/"))
+    files.sort()
+    with open(os.path.join(repo_dir, name), "w") as f:
+        json.dump(files, f, indent=0)
+    return files
+
+
 def _cdn_threads() -> int:
     """Parallel HTTP streams for CDN pulls. ``IMAGE_CDN_THREADS`` (image side)
     aliases ``WAN_CDN_THREADS``; default 8."""

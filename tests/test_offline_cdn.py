@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from imference_engine.runtime.offline import local_repo_dir
+from imference_engine.runtime.offline import local_repo_dir, write_manifest
 
 REPO = "stabilityai/stable-diffusion-xl-base-1.0"
 FILES = {
@@ -70,9 +70,27 @@ class _RangeHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
 
+def test_write_manifest_roundtrip(tmp_path):
+    """The prefetch-side writer emits exactly what the CDN reader expects."""
+    repo_dir = tmp_path / "repo"
+    for rel, content in FILES.items():
+        p = repo_dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+    listed = write_manifest(str(repo_dir))
+    assert listed == sorted(FILES)  # sorted, forward-slash, excludes itself
+    on_disk = json.loads((repo_dir / ".manifest.json").read_text())
+    assert on_disk == sorted(FILES)
+    assert ".manifest.json" not in on_disk
+
+
 @pytest.fixture
 def cdn_server(tmp_path):
-    """A local HTTP mirror serving <repo>/.manifest.json + the repo files."""
+    """A local HTTP mirror serving <repo>/.manifest.json + the repo files.
+
+    The manifest is produced by the real write_manifest (prefetch path), so this
+    fixture also exercises the writer<->reader contract end to end.
+    """
     root = tmp_path / "cdn"
     repo_dir = root / REPO
     repo_dir.mkdir(parents=True)
@@ -80,7 +98,7 @@ def cdn_server(tmp_path):
         p = repo_dir / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
-    (repo_dir / ".manifest.json").write_text(json.dumps(list(FILES)))
+    write_manifest(str(repo_dir))
 
     _RangeHandler.root = str(root)
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
