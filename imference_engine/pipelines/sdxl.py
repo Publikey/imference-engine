@@ -71,7 +71,8 @@ class SDXLBackend(PipelineBackend):
         # Pin the layout to a LOCAL config dir (+ local_files_only) so from_single_file
         # never reaches out to HF for model_index/scheduler/tokenizers.
         cfg_dir = local_repo_dir(
-            self.CONFIG_REPO, self.CONFIG_PATTERNS, self._cache_dir, namespace="image")
+            self.CONFIG_REPO, self.CONFIG_PATTERNS, self._cache_dir,
+            namespace="image", cdn_base=self._cdn_base)
 
         logger.info(f"Loading SDXL pipeline from {local_path} (config={cfg_dir})")
         pipe = StableDiffusionXLPipeline.from_single_file(
@@ -96,7 +97,7 @@ class SDXLBackend(PipelineBackend):
             logger.info(f"Swapping VAE for TAESD ({self.TINY_VAE_REPO}) — faster decode, slight quality loss")
             vae_dir = local_repo_dir(
                 self.TINY_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
-                namespace="image", sentinel="config.json")
+                namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderTiny.from_pretrained(
                 vae_dir, torch_dtype=torch.float16, local_files_only=True
             )
@@ -112,7 +113,7 @@ class SDXLBackend(PipelineBackend):
             logger.info(f"Swapping VAE for fp16-fix ({self.FP16_VAE_REPO})")
             vae_dir = local_repo_dir(
                 self.FP16_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
-                namespace="image", sentinel="config.json")
+                namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderKL.from_pretrained(
                 vae_dir, torch_dtype=torch.float16, local_files_only=True
             )

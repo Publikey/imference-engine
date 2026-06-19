@@ -83,7 +83,8 @@ class ZImageBackend(PipelineBackend):
         from imference_engine.runtime.offline import local_repo_dir
 
         base_dir = local_repo_dir(
-            base_repo, self.BASE_PATTERNS, self._cache_dir, namespace="image")
+            base_repo, self.BASE_PATTERNS, self._cache_dir, namespace="image",
+            cdn_base=self._cdn_base)
         logger.info(f"Loading Z-Image shared components from {base_dir} (base={base_repo})")
         tokenizer = AutoTokenizer.from_pretrained(
             base_dir, subfolder="tokenizer", local_files_only=True

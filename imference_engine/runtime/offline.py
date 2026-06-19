@@ -41,27 +41,73 @@ def local_repo_dir(
     *,
     namespace: str,
     sentinel: str = "model_index.json",
+    cdn_base: Optional[str] = None,
 ) -> str:
     """Ensure a repo's needed files are in a FLAT local dir and return it.
 
-    Uses ``snapshot_download(local_dir=...)``, which writes real files (NO
-    symlinks) on every OS -> the tree is portable Windows<->Mac<->Linux, unlike
-    the symlinked HF cache. Idempotent; offline once populated (``from_pretrained``
-    then just reads local files).
+    Writes real files (NO symlinks) on every OS -> the tree is portable
+    Windows<->Mac<->Linux, unlike the symlinked HF cache. Idempotent; offline
+    once populated (``from_pretrained`` then just reads local files).
 
-    ``sentinel`` is the marker file that signals "already populated, skip any
-    network/snapshot call". Defaults to ``model_index.json`` (diffusers pipeline
-    repos); pass e.g. ``config.json`` for a single-component repo (a standalone
-    VAE) that has no ``model_index.json``.
+    Population source, in order:
+      1. Already there (sentinel present) -> return, zero network. A pre-shipped
+         tree works fully offline.
+      2. ``cdn_base`` set -> pull the repo's file list from a CDN manifest
+         (``<cdn_base>/<repo>/.manifest.json``) via the parallel downloader.
+         Plain HTTP, so it coexists with ``HF_HUB_OFFLINE=1`` and never touches
+         HuggingFace.
+      3. Otherwise -> ``snapshot_download`` from HuggingFace (dev / online).
+
+    ``sentinel`` is the marker file that signals "already populated". Defaults to
+    ``model_index.json`` (diffusers pipeline repos); pass e.g. ``config.json``
+    for a single-component repo (a standalone VAE) with no ``model_index.json``.
     """
     d = os.path.join(flat_root(cache_dir, namespace=namespace), repo)
     # Already populated (shipped tree)? Return without any network/snapshot call,
     # so a pre-shipped tree works fully offline.
     if os.path.exists(os.path.join(d, sentinel)):
         return d
+    if cdn_base:
+        _cdn_snapshot(cdn_base, repo, d)
+        return d
     from huggingface_hub import snapshot_download
     snapshot_download(repo, allow_patterns=patterns, local_dir=d)
     return d
+
+
+def _cdn_threads() -> int:
+    """Parallel HTTP streams for CDN pulls. ``IMAGE_CDN_THREADS`` (image side)
+    aliases ``WAN_CDN_THREADS``; default 8."""
+    return int(os.environ.get("IMAGE_CDN_THREADS")
+               or os.environ.get("WAN_CDN_THREADS") or "8")
+
+
+def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str) -> None:
+    """Populate a flat local repo dir from a CDN mirror via its manifest.
+
+    Reads ``<cdn_base>/<repo>/.manifest.json`` (a JSON list of repo-relative file
+    paths) and pulls each file to ``<dest_dir>/<rel>`` with the parallel
+    downloader. Idempotent: already-present files are skipped, so a partially
+    warmed tree resumes cleanly. The manifest is emitted by the workers'
+    ``prefetch.py`` when staging the R2 mirror.
+    """
+    import json
+    from urllib.request import Request, urlopen
+
+    from imference_engine.runtime.download import download_parallel
+
+    base = f"{cdn_base.rstrip('/')}/{repo}"
+    manifest_url = f"{base}/.manifest.json"
+    logger.info("  CDN manifest %s", manifest_url)
+    with urlopen(Request(manifest_url, headers={"User-Agent": "imference-engine"})) as r:
+        files = json.load(r)
+
+    threads = _cdn_threads()
+    for rel in files:
+        dest = os.path.join(dest_dir, *rel.split("/"))
+        if os.path.exists(dest):
+            continue
+        download_parallel(f"{base}/{rel}", dest, threads)
 
 
 def cdn_download(
