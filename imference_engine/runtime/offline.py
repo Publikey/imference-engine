@@ -81,14 +81,19 @@ def write_manifest(repo_dir: str, *, name: str = ".manifest.json") -> list:
     The manifest is a JSON list of repo-relative, forward-slash file paths — the
     exact list ``_cdn_snapshot`` reads back to populate a tree from the CDN. Kept
     next to the reader so writer/reader can't drift. Excludes the manifest file
-    itself. Called by the workers' ``prefetch.py`` after staging each repo.
+    itself, plus hidden dirs/files: ``snapshot_download(local_dir=...)`` drops a
+    ``.cache/huggingface/`` tree (download metadata + locks) inside the repo dir,
+    and repos ship a ``.gitattributes`` — none are real model components and they
+    must not land in the manifest (the CDN doesn't host them -> 404 at cold load).
     """
     import json
 
     files = []
-    for dirpath, _, filenames in os.walk(repo_dir):
+    for dirpath, dirnames, filenames in os.walk(repo_dir):
+        # Prune hidden subtrees in place (skips .cache/huggingface, etc.).
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for fn in filenames:
-            if fn == name:
+            if fn == name or fn.startswith("."):
                 continue
             rel = os.path.relpath(os.path.join(dirpath, fn), repo_dir)
             files.append(rel.replace(os.sep, "/"))

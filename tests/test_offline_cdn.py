@@ -84,6 +84,29 @@ def test_write_manifest_roundtrip(tmp_path):
     assert ".manifest.json" not in on_disk
 
 
+def test_write_manifest_excludes_hidden(tmp_path):
+    """HF's .cache/huggingface tree + .gitattributes must NOT enter the manifest
+    (the CDN doesn't host them -> 404 at cold load)."""
+    repo_dir = tmp_path / "repo"
+    for rel, content in FILES.items():
+        p = repo_dir / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+    # Junk snapshot_download(local_dir=...) leaves behind:
+    cache = repo_dir / ".cache" / "huggingface" / "download"
+    cache.mkdir(parents=True)
+    (cache / "model_index.json.metadata").write_text("x")
+    (cache / "model_index.json.lock").write_text("")
+    (repo_dir / ".gitattributes").write_text("*.safetensors filter=lfs\n")
+
+    listed = write_manifest(str(repo_dir))
+
+    assert listed == sorted(FILES)  # only the real components
+    assert not any(".cache" in f or f.startswith(".") for f in listed)
+    on_disk = json.loads((repo_dir / ".manifest.json").read_text())
+    assert on_disk == sorted(FILES)
+
+
 @pytest.fixture
 def cdn_server(tmp_path):
     """A local HTTP mirror serving <repo>/.manifest.json + the repo files.

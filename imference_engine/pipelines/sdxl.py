@@ -43,7 +43,11 @@ class SDXLBackend(PipelineBackend):
         "vae/config.json",
     ]
     # A standalone VAE repo has only config.json + the weights file (no model_index).
-    _VAE_PATTERNS: ClassVar[list] = ["config.json", "diffusion_pytorch_model.*"]
+    # Pull ONLY the safetensors weights: `diffusion_pytorch_model.*` also matched the
+    # redundant `.bin` (same weights, double the bytes -> ~669 MB instead of ~335 MB on
+    # the CDN). from_pretrained prefers safetensors, so the .bin is dead weight. Same
+    # filename works for taesdxl too.
+    _VAE_PATTERNS: ClassVar[list] = ["config.json", "diffusion_pytorch_model.safetensors"]
 
     def __init__(
         self, *, use_tiny_vae: bool = False,
