@@ -56,9 +56,12 @@ def test_config_repo_pins_and_patterns_exclude_weights():
     pats = SDXLBackend.CONFIG_PATTERNS
     assert "model_index.json" in pats
     assert "tokenizer/*" in pats and "tokenizer_2/*" in pats
-    # config-only for the encoders/vae; no '*.safetensors' / weight globs.
-    assert "text_encoder/config.json" in pats
-    assert not any("safetensors" in p or "model.fp16" in p for p in pats)
+    # One glob pulls EVERY sub-model's config.json — text_encoder(_2), unet, vae.
+    # The explicit list used to omit unet/config.json, crashing the cold load at
+    # the UNet component; the glob covers it (and never matches weights).
+    assert "*/config.json" in pats
+    assert not any("safetensors" in p or "diffusion_pytorch_model" in p
+                   or "model.fp16" in p for p in pats)
 
 
 def test_engine_threads_cache_and_cdn_into_backends():

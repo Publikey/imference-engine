@@ -39,8 +39,11 @@ class SDXLBackend(PipelineBackend):
     CONFIG_PATTERNS: ClassVar[list] = [
         "model_index.json", "scheduler/*",
         "tokenizer/*", "tokenizer_2/*",
-        "text_encoder/config.json", "text_encoder_2/config.json",
-        "vae/config.json",
+        # config.json of EVERY sub-model (text_encoder, text_encoder_2, unet, vae).
+        # from_single_file reads each component's layout from here; a missing one
+        # (we forgot unet/config.json) crashes the cold load at that component.
+        # Glob on config.json only -> never pulls weights.
+        "*/config.json",
     ]
     # A standalone VAE repo has only config.json + the weights file (no model_index).
     # Pull ONLY the safetensors weights: `diffusion_pytorch_model.*` also matched the
