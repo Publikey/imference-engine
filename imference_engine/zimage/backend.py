@@ -35,10 +35,15 @@ class ZImageBackend(PipelineBackend):
     engine: ClassVar[str] = "zimage"
 
     # Files needed from a Z-Image base repo (Tongyi-MAI/Z-Image[-Turbo]) for the
-    # base_model path. Unlike SDXL's config-only mirror, these are FULL weights:
-    # the tokenizer, the (Qwen-family) text_encoder shards, and the VAE.
+    # base_model path. The shared tokenizer + (Qwen-family) text_encoder + VAE are
+    # FULL weights. The transformer + scheduler are CONFIG-ONLY: from_single_file
+    # reads their layout from here (config=base_dir) while the transformer WEIGHTS
+    # come from the checkpoint. Omitting transformer/config.json made
+    # from_single_file fall back to a HF snapshot_download (crashes offline).
     BASE_PATTERNS: ClassVar[list] = [
-        "model_index.json", "tokenizer/*", "text_encoder/*", "vae/*",
+        "model_index.json", "scheduler/*",
+        "tokenizer/*", "text_encoder/*", "vae/*",
+        "transformer/config.json",
     ]
 
     def __init__(
@@ -100,8 +105,14 @@ class ZImageBackend(PipelineBackend):
 
         local_path = self._strip_comfyui_prefix(local_path)
 
+        # config=base_dir + local_files_only pins the pipeline layout (model_index
+        # + transformer/scheduler configs) to the mirrored tree. Without it,
+        # from_single_file downloads the reference config from HF -> offline crash.
+        # The passed text_encoder/tokenizer/vae override those components.
         return ZImagePipeline.from_single_file(
             local_path,
+            config=base_dir,
+            local_files_only=True,
             text_encoder=text_encoder,
             tokenizer=tokenizer,
             vae=vae,
