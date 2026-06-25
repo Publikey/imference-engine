@@ -5,7 +5,7 @@ differently from image — the GPU never holds more than the active MoE expert, 
 there is no GPU-LRU tier). Like the image side, it is driven **identically by an
 env var OR a constructor param**, each with a default.
 
-- **Worker path:** `wan-video-diffuser/start.sh` exports the env below →
+- **Worker path:** `wan-video-im-engine/start.sh` exports the env below →
   `main.py` calls `WanRuntimeConfig.from_env()` → overrides
   `max_resident_variants` with a cgroup-aware value.
 - **Desktop path:** build `WanRuntimeConfig(...)` directly with params, no env.
