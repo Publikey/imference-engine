@@ -57,7 +57,8 @@ class ResidencyManager:
         if self._shared is None:
             self._shared = load_shared_components(
                 self._shared_base_repo, cache_dir=self._cache_dir,
-                text_encoder_quant=self._text_encoder_quant)
+                text_encoder_quant=self._text_encoder_quant,
+                cdn_base=self._cdn_base)
         return self._shared
 
     def get_or_load(self, variant) -> Any:

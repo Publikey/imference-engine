@@ -47,9 +47,11 @@ def _flat_root(cache_dir: Optional[str]) -> str:
     return flat_root(cache_dir, namespace="wan")
 
 
-def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str]) -> str:
+def _local_repo_dir(repo: str, patterns: list, cache_dir: Optional[str],
+                    cdn_base: Optional[str] = None) -> str:
     from imference_engine.runtime.offline import local_repo_dir
-    return local_repo_dir(repo, patterns, cache_dir, namespace="wan")
+    return local_repo_dir(repo, patterns, cache_dir, namespace="wan",
+                          cdn_base=cdn_base)
 
 
 def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
@@ -79,12 +81,15 @@ def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
 
 
 def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
-                           text_encoder_quant: str = "none") -> SharedComponents:
+                           text_encoder_quant: str = "none",
+                           cdn_base: Optional[str] = None) -> SharedComponents:
     import torch
     from diffusers import AutoencoderKLWan
     from transformers import AutoTokenizer, UMT5EncoderModel
 
-    d = _local_repo_dir(base_repo, _SHARED_PATTERNS, cache_dir)
+    # cdn_base (WAN_MODEL_CDN) pulls the shared UMT5/tokenizer/VAE from the CDN
+    # manifest instead of a HF snapshot — so a cold load is fully offline.
+    d = _local_repo_dir(base_repo, _SHARED_PATTERNS, cache_dir, cdn_base=cdn_base)
     logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
         d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
@@ -227,7 +232,8 @@ def build_pipeline(
     logger.info("Building variant %r (%s, gguf=%s)", variant.name, variant.mode, quant)
     # base configs (model_index, scheduler, transformer configs) in a FLAT dir —
     # also used as the GGUF transformer `config=` so loading is fully local/offline.
-    base_dir = _local_repo_dir(variant.base_repo, _BASE_CFG_PATTERNS, cache_dir)
+    base_dir = _local_repo_dir(variant.base_repo, _BASE_CFG_PATTERNS, cache_dir,
+                               cdn_base=cdn_base)
     high = _resolve_gguf(variant.gguf_repo, quant, "high",
                          variant.gguf_high_name, variant.gguf_high_template,
                          cdn_base=cdn_base, cache_dir=cache_dir)
