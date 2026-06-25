@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 _UA = "Mozilla/5.0 (imference-engine)"
 
+# Socket timeout (seconds) for every HTTP op. A healthy CDN streams continuously,
+# so this many seconds of silence means a dead/stalled connection. Without it,
+# urlopen reads block FOREVER on a hung socket — and since the chunk workers are
+# threads stuck in a C-level recv, even Ctrl-C can't kill the process. With it, a
+# stalled read raises socket.timeout and the existing retry logic re-fetches.
+_TIMEOUT = 60
+
 
 def _download_single(url: str, dest: str, total: int, *, progress: bool = True) -> str:
     """Sequential single-stream download — for servers that ignore Range."""
@@ -31,7 +38,7 @@ def _download_single(url: str, dest: str, total: int, *, progress: bool = True) 
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     got = 0
     last = 0.0
-    with urllib.request.urlopen(req) as r, open(tmp, "wb") as f:
+    with urllib.request.urlopen(req, timeout=_TIMEOUT) as r, open(tmp, "wb") as f:
         while True:
             buf = r.read(2 * 1024 * 1024)
             if not buf:
@@ -68,7 +75,7 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
 
     def _head_total() -> int:
         req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": _UA})
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
             return int(r.headers.get("Content-Length") or 0)
 
     last_err = None
@@ -111,7 +118,7 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                             req = urllib.request.Request(
                                 url, headers={"User-Agent": _UA,
                                               "Range": f"bytes={start}-{end}"})
-                            with urllib.request.urlopen(req) as r:
+                            with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
                                 if r.getcode() != 206:
                                     last_was_200, local_err = True, None
                                     time.sleep(0.5 * (attempt + 1))
