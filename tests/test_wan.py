@@ -73,7 +73,8 @@ def test_residency_lru(monkeypatch):
     built: list[str] = []
     evicted: list[str] = []
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none",
+                        cdn_base=None: object())
 
     def fake_build(variant, **kwargs):
         built.append(variant.name)
@@ -104,9 +105,31 @@ def test_residency_lru(monkeypatch):
     assert built == ["a", "b", "c"]  # a built once
 
 
+def test_residency_threads_cdn_into_shared_and_build(monkeypatch):
+    """cdn_base (WAN_MODEL_CDN) must reach BOTH load_shared_components and
+    build_pipeline so a cold load pulls base-components from the CDN, not HF.
+    Regression guard: _shared_components() used to drop cdn_base."""
+    seen: dict = {}
+    monkeypatch.setattr(
+        mgr_mod, "load_shared_components",
+        lambda base, cache_dir=None, text_encoder_quant="none", cdn_base=None:
+        seen.update(shared_cdn=cdn_base) or object())
+    monkeypatch.setattr(
+        mgr_mod, "build_pipeline",
+        lambda variant, **kw: seen.update(build_cdn=kw.get("cdn_base")) or "pipe")
+
+    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
+                         vae_tiling=True, max_resident=1,
+                         cdn_base="https://cdn.x/wan")
+    m.get_or_load(_variant("a"))
+    assert seen["shared_cdn"] == "https://cdn.x/wan"
+    assert seen["build_cdn"] == "https://cdn.x/wan"
+
+
 def test_residency_single_resident(monkeypatch):
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none",
+                        cdn_base=None: object())
     monkeypatch.setattr(mgr_mod, "build_pipeline",
                         lambda variant, **kw: f"pipe:{variant.name}")
     m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
@@ -140,7 +163,8 @@ def test_residency_evicts_before_build(monkeypatch):
     never holds two variants at once (the small-RAM OOM)."""
     events: list = []
     monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None: object())
+                        lambda base, cache_dir=None, text_encoder_quant="none",
+                        cdn_base=None: object())
 
     def fake_build(variant, **kw):
         events.append(("build", variant.name))

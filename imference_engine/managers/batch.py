@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 class BatchSizer:
     """Per-process batch-size cache, keyed by (engine, is_img2img)."""
 
+    # Part of the documented image-side env contract (see pipelines/README.md):
+    # BATCH_VRAM_RESERVE_MB — headroom kept free when sizing a batch (default 512).
+    # MAX_BATCH_SIZE — hard ceiling on images per forward, even if VRAM allows more.
     VRAM_RESERVE_MB = int(os.getenv("BATCH_VRAM_RESERVE_MB", "512"))
     MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", "8"))
 

@@ -11,10 +11,10 @@ Early extraction from `gen-image-worker/workers/sdxl-multimodel` and
 unifies them behind a single `Engine` API and adds the abstraction needed for
 future desktop / MPS / quantization support.
 
-Inference + backends are wired (SDXL + Z-Image). The multi-tier `ModelManager`
-(GPU LRU + optional CPU LRU) is in. Remaining gaps: `LoRAManager`, img2img
-(`Engine.generate(source_image=...)` still raises `NotImplementedError`), and
-the catalog YAML loader (callers register models one by one for now).
+Inference + backends are wired (SDXL + Z-Image, plus a Wan video sub-package).
+The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in, and img2img
+(`Engine.generate(source_image=...)`) is wired. Remaining gaps: `LoRAManager`
+and the catalog YAML loader (callers register models one by one for now).
 
 ## Scope
 
@@ -93,6 +93,27 @@ for model_meta in catalog.entries():
 # as long as they fit in (max_gpu + max_cpu) total residency.
 result = engine.generate(model="some-model", prompt="...", ...)
 ```
+
+## Configuration
+
+Each engine is the **single source of truth** for its configuration: every knob
+is settable **identically by an environment variable OR a constructor param**,
+each with a default. A launcher (a worker's `start.sh`, the desktop sidecar)
+only populates this contract — no engine logic lives in the launcher, so the
+launcher is interchangeable.
+
+- `RuntimeConfig.from_env()` / `WanRuntimeConfig.from_env()` build a config from
+  the documented env contract; both are safe to call with no environment.
+- `MAX_*_MODELS=auto` (image) / `WAN_PROFILE=auto` / `WAN_MAX_RESIDENT=auto`
+  deliberately stay at engine defaults — **hardware "auto" resolution is
+  worker-side** (`config/resource_detection.py`), layered on top via param
+  override. The engine never does hardware detection itself.
+
+Full env↔param↔default tables per engine:
+
+- **SDXL + shared image config:** [`pipelines/README.md`](imference_engine/pipelines/README.md)
+- **Z-Image:** [`zimage/README.md`](imference_engine/zimage/README.md)
+- **Wan video:** [`wan/README.md`](imference_engine/wan/README.md)
 
 ## Layout
 

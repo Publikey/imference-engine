@@ -47,6 +47,16 @@ class RuntimeConfig:
     (e.g. 2x SDXL on a 24 GB A10) can bump this to amortize swap cost."""
 
     model_cache_dir: Optional[Union[str, Path]] = None
+    """Root of the flat, symlink-free offline model tree (IMAGE_MODEL_CACHE). The
+    backends resolve shared base-components (SDXL config + tokenizers + fp16-fix
+    VAE; Z-Image base text_encoder/vae) into it, so a cold load is fully offline
+    under HF_HUB_OFFLINE=1 once the tree is populated (base tarball / prefetch)."""
+
+    model_cdn: Optional[str] = None
+    """Base URL of a CDN (R2) mirroring the same <repo>/<file> layout. When set,
+    on-demand base-components download from the CDN instead of HF. Mirror of
+    WanRuntimeConfig.model_cdn."""
+
     lora_cache_dir: Optional[Union[str, Path]] = None
 
     use_tiny_vae: bool = False
@@ -65,6 +75,33 @@ class RuntimeConfig:
     Cost: ~10-30 % slower per gen due to per-forward CPU↔GPU transfers.
     Strongly recommended on ≤8 GB VRAM where the model otherwise saturates.
     Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
+
+    @classmethod
+    def from_env(cls) -> "RuntimeConfig":
+        """Build a config from the documented image-side env contract.
+
+        Every field falls back to its dataclass default when the env var is
+        unset, so this is safe to call with NO environment at all (the desktop
+        path constructs ``RuntimeConfig(...)`` directly instead). Workers call
+        ``from_env()`` then override ``max_gpu_models`` / ``max_cpu_models`` with
+        hardware-detected values (``config/resource_detection.py``) — that is the
+        decoupling seam: the engine honours a static env/param contract; the
+        worker layers hardware detection on top.
+
+        ``MAX_GPU_MODELS`` / ``MAX_CPU_MODELS`` accept an integer; ``auto`` or
+        unset leaves the field ``None`` (engine default = 1 GPU / 0 CPU). See
+        ``imference_engine/pipelines/README.md`` for the full table.
+        """
+        from imference_engine.runtime.env import env_bool, env_int_or_none, env_str
+        return cls(
+            device=env_str("IMAGE_DEVICE", "auto"),
+            model_cache_dir=env_str("IMAGE_MODEL_CACHE"),
+            model_cdn=env_str("IMAGE_MODEL_CDN"),
+            max_gpu_models=env_int_or_none("MAX_GPU_MODELS"),
+            max_cpu_models=env_int_or_none("MAX_CPU_MODELS"),
+            use_tiny_vae=env_bool("IMAGE_USE_TINY_VAE", False),
+            enable_cpu_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+        )
 
 
 class Engine:
@@ -131,9 +168,15 @@ class Engine:
 
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
+        cache_dir = (str(self._runtime.model_cache_dir)
+                     if self._runtime.model_cache_dir else None)
+        cdn_base = self._runtime.model_cdn
         self._backends = {
-            SDXLBackend.engine: SDXLBackend(use_tiny_vae=self._runtime.use_tiny_vae),
-            ZImageBackend.engine: ZImageBackend(),
+            SDXLBackend.engine: SDXLBackend(
+                use_tiny_vae=self._runtime.use_tiny_vae,
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            ZImageBackend.engine: ZImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
         max_gpu = self._runtime.max_gpu_models or 1
@@ -246,10 +289,18 @@ class Engine:
             raise RuntimeError("Call Engine.load() before generate")
         if loras:
             logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
-        if source_image is not None:
-            raise NotImplementedError("img2img lifted in a follow-up PR")
 
         pipe, backend = self._models.get_or_load(model)
+        # img2img: wrap the resident t2i pipe in the backend's img2img pipeline.
+        # make_img2img reuses the SAME in-memory modules (vae/text_encoder/unet|
+        # transformer/scheduler), so it's a cheap reference wrapper on the already-
+        # resident weights — no extra disk load and no separate device accounting
+        # (the shared modules are already on the active device). Built per request
+        # rather than cached: the wrapper is light and this avoids shadowing the
+        # ModelManager's residency bookkeeping.
+        is_img2img = source_image is not None
+        if is_img2img:
+            pipe = backend.make_img2img(pipe)
         backend.apply_scheduler(pipe, scheduler, **(backend_options or {}))
         prompt_kwargs = backend.encode_prompts(pipe, prompt, negative_prompt)
 
@@ -268,7 +319,9 @@ class Engine:
             guidance_scale=guidance_scale,
             clip_skip=clip_skip,
             seeds=seeds,
-            is_img2img=False,
+            is_img2img=is_img2img,
+            source_image=source_image,
+            strength=strength,
         )
 
     def _run_chunked(
@@ -284,6 +337,8 @@ class Engine:
         clip_skip: Optional[int],
         seeds: list[int],
         is_img2img: bool,
+        source_image: Optional["Image"] = None,
+        strength: float = 0.75,
     ) -> GenerationResult:
         batch_total = len(seeds)
         max_gpu_batch = self._batch_sizer.get_max_batch_size(backend.engine, is_img2img)
@@ -326,6 +381,8 @@ class Engine:
                     clip_skip=clip_skip,
                     chunk_size=chunk_size,
                     generator=generator,
+                    image=source_image,
+                    strength=strength,
                 )
                 produced = pipe(**prompt_kwargs, **kwargs).images
 

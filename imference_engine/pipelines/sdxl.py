@@ -30,12 +30,42 @@ class SDXLBackend(PipelineBackend):
     # diffusers decodes directly in fp16 with no Half/float dtype mismatch.
     FP16_VAE_REPO: ClassVar[str] = "madebyollin/sdxl-vae-fp16-fix"
 
-    def __init__(self, *, use_tiny_vae: bool = False) -> None:
+    # Repo whose *config + tokenizers* drive from_single_file's layout inference.
+    # The checkpoint supplies the unet/text_encoder/vae *weights*, but NOT the
+    # model_index/scheduler config or the two CLIP tokenizers (vocab/merges) —
+    # diffusers fetches those from this repo. Mirrored into the flat offline tree
+    # so a cold load never touches HF. NEVER the weights (allow only config/tokenizer).
+    CONFIG_REPO: ClassVar[str] = "stabilityai/stable-diffusion-xl-base-1.0"
+    CONFIG_PATTERNS: ClassVar[list] = [
+        "model_index.json", "scheduler/*",
+        "tokenizer/*", "tokenizer_2/*",
+        # config.json of EVERY sub-model (text_encoder, text_encoder_2, unet, vae).
+        # from_single_file reads each component's layout from here; a missing one
+        # (we forgot unet/config.json) crashes the cold load at that component.
+        # Glob on config.json only -> never pulls weights.
+        "*/config.json",
+    ]
+    # A standalone VAE repo has only config.json + the weights file (no model_index).
+    # Pull ONLY the safetensors weights: `diffusion_pytorch_model.*` also matched the
+    # redundant `.bin` (same weights, double the bytes -> ~669 MB instead of ~335 MB on
+    # the CDN). from_pretrained prefers safetensors, so the .bin is dead weight. Same
+    # filename works for taesdxl too.
+    _VAE_PATTERNS: ClassVar[list] = ["config.json", "diffusion_pytorch_model.safetensors"]
+
+    def __init__(
+        self, *, use_tiny_vae: bool = False,
+        cache_dir: Optional[str] = None, cdn_base: Optional[str] = None,
+    ) -> None:
         # Cache scheduler instances keyed by (id(pipe.scheduler.config), scheduler_name).
         # The id() key isolates per-pipe configs so multiple loaded models can each
         # have their own cached scheduler without cross-contamination.
         self._scheduler_cache: dict[tuple[int, str], Any] = {}
         self._use_tiny_vae = use_tiny_vae
+        # Flat offline tree root (IMAGE_MODEL_CACHE) + optional CDN mirror — threaded
+        # from RuntimeConfig by the Engine. The shared SDXL config + the fp16-fix VAE
+        # are resolved into this tree so a cold load is fully offline (HF_HUB_OFFLINE=1).
+        self._cache_dir = cache_dir
+        self._cdn_base = cdn_base
 
     def load_pipeline(
         self, *, local_path: str, base_model: Optional[str] = None
@@ -43,9 +73,19 @@ class SDXLBackend(PipelineBackend):
         import torch
         from diffusers import StableDiffusionXLPipeline
 
-        logger.info(f"Loading SDXL pipeline from {local_path}")
+        from imference_engine.runtime.offline import local_repo_dir
+
+        # Pin the layout to a LOCAL config dir (+ local_files_only) so from_single_file
+        # never reaches out to HF for model_index/scheduler/tokenizers.
+        cfg_dir = local_repo_dir(
+            self.CONFIG_REPO, self.CONFIG_PATTERNS, self._cache_dir,
+            namespace="image", cdn_base=self._cdn_base)
+
+        logger.info(f"Loading SDXL pipeline from {local_path} (config={cfg_dir})")
         pipe = StableDiffusionXLPipeline.from_single_file(
             local_path,
+            config=cfg_dir,
+            local_files_only=True,
             torch_dtype=torch.float16,
             use_safetensors=True,
         )
@@ -54,15 +94,19 @@ class SDXLBackend(PipelineBackend):
         # mismatches at inference. Force every parameter to float16.
         pipe = pipe.to(torch.float16)
 
-        # VAE handling — two mutually exclusive paths:
+        # VAE handling — two mutually exclusive paths. Both resolve the VAE into
+        # the flat offline tree first, then load from that LOCAL dir (no HF hit).
         if self._use_tiny_vae:
             # TAESDxl: ~5 MB fp16 autoencoder, ~10× faster decode at the cost of
             # slight quality loss (visible on photoreal, transparent on illust).
             # Replaces the lazy upcast_vae path entirely.
             from diffusers import AutoencoderTiny
             logger.info(f"Swapping VAE for TAESD ({self.TINY_VAE_REPO}) — faster decode, slight quality loss")
+            vae_dir = local_repo_dir(
+                self.TINY_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
+                namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderTiny.from_pretrained(
-                self.TINY_VAE_REPO, torch_dtype=torch.float16
+                vae_dir, torch_dtype=torch.float16, local_files_only=True
             )
         else:
             # Swap in the fp16-fix VAE. The previous `pipe.vae.to(torch.float32)`
@@ -74,8 +118,11 @@ class SDXLBackend(PipelineBackend):
             # no upcast, no dtype mismatch, no decode-time churn.
             from diffusers import AutoencoderKL
             logger.info(f"Swapping VAE for fp16-fix ({self.FP16_VAE_REPO})")
+            vae_dir = local_repo_dir(
+                self.FP16_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
+                namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderKL.from_pretrained(
-                self.FP16_VAE_REPO, torch_dtype=torch.float16
+                vae_dir, torch_dtype=torch.float16, local_files_only=True
             )
 
         # channels_last memory format on the U-Net: trades a few MB of metadata
@@ -153,15 +200,22 @@ class SDXLBackend(PipelineBackend):
         clip_skip: Optional[int],
         chunk_size: int,
         generator: Any,
+        image: Any = None,
+        strength: float = 0.75,
     ) -> dict:
         kwargs = {
-            "width": width,
-            "height": height,
             "num_inference_steps": num_steps,
             "guidance_scale": guidance_scale,
             "generator": generator,
             "num_images_per_prompt": chunk_size,
         }
+        if image is not None:
+            # img2img: the pipeline derives the output size from the source image.
+            kwargs["image"] = image
+            kwargs["strength"] = strength
+        else:
+            kwargs["width"] = width
+            kwargs["height"] = height
         if clip_skip is not None and clip_skip > 0:
             kwargs["clip_skip"] = clip_skip
         return kwargs
