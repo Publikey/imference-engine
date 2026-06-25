@@ -149,6 +149,23 @@ def test_local_repo_dir_cdn_populates_flat_tree(cdn_server, tmp_path, monkeypatc
         assert open(landed).read() == content
 
 
+def test_local_repo_dir_cdn_completes_partial_tree(cdn_server, tmp_path):
+    """A killed pull leaves the sentinel + a partial tree; a re-run must NOT
+    short-circuit on the sentinel — it completes the missing files + marker."""
+    cache = tmp_path / "image-tree"
+    d = cache / REPO
+    (d / "tokenizer").mkdir(parents=True)
+    # Simulate a killed download: sentinel present, rest missing, no marker.
+    (d / "model_index.json").write_text(FILES["model_index.json"])
+
+    out = local_repo_dir(REPO, ["*"], str(cache), namespace="image",
+                         cdn_base=cdn_server)
+
+    for rel in FILES:
+        assert os.path.isfile(os.path.join(out, *rel.split("/"))), f"{rel} missing"
+    assert os.path.isfile(os.path.join(out, ".cdn_complete"))
+
+
 def test_local_repo_dir_cdn_idempotent_offline(cdn_server, tmp_path):
     """Second call returns instantly via the sentinel — no server needed."""
     cache = tmp_path / "image-tree"

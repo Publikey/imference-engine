@@ -18,6 +18,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Marker written into a repo dir once its CDN manifest pull fully completes. Lets a
+# re-run tell "fully pulled" from "partial pull killed mid-way" (the sentinel can't).
+_CDN_COMPLETE = ".cdn_complete"
+
 
 def flat_root(cache_dir: Optional[str], *, namespace: str) -> str:
     """Root of the FLAT, symlink-free model tree (``<root>/<repo>/<file>``).
@@ -63,12 +67,19 @@ def local_repo_dir(
     for a single-component repo (a standalone VAE) with no ``model_index.json``.
     """
     d = os.path.join(flat_root(cache_dir, namespace=namespace), repo)
-    # Already populated (shipped tree)? Return without any network/snapshot call,
-    # so a pre-shipped tree works fully offline.
-    if os.path.exists(os.path.join(d, sentinel)):
-        return d
     if cdn_base:
-        _cdn_snapshot(cdn_base, repo, d)
+        # The CDN path pulls EVERY file in the repo manifest. A `.cdn_complete`
+        # marker — written only AFTER the full pull — is the skip condition, NOT
+        # the sentinel: a killed download can leave `model_index.json` + a partial
+        # tree, and short-circuiting on the sentinel would then load a broken repo
+        # (missing shards/index). Without the marker, re-run _cdn_snapshot, which
+        # is idempotent (skips already-complete files, re-fetches the rest).
+        if not os.path.exists(os.path.join(d, _CDN_COMPLETE)):
+            _cdn_snapshot(cdn_base, repo, d)
+        return d
+    # Pre-shipped / snapshot tree: the sentinel means "fully populated" — return
+    # without any network/snapshot call, so a pre-shipped tree works fully offline.
+    if os.path.exists(os.path.join(d, sentinel)):
         return d
     from huggingface_hub import snapshot_download
     snapshot_download(repo, allow_patterns=patterns, local_dir=d)
@@ -136,6 +147,9 @@ def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str) -> None:
         if os.path.exists(dest):
             continue
         download_parallel(f"{base}/{rel}", dest, threads)
+    # Mark complete ONLY after every file landed — a killed pull leaves no marker,
+    # so the next call re-enters here and finishes the partial tree.
+    open(os.path.join(dest_dir, _CDN_COMPLETE), "w").close()
 
 
 def cdn_download(
