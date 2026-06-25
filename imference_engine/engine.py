@@ -10,7 +10,7 @@ import logging
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Union
 
 from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
@@ -261,6 +261,37 @@ class Engine:
                 base_model=base_model,
             )
         )
+
+    def warm(self, specs: "Iterable[tuple[str, Optional[str]]]" = ()) -> "Engine":
+        """Pre-download base-components for the given (backend, base_model) pairs
+        WITHOUT loading any model — so a worker can warm the base at deploy time
+        and a fresh pod is 'ready' with the shared base on disk (the first request
+        then only pays for the checkpoint weights, which stay lazy).
+
+        `specs` is typically the worker's catalog as distinct
+        (config.engine, config.base_model) pairs. Deduped. Best-effort: a failed
+        prefetch logs a warning and is skipped (the component falls back to its
+        lazy fetch on first use) — warm() never raises, so it's safe in setup().
+        """
+        if not self._loaded:
+            self.load()
+        seen: set = set()
+        for backend_name, base_model in specs:
+            key = (backend_name, base_model)
+            if key in seen:
+                continue
+            seen.add(key)
+            backend = self._backends.get(backend_name)
+            if backend is None:
+                logger.warning("warm: unknown backend %r — skipping", backend_name)
+                continue
+            try:
+                backend.prefetch_base(base_model)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "warm: prefetch_base(%s, %s) failed (%s); will fetch lazily "
+                    "on first use", backend_name, base_model, e)
+        return self
 
     # ------------------------------------------------------------------
     # Inference

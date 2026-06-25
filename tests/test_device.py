@@ -1,7 +1,6 @@
 """Tests for device resolution. Runs without torch installed."""
 import sys
 import builtins
-from unittest.mock import patch
 
 from imference_engine.runtime.device import Device, resolve_device
 

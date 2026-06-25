@@ -29,6 +29,14 @@ class PipelineBackend(ABC):
         need tokenizer/text_encoder/vae from the base repo). Ignored by SDXL.
         """
 
+    def prefetch_base(self, base_model: Optional[str] = None) -> None:
+        """Download this backend's shared base-components into the offline tree
+        WITHOUT loading any model. Lets a worker warm the base at deploy time so
+        a fresh pod is 'ready' with the base on disk, and the first request only
+        pays for the checkpoint weights (which stay lazy). Idempotent and
+        offline-safe once populated. Default: no-op."""
+        return None
+
     @abstractmethod
     def make_img2img(self, t2i_pipe: Any) -> Any:
         """Build an img2img pipeline sharing weights with the t2i pipeline.
