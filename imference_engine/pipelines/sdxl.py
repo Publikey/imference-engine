@@ -137,6 +137,18 @@ class SDXLBackend(PipelineBackend):
 
         return pipe
 
+    def prefetch_base(self, base_model: Optional[str] = None) -> None:
+        """Pull the SDXL config repo + the active VAE into the offline tree (no
+        model load) — same repos load_pipeline resolves, just warmed ahead."""
+        from imference_engine.runtime.offline import local_repo_dir
+        local_repo_dir(self.CONFIG_REPO, self.CONFIG_PATTERNS, self._cache_dir,
+                       namespace="image", cdn_base=self._cdn_base)
+        vae_repo = self.TINY_VAE_REPO if self._use_tiny_vae else self.FP16_VAE_REPO
+        local_repo_dir(vae_repo, self._VAE_PATTERNS, self._cache_dir,
+                       namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
+        logger.info("SDXL base-components warmed (config=%s, vae=%s)",
+                    self.CONFIG_REPO, vae_repo)
+
     def make_img2img(self, t2i_pipe: Any) -> Any:
         from diffusers import StableDiffusionXLImg2ImgPipeline
         return StableDiffusionXLImg2ImgPipeline(

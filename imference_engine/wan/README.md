@@ -36,6 +36,14 @@ env var OR a constructor param**, each with a default.
 | `HF_HOME` | Fallback flat-tree root when `WAN_MODEL_CACHE` is unset (engine uses `$HF_HOME/wan`). |
 | `WAN_CDN_THREADS` | Parallel HTTP streams for CDN downloads. Default `8`. |
 
+## Warm at deploy (optional)
+
+`WanEngine.warm()` pre-downloads the shared base-components (UMT5 / VAE, ~11.5 GB)
++ the registered variants' base configs **without loading anything** — so a fresh
+pod is "ready" with the base on disk and the first request only builds the variant
+(GGUF experts + LoRAs stay lazy). Best-effort: a failure logs a warning and falls
+back to lazy fetch — `warm()` never raises, so it's safe in a worker's `setup()`.
+
 ## Per-request params (`WanEngine.generate_video`)
 
 `variant`, `prompt`, `image` (i2v), `negative_prompt`, `width=832`,

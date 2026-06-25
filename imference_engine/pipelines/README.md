@@ -73,6 +73,21 @@ cfg.max_cpu_models = resolve_max_cpu_models()
 engine = Engine(runtime=cfg).load()
 ```
 
+## Warm at deploy (optional)
+
+`Engine.warm(specs)` pre-downloads base-components for the given
+`(backend, base_model)` pairs **without loading a model** — so a worker can warm
+the shared base in `setup()` and a fresh pod is "ready" with the base on disk
+(the first request then only pays for the checkpoint weights, which stay lazy).
+`specs` is typically the worker's catalog as distinct
+`(config.engine, config.base_model)` pairs (deduped). Best-effort: a failed
+prefetch logs a warning and falls back to the lazy fetch — `warm()` never raises.
+
+```python
+specs = {(c.engine, getattr(c, "base_model", None)) for c in catalog}
+engine.warm(specs)   # SDXL config+VAE, each Z-Image base_model — downloaded, not loaded
+```
+
 ## Per-request params (`Engine.generate`)
 
 `model`, `prompt`, `negative_prompt`, `width=1024`, `height=1024`,

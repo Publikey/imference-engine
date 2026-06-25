@@ -147,6 +147,17 @@ class ZImageBackend(PipelineBackend):
         logger.info(f"Stripped {len(new_dict)} keys")
         return filepath
 
+    def prefetch_base(self, base_model: Optional[str] = None) -> None:
+        """Pull a base_model's shared components (tokenizer + text_encoder + vae)
+        into the offline tree (no load) — same dir _load_with_base_model resolves.
+        No-op without a base_model (a self-contained checkpoint has none)."""
+        if not base_model:
+            return
+        from imference_engine.runtime.offline import local_repo_dir
+        local_repo_dir(base_model, self.BASE_PATTERNS, self._cache_dir,
+                       namespace="image", cdn_base=self._cdn_base)
+        logger.info("Z-Image base-components warmed (base=%s)", base_model)
+
     # ------------------------------------------------------------------
     # Img2img
     # ------------------------------------------------------------------

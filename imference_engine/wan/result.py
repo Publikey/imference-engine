@@ -6,7 +6,7 @@ upload. No file I/O, no encoding here.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:

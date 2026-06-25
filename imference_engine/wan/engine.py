@@ -88,7 +88,12 @@ class WanEngine:
                 self._device)
 
         profile = self._runtime.memory_profile
-        if isinstance(profile, str):
+        # MemoryProfile subclasses str, so a concrete profile (e.g. the default
+        # GGUF_Q8) IS a str — match it FIRST and use it as-is. Only a PLAIN string
+        # reaches the "auto" branch; anything else there is an error.
+        if isinstance(profile, MemoryProfile):
+            pass
+        elif isinstance(profile, str):
             if profile.lower() != "auto":
                 raise ValueError(f"memory_profile string must be 'auto', got {profile!r}")
             profile = self._auto_profile(dev.kind == "cuda")
@@ -134,6 +139,37 @@ class WanEngine:
 
     def list_variants(self) -> list[str]:
         return sorted(self._variants)
+
+    def warm(self) -> "WanEngine":
+        """Pre-download the shared base-components (UMT5 / VAE, ~11.5 GB) + the
+        registered variants' base configs into the offline tree WITHOUT loading
+        anything — so a fresh pod is 'ready' with the base on disk and the first
+        request only builds the variant. GGUF experts + LoRAs stay lazy.
+        Best-effort: a failure logs a warning and is skipped (lazy fallback);
+        warm() never raises, so it's safe to call in a worker's setup()."""
+        if not self._loaded:
+            self.load()
+        from imference_engine.wan.loader import (_BASE_CFG_PATTERNS,
+                                                 _SHARED_PATTERNS, _local_repo_dir)
+        cache_dir = (str(self._runtime.model_cache_dir)
+                     if self._runtime.model_cache_dir else None)
+        cdn = self._runtime.model_cdn
+        # The shared UMT5/VAE base (heavy) + each distinct variant base_repo
+        # (small configs for the GGUF transformer). Dedup so the shared base
+        # isn't pulled twice.
+        targets = [(self._manager._shared_base_repo, _SHARED_PATTERNS)]
+        seen = {self._manager._shared_base_repo}
+        for v in self._variants.values():
+            if v.base_repo not in seen:
+                seen.add(v.base_repo)
+                targets.append((v.base_repo, _BASE_CFG_PATTERNS))
+        for repo, patterns in targets:
+            try:
+                _local_repo_dir(repo, patterns, cache_dir, cdn)
+                logger.info("Wan base-components warmed (%s)", repo)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("warm: %s failed (%s); will fetch lazily", repo, e)
+        return self
 
     # ------------------------------------------------------------------
     def generate_video(
