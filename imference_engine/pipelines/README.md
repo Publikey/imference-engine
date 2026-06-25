@@ -62,7 +62,7 @@ exposed:
 from imference_engine import Engine, RuntimeConfig
 engine = Engine(runtime=RuntimeConfig(
     device="auto",
-    model_cdn="https://gen-models.ml-cnd-gen.cc/",  # offline via CDN
+    model_cdn="https://your-cdn.example/image",  # offline via CDN
 )).load()
 
 # Worker — env contract + hardware detection on top.
