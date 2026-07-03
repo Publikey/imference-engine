@@ -59,7 +59,9 @@ def local_repo_dir(
       2. ``cdn_base`` set -> pull the repo's file list from a CDN manifest
          (``<cdn_base>/<repo>/.manifest.json``) via the parallel downloader.
          Plain HTTP, so it coexists with ``HF_HUB_OFFLINE=1`` and never touches
-         HuggingFace.
+         HuggingFace. If the CDN can't serve the repo (e.g. it isn't mirrored ->
+         404 on the manifest) the pull falls back to HuggingFace, so a gap in the
+         mirror degrades to a slower download instead of a hard crash.
       3. Otherwise -> ``snapshot_download`` from HuggingFace (dev / online).
 
     ``sentinel`` is the marker file that signals "already populated". Defaults to
@@ -75,7 +77,20 @@ def local_repo_dir(
         # (missing shards/index). Without the marker, re-run _cdn_snapshot, which
         # is idempotent (skips already-complete files, re-fetches the rest).
         if not os.path.exists(os.path.join(d, _CDN_COMPLETE)):
-            _cdn_snapshot(cdn_base, repo, d)
+            try:
+                _cdn_snapshot(cdn_base, repo, d)
+            except Exception as e:  # noqa: BLE001
+                # CDN gap (repo not mirrored -> 404 on its manifest) or any other
+                # CDN failure: fall back to HuggingFace so a hole in the mirror
+                # degrades to a slower pull instead of crashing the load. Mark
+                # complete afterwards so later loads skip both the CDN re-try and
+                # HF. (A set HF_HUB_OFFLINE=1 would make this raise — intended:
+                # the caller opted into strict offline.)
+                logger.warning(
+                    "CDN fetch failed for %s (%s); falling back to HuggingFace", repo, e)
+                from huggingface_hub import snapshot_download
+                snapshot_download(repo, allow_patterns=patterns, local_dir=d)
+                open(os.path.join(d, _CDN_COMPLETE), "w").close()
         return d
     # Pre-shipped / snapshot tree: the sentinel means "fully populated" — return
     # without any network/snapshot call, so a pre-shipped tree works fully offline.

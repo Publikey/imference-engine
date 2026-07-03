@@ -1,9 +1,10 @@
 """Parallel multi-stream HTTP downloader (saturates CDN bandwidth).
 
 A single GET doesn't fill the link; this fetches N byte-ranges in parallel
-(R2/Cloudflare support Range), writes them to a preallocated file via os.pwrite,
-verifies the size, and retries. Used by the engines' CDN loaders AND by the
-workers' start.sh to bootstrap base tarballs.
+(R2/Cloudflare support Range), writes them to a preallocated file via a
+positioned write (os.pwrite on POSIX, a lock-guarded lseek+write fallback on
+Windows where os.pwrite doesn't exist), verifies the size, and retries. Used by
+the engines' CDN loaders AND by the workers' start.sh to bootstrap base tarballs.
 
     python -m imference_engine.runtime.download <url> <dest> [threads]
 
@@ -26,6 +27,27 @@ _UA = "Mozilla/5.0 (imference-engine)"
 # threads stuck in a C-level recv, even Ctrl-C can't kill the process. With it, a
 # stalled read raises socket.timeout and the existing retry logic re-fetches.
 _TIMEOUT = 60
+
+# os.pwrite is POSIX-only. On Windows we emulate a positioned write with a
+# lock-guarded seek+write (the chunk threads share one fd, so seek+write must be
+# atomic relative to each other).
+_HAS_PWRITE = hasattr(os, "pwrite")
+
+
+def _pwrite(fd: int, buf, off: int, lock) -> None:
+    """Write ``buf`` at absolute offset ``off`` without disturbing other threads.
+
+    Uses os.pwrite where available (atomic, lock-free); otherwise serializes a
+    lseek+write under ``lock`` and loops to handle short writes.
+    """
+    if _HAS_PWRITE:
+        os.pwrite(fd, buf, off)
+        return
+    with lock:
+        os.lseek(fd, off, os.SEEK_SET)
+        mv = memoryview(buf)
+        while mv:
+            mv = mv[os.write(fd, mv):]
 
 
 def _download_single(url: str, dest: str, total: int, *, progress: bool = True) -> str:
@@ -95,10 +117,13 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
 
             got = [0]
             lock = threading.Lock()
+            write_lock = threading.Lock()  # guards the Windows lseek+write fallback
             errors: list = []
             stop = threading.Event()
             no_range = threading.Event()  # a chunk got 200 (server ignored Range)
-            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY, 0o644)
+            # O_BINARY (Windows) keeps os.write from translating \n -> \r\n and
+            # corrupting binary payloads; it's a no-op flag (0) on POSIX.
+            fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | getattr(os, "O_BINARY", 0), 0o644)
             try:
                 os.ftruncate(fd, total)
 
@@ -130,7 +155,7 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                                         break
                                     if off + len(buf) - 1 > end:
                                         buf = buf[:end - off + 1]
-                                    os.pwrite(fd, buf, off)
+                                    _pwrite(fd, buf, off, write_lock)
                                     off += len(buf)
                                     with lock:
                                         got[0] += len(buf)
