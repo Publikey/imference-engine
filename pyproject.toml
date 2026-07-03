@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imference-engine"
-version = "0.2.1"
+version = "0.2.2"
 description = "Unified Diffusers-based inference engine for SDXL and Z-Image models."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,7 +37,14 @@ dependencies = [
 # uses, so the image and video stacks now share one diffusers. SDXL/Z-Image
 # from_single_file(config=<local dir>) is thus exercised on the exact diffusers
 # the Wan side already validated offline.
-runtime = [
+#
+# Per-backend extras: each image backend has its own named runtime, mirroring
+# [wan]. NOTE: [sdxl] and [zimage] are byte-for-byte IDENTICAL — Z-Image rides
+# the same diffusers 0.38 / transformers stack as SDXL in one Engine (its Qwen
+# text encoder needs no wheel SDXL lacks). The split is a packaging boundary /
+# naming symmetry, not a real dependency fork (unlike [wan], which genuinely
+# adds gguf/imageio). Only the runtime KNOBS differ: use_tiny_vae is SDXL-only.
+sdxl = [
     "torch>=2.6",
     "diffusers==0.38.0",
     "transformers==5.1.0",
@@ -51,6 +58,23 @@ runtime = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+zimage = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
+# Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
+# union of the per-backend image extras. Prefer [sdxl] / [zimage].
+runtime = ["imference-engine[sdxl,zimage]"]
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
