@@ -8,7 +8,7 @@ offline env) is documented once in
 
 FLUX.1 (Black Forest Labs) is a 12B rectified-flow DiT with the largest
 community-finetune ecosystem after SDXL. It rides the generic
-`Engine`/`ModelManager` machinery on the same diffusers 0.38 stack — no separate
+`Engine`/`ModelManager` machinery on the same diffusers 0.39 stack — no separate
 engine class.
 
 ## FLUX specifics

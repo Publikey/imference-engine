@@ -12,7 +12,7 @@ matter to this backend:
   passes the negative prompt through, like Z-Image.
 
 Apache-2.0 and a large "uncensored" community-finetune following make it a cheap,
-high-value addition once FLUX is in: same diffusers 0.38 stack, same offline
+high-value addition once FLUX is in: same diffusers 0.39 stack, same offline
 base-component machinery, same heavy-transformer offload path.
 
 Offline: base components (T5-XXL + VAE + tokenizer + scheduler) resolve into the

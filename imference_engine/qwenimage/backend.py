@@ -3,7 +3,7 @@
 Own sub-package parallel to ``imference_engine.flux`` / ``.chroma``. Qwen-Image is
 a 20B multimodal DiT whose standout is native, reliable text rendering
 (multi-line, paragraph, CJK). It rides the generic Engine / ModelManager /
-RuntimeConfig machinery on the same diffusers 0.38 stack.
+RuntimeConfig machinery on the same diffusers 0.39 stack.
 
 Two backend-relevant specifics:
 

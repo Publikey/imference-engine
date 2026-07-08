@@ -4,7 +4,7 @@ Its own sub-package parallel to ``imference_engine.zimage`` / ``.wan``: FLUX is 
 12B rectified-flow transformer with the largest community-finetune ecosystem
 after SDXL, so it earns a self-contained unit. It still rides the generic
 ``Engine`` / ``ModelManager`` / ``RuntimeConfig`` machinery and the same diffusers
-0.38 stack as SDXL / Z-Image — the split is a packaging boundary, not an engine
+0.39 stack as SDXL / Z-Image — the split is a packaging boundary, not an engine
 fork.
 
 FLUX checkpoints come in two flavors, mirroring Z-Image:

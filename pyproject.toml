@@ -33,20 +33,21 @@ dependencies = [
 # ML versions are pinned to the gen-image-worker prod combo. Tightly coupled:
 # diffusers+transformers+accelerate+peft must be upgraded together with care
 # (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
-# diffusers is on 0.38.0 (the latest release) — the SAME version the [wan] extra
-# uses, so the image and video stacks now share one diffusers. SDXL/Z-Image
-# from_single_file(config=<local dir>) is thus exercised on the exact diffusers
-# the Wan side already validated offline.
+# diffusers is on 0.39.0 — the SAME version the [wan] extra uses, so the image
+# and video stacks share one diffusers. NOTE: this is a BLIND bump from 0.38.0;
+# the per-engine e2e smokes (tests/test_e2e_*.py) are being validated one backend
+# at a time on GPU. SDXL/Z-Image from_single_file(config=<local dir>) is exercised
+# on the exact diffusers the Wan side runs.
 #
 # Per-backend extras: each image backend has its own named runtime, mirroring
 # [wan]. NOTE: [sdxl] and [zimage] are byte-for-byte IDENTICAL — Z-Image rides
-# the same diffusers 0.38 / transformers stack as SDXL in one Engine (its Qwen
+# the same diffusers 0.39 / transformers stack as SDXL in one Engine (its Qwen
 # text encoder needs no wheel SDXL lacks). The split is a packaging boundary /
 # naming symmetry, not a real dependency fork (unlike [wan], which genuinely
 # adds gguf/imageio). Only the runtime KNOBS differ: use_tiny_vae is SDXL-only.
 sdxl = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -60,7 +61,7 @@ sdxl = [
 ]
 zimage = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -72,11 +73,11 @@ zimage = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
-# SD 1.5 — same diffusers 0.38 stack as SDXL (single CLIP-L encoder, no extra
+# SD 1.5 — same diffusers 0.39 stack as SDXL (single CLIP-L encoder, no extra
 # wheel). Byte-for-byte identical to [sdxl]; split for naming symmetry only.
 sd15 = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -88,7 +89,7 @@ sd15 = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
-# FLUX.1 (Black Forest Labs) — same diffusers 0.38 / transformers stack as SDXL
+# FLUX.1 (Black Forest Labs) — same diffusers 0.39 / transformers stack as SDXL
 # and Z-Image (its CLIP-L + T5-XXL text encoders need no wheel those lack;
 # sentencepiece, already present, backs the T5 tokenizer). Byte-for-byte
 # identical to [zimage] — the split is a packaging boundary / naming symmetry,
@@ -96,7 +97,7 @@ sd15 = [
 # RuntimeConfig(enable_cpu_offload=True) on consumer VRAM.
 flux = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -111,7 +112,7 @@ flux = [
 # Chroma — FLUX-derived, single T5 encoder. Same stack as [flux]/[zimage].
 chroma = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -123,12 +124,12 @@ chroma = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
-# Qwen-Image — 20B MMDiT with a Qwen2.5-VL text encoder. Same diffusers 0.38
+# Qwen-Image — 20B MMDiT with a Qwen2.5-VL text encoder. Same diffusers 0.39
 # stack; the VL encoder needs no wheel the others lack (transformers>=5.1 already
 # ships it). Very heavy — pair with cpu-offload / a quantized build.
 qwenimage = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
     "peft==0.18.1",
@@ -146,14 +147,16 @@ runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage]"]
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
-# Wan2.2 video stack — the validated combo (diffusers 0.38 + gguf). Shares the
-# same diffusers pin as [runtime] now (both 0.38.0); kept as a SEPARATE extra
-# only for the extra gguf/imageio video deps. Install: pip install "imference-engine[wan]".
+# Wan2.2 video stack (diffusers + gguf). Shares the same diffusers pin as
+# [runtime] (both 0.39.0) — the repo keeps ONE diffusers across image + video, so
+# this moved with the blind 0.38->0.39 bump too. NOTE: Wan was validated on 0.38;
+# re-validate it on 0.39 like the image engines. Kept a SEPARATE extra only for
+# the extra gguf/imageio video deps. Install: pip install "imference-engine[wan]".
 # torch>=2.6 is required (the FA3 custom op breaks the import on torch 2.4);
 # install the CUDA build from your base image.
 wan = [
     "torch>=2.6",
-    "diffusers==0.38.0",
+    "diffusers==0.39.0",
     "transformers>=5.1",
     "accelerate>=1.12",
     "peft>=0.18",
