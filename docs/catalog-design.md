@@ -1,11 +1,13 @@
 # Catalog YAML loader — design
 
-Status: **Phase A implemented; loader (B) + disk_cache (C) + remote_sync (D)
-pending**. This document is the plan for the `imference_engine/catalog/` package.
-Phase A shipped the precedence chain (`catalog/defaults.py`, `engine_defaults()`
-on backends, the `Optional`/merge refactor of `Engine.generate()`,
-`RegisteredModel.defaults`, and tests). `loader.py` / `disk_cache.py` /
-`remote_sync.py` remain stubbed in `catalog/__init__.py`.
+Status: **Phases A + B implemented; disk_cache (C) + remote_sync (D) pending**.
+This document is the plan for the `imference_engine/catalog/` package. Phase A
+shipped the precedence chain (`catalog/defaults.py`, `engine_defaults()` on
+backends, the `Optional`/merge refactor of `Engine.generate()`,
+`RegisteredModel.defaults`). Phase B shipped `catalog/loader.py` (`models.yml` ->
+`list[ModelConfig]` with strict validation) and the `Engine(catalog_path=...)` /
+`Engine.load_catalog()` wiring. `disk_cache.py` / `remote_sync.py` remain stubbed
+in `catalog/__init__.py`.
 
 It replaces one-by-one `Engine.register_model(...)` calls with a declarative
 `models.yml`, and — critically — introduces a clean **defaults precedence

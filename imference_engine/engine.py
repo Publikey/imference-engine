@@ -198,6 +198,8 @@ class Engine:
             enable_cpu_offload=self._runtime.enable_cpu_offload,
         )
         self._loaded = True
+        if self._catalog_path is not None:
+            self.load_catalog(self._catalog_path)
         return self
 
     def set_lifecycle_hooks(
@@ -269,6 +271,36 @@ class Engine:
                 defaults=defaults or GenerationDefaults(),
             )
         )
+
+    def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "Engine":
+        """Load a ``models.yml`` catalog and register every entry.
+
+        Each row's ``engine`` is validated against the registered backends, and
+        its per-model ``defaults`` become layer 2 of the precedence chain. Rows
+        add to (and override, by name) whatever is already registered — so this
+        is also the hot-reload entry point (re-call with an updated file).
+
+        ``path`` defaults to the ``catalog_path`` passed to the constructor,
+        which ``load()`` already loads automatically; call this directly only to
+        load an additional / updated catalog.
+        """
+        if not self._loaded:
+            raise RuntimeError("Call Engine.load() before load_catalog")
+        from imference_engine.catalog.loader import load as load_catalog_file
+        target = path if path is not None else self._catalog_path
+        if target is None:
+            raise ValueError("no catalog path given and Engine has no catalog_path")
+        configs = load_catalog_file(target, known_engines=set(self._backends))
+        for mc in configs:
+            self._models.register(RegisteredModel(
+                name=mc.name,
+                backend=mc.engine,
+                weights_path=mc.weights,
+                base_model=mc.base_model,
+                defaults=mc.defaults,
+            ))
+        logger.info("Loaded catalog %s (%d models)", target, len(configs))
+        return self
 
     def warm(self, specs: "Iterable[tuple[str, Optional[str]]]" = ()) -> "Engine":
         """Pre-download base-components for the given (backend, base_model) pairs
