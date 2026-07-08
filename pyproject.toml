@@ -72,9 +72,29 @@ zimage = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# FLUX.1 (Black Forest Labs) — same diffusers 0.38 / transformers stack as SDXL
+# and Z-Image (its CLIP-L + T5-XXL text encoders need no wheel those lack;
+# sentencepiece, already present, backs the T5 tokenizer). Byte-for-byte
+# identical to [zimage] — the split is a packaging boundary / naming symmetry,
+# not a real dependency fork. The 12B transformer is heavy: run with
+# RuntimeConfig(enable_cpu_offload=True) on consumer VRAM.
+flux = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
-# union of the per-backend image extras. Prefer [sdxl] / [zimage].
-runtime = ["imference-engine[sdxl,zimage]"]
+# union of the per-backend image extras. Prefer [sdxl] / [zimage] / [flux].
+runtime = ["imference-engine[sdxl,zimage,flux]"]
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 

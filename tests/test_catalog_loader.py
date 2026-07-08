@@ -173,6 +173,6 @@ def test_engine_load_catalog_rejects_unknown_engine(tmp_path):
     from imference_engine import Engine, RuntimeConfig
 
     f = tmp_path / "bad.yml"
-    f.write_text("models:\n  - {name: x, engine: flux, weights: /w}", encoding="utf-8")
-    with pytest.raises(CatalogError, match="unknown engine 'flux'"):
+    f.write_text("models:\n  - {name: x, engine: nope, weights: /w}", encoding="utf-8")
+    with pytest.raises(CatalogError, match="unknown engine 'nope'"):
         Engine(catalog_path=f, runtime=RuntimeConfig(device="cpu")).load()
