@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar, Optional
 
+from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.prompting.weighted import encode_sdxl_weighted
 
@@ -66,6 +67,12 @@ class SDXLBackend(PipelineBackend):
         # are resolved into this tree so a cold load is fully offline (HF_HUB_OFFLINE=1).
         self._cache_dir = cache_dir
         self._cdn_base = cdn_base
+
+    def engine_defaults(self) -> GenerationDefaults:
+        # SDXL's opinionated family default: EulerAncestral (matches the worker
+        # fallback and this backend's own apply_scheduler default). num_steps /
+        # guidance / resolution fall through to GLOBAL_DEFAULTS.
+        return GenerationDefaults(scheduler="EulerAncestralDiscreteScheduler")
 
     def load_pipeline(
         self, *, local_path: str, base_model: Optional[str] = None

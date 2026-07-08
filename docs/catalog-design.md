@@ -1,8 +1,11 @@
 # Catalog YAML loader — design
 
-Status: **design / not yet implemented**. This document is the plan for the
-`imference_engine/catalog/` package (`loader.py`, `disk_cache.py`,
-`remote_sync.py`), stubbed today in `catalog/__init__.py`.
+Status: **Phase A implemented; loader (B) + disk_cache (C) + remote_sync (D)
+pending**. This document is the plan for the `imference_engine/catalog/` package.
+Phase A shipped the precedence chain (`catalog/defaults.py`, `engine_defaults()`
+on backends, the `Optional`/merge refactor of `Engine.generate()`,
+`RegisteredModel.defaults`, and tests). `loader.py` / `disk_cache.py` /
+`remote_sync.py` remain stubbed in `catalog/__init__.py`.
 
 It replaces one-by-one `Engine.register_model(...)` calls with a declarative
 `models.yml`, and — critically — introduces a clean **defaults precedence
@@ -98,27 +101,27 @@ view; `register_model` bridges the two.
 
 ## 2. Layer 1 — engine defaults on the backend
 
-Add to the ABC (`pipelines/base.py`):
+Add to the ABC (`pipelines/base.py`). The base returns an **empty**
+`GenerationDefaults()` (no opinion); the concrete global fallbacks live once in
+`GLOBAL_DEFAULTS` (see §0/§3) so the magic numbers are not duplicated across
+backends:
 
 ```python
 def engine_defaults(self) -> GenerationDefaults:
-    """Family-wide defaults for this engine. Base = global fallbacks;
-    subclasses refine. Overridable by model catalog + per-request.
+    """Family-wide defaults for this engine. Return only what is opinionated
+    for the family; anything left None falls through to GLOBAL_DEFAULTS.
     (dtype/attention invariants do NOT go through here.)"""
-    return GenerationDefaults(
-        num_steps=28, guidance_scale=6.0, width=1024, height=1024,
-    )
+    return GenerationDefaults()
 ```
 
-- **SDXL** override → add `scheduler="EulerAncestralDiscreteScheduler"`.
-- **Z-Image** override → `guidance_scale=1.0`, no `scheduler` (ignored), no
-  `shift` (that is a *model* default — a non-turbo Z-Image wants a different
-  shift).
+- **SDXL** override → `GenerationDefaults(scheduler="EulerAncestralDiscreteScheduler")`.
+- **Z-Image** override → `GenerationDefaults(guidance_scale=1.0)`; no `scheduler`
+  (ignored by the backend), no `shift` (that is a *model* default — a non-turbo
+  Z-Image wants a different shift).
 
-This collapses "global defaults" and "engine defaults" into one layer via
-inheritance: the base `engine_defaults()` carries today's global signature
-fallbacks; each engine refines. One place, no magic values scattered in the
-`generate()` signature.
+The engine layer thus carries only family opinions; the concrete
+`1024/28/6.0/0.75` fallbacks sit below it in `GLOBAL_DEFAULTS`, in one place, off
+the `generate()` signature.
 
 ## 3. The merge in `Engine.generate()`
 

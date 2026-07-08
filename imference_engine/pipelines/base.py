@@ -8,12 +8,26 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Optional
 
+from imference_engine.catalog.defaults import GenerationDefaults
+
 
 class PipelineBackend(ABC):
     """One backend per ModelConfig.engine value."""
 
     engine: ClassVar[str]
     """Identifier matching ModelConfig.engine ("sdxl" | "zimage" | ...)."""
+
+    def engine_defaults(self) -> GenerationDefaults:
+        """Layer 1 of the defaults precedence chain: family-wide generation
+        defaults for this engine, overridable by the model catalog and per
+        request (see ``catalog/defaults.py``).
+
+        Return only what is OPINIONATED for the family — e.g. SDXL's default
+        scheduler, Z-Image's low guidance. Anything left ``None`` falls through
+        to ``GLOBAL_DEFAULTS``. Engine INVARIANTS (dtype, attention) do NOT
+        belong here — they stay hard-coded in the backend. Default: no opinion.
+        """
+        return GenerationDefaults()
 
     @abstractmethod
     def load_pipeline(

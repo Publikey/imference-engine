@@ -26,9 +26,10 @@ from __future__ import annotations
 import gc
 import logging
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.runtime.device import Device
 
@@ -37,11 +38,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RegisteredModel:
-    """Metadata for a model — what to pass to backend.load_pipeline."""
+    """Metadata for a model — what to pass to backend.load_pipeline, plus the
+    per-model generation defaults (layer 2 of the precedence chain)."""
     name: str
     backend: str
     weights_path: str
     base_model: Optional[str] = None
+    defaults: GenerationDefaults = field(default_factory=GenerationDefaults)
 
 
 class ModelManager:
@@ -102,6 +105,17 @@ class ModelManager:
             )
         self._registered[model.name] = model
         logger.info(f"Registered model {model.name!r} (backend={model.backend})")
+
+    def config_for(self, name: str) -> RegisteredModel:
+        """Return the registration metadata (incl. per-model defaults) for a
+        registered model. Raises KeyError if unknown — same contract as
+        get_or_load."""
+        if name not in self._registered:
+            raise KeyError(
+                f"Model {name!r} is not registered. "
+                f"Known: {list(self._registered)}"
+            )
+        return self._registered[name]
 
     def get_or_load(self, name: str) -> tuple[Any, PipelineBackend]:
         """Resolve a registered model to a (pipe, backend) tuple, with the

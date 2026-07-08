@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional, Union
 
+from imference_engine.catalog.defaults import GLOBAL_DEFAULTS, GenerationDefaults
 from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
@@ -246,10 +247,16 @@ class Engine:
         backend: str,
         weights_path: Union[str, Path],
         base_model: Optional[str] = None,
+        defaults: Optional[GenerationDefaults] = None,
     ) -> None:
         """Register a model so generate(model=name, ...) can load it.
 
-        For V1 the catalog YAML is not wired up; call this directly per model.
+        ``defaults`` is layer 2 of the precedence chain (per-model sampler
+        settings, e.g. ``GenerationDefaults(num_steps=8,
+        backend_options={"shift": 3.0})`` for a Z-Image turbo checkpoint). When
+        omitted, the model carries no opinion and generate() resolves against
+        the engine defaults + request only. The catalog YAML loader populates
+        this from a ``models.yml``; until then callers register per model.
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before register_model")
@@ -259,6 +266,7 @@ class Engine:
                 backend=backend,
                 weights_path=str(weights_path),
                 base_model=base_model,
+                defaults=defaults or GenerationDefaults(),
             )
         )
 
@@ -303,25 +311,55 @@ class Engine:
         model: str,
         prompt: str,
         negative_prompt: Optional[str] = None,
-        width: int = 1024,
-        height: int = 1024,
-        num_steps: int = 28,
-        guidance_scale: float = 6.0,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        num_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
         clip_skip: Optional[int] = None,
         scheduler: Optional[str] = None,
         batch: int = 1,
         seed: Optional[int] = None,
         source_image: Optional["Image"] = None,
-        strength: float = 0.75,
+        strength: Optional[float] = None,
         loras: Optional[list[dict]] = None,
         backend_options: Optional[dict] = None,
     ) -> GenerationResult:
+        """Generate ``batch`` images for ``model``.
+
+        The sampling params (``num_steps``, ``guidance_scale``, ``width``,
+        ``height``, ``scheduler``, ``clip_skip``, ``negative_prompt``,
+        ``strength``, ``backend_options``) default to ``None`` = "not set at the
+        request layer". Each unset param is resolved through the precedence chain
+        ``request > model defaults > engine defaults > GLOBAL_DEFAULTS`` (finest
+        wins), so a per-model catalog default fills what the request omits. Pass
+        a value to override at the request layer.
+        """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before generate")
         if loras:
             logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
 
         pipe, backend = self._models.get_or_load(model)
+
+        # Resolve the effective sampling params through the precedence chain:
+        # request > model defaults > engine defaults > GLOBAL_DEFAULTS. A None
+        # request field does NOT shadow a lower layer (that is why the signature
+        # defaults are None, not concrete values).
+        request = GenerationDefaults(
+            num_steps=num_steps,
+            guidance_scale=guidance_scale,
+            width=width,
+            height=height,
+            scheduler=scheduler,
+            clip_skip=clip_skip,
+            negative_prompt=negative_prompt,
+            strength=strength,
+            backend_options=backend_options or {},
+        )
+        eff = backend.engine_defaults()                          # layer 1
+        eff = self._models.config_for(model).defaults.merged_over(eff)  # layer 2
+        eff = request.merged_over(eff)                           # layer 3
+        eff = eff.merged_over(GLOBAL_DEFAULTS)                   # bottom fallback
         # img2img: wrap the resident t2i pipe in the backend's img2img pipeline.
         # make_img2img reuses the SAME in-memory modules (vae/text_encoder/unet|
         # transformer/scheduler), so it's a cheap reference wrapper on the already-
@@ -332,8 +370,8 @@ class Engine:
         is_img2img = source_image is not None
         if is_img2img:
             pipe = backend.make_img2img(pipe)
-        backend.apply_scheduler(pipe, scheduler, **(backend_options or {}))
-        prompt_kwargs = backend.encode_prompts(pipe, prompt, negative_prompt)
+        backend.apply_scheduler(pipe, eff.scheduler, **eff.backend_options)
+        prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
         seeds = [
             (seed + i) if seed is not None else random.randint(0, MAX_SEED)
@@ -344,15 +382,15 @@ class Engine:
             pipe=pipe,
             backend=backend,
             prompt_kwargs=prompt_kwargs,
-            width=width,
-            height=height,
-            num_steps=num_steps,
-            guidance_scale=guidance_scale,
-            clip_skip=clip_skip,
+            width=eff.width,
+            height=eff.height,
+            num_steps=eff.num_steps,
+            guidance_scale=eff.guidance_scale,
+            clip_skip=eff.clip_skip,
             seeds=seeds,
             is_img2img=is_img2img,
             source_image=source_image,
-            strength=strength,
+            strength=eff.strength,
         )
 
     def _run_chunked(
