@@ -11,8 +11,8 @@ Early extraction from `gen-image-worker/workers/sdxl-multimodel` and
 unifies them behind a single `Engine` API and adds the abstraction needed for
 future desktop / MPS / quantization support.
 
-Inference + backends are wired (SDXL + Z-Image + FLUX.1, plus a Wan video
-sub-package). The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in,
+Inference + backends are wired (SDXL, SD 1.5, Z-Image, FLUX.1, Chroma, plus a
+Wan video sub-package). The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in,
 img2img (`Engine.generate(source_image=...)`) is wired, and the catalog YAML
 loader + per-model defaults precedence chain (`Engine(catalog_path=...)`) are in
 (see [`docs/catalog-design.md`](docs/catalog-design.md)). Remaining gap:
@@ -20,9 +20,9 @@ loader + per-model defaults precedence chain (`Engine(catalog_path=...)`) are in
 
 ## Scope
 
-- **In:** SDXL, Z-Image, FLUX.1 pipelines, LoRA stacking, dynamic GPU batch
-  sizing, CPU/GPU/disk LRU model management, weighted prompt embeddings with
-  BREAK keyword support.
+- **In:** SDXL, SD 1.5, Z-Image, FLUX.1, Chroma pipelines, LoRA stacking,
+  dynamic GPU batch sizing, CPU/GPU/disk LRU model management, weighted prompt
+  embeddings with BREAK keyword support.
 - **Out (intentionally):** Wan video, ComfyUI workflows, cloud-API wrappers
   (Azure, Vertex, OpenAI). Those stay as their own one-shot workers — they
   don't share an inference loop with diffusion models.
@@ -113,9 +113,10 @@ launcher is interchangeable.
 
 Full env↔param↔default tables per engine:
 
-- **SDXL + shared image config:** [`pipelines/README.md`](imference_engine/pipelines/README.md)
+- **SDXL + SD 1.5 + shared image config:** [`pipelines/README.md`](imference_engine/pipelines/README.md)
 - **Z-Image:** [`zimage/README.md`](imference_engine/zimage/README.md)
 - **FLUX.1:** [`flux/README.md`](imference_engine/flux/README.md)
+- **Chroma:** [`chroma/README.md`](imference_engine/chroma/README.md)
 - **Wan video:** [`wan/README.md`](imference_engine/wan/README.md)
 
 ## Layout

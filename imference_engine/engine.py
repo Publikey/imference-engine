@@ -167,7 +167,9 @@ class Engine:
         if self._device.kind == "cuda":
             self._tune_cuda()
 
+        from imference_engine.chroma.backend import ChromaBackend
         from imference_engine.flux.backend import FluxBackend
+        from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
         cache_dir = (str(self._runtime.model_cache_dir)
@@ -177,9 +179,14 @@ class Engine:
             SDXLBackend.engine: SDXLBackend(
                 use_tiny_vae=self._runtime.use_tiny_vae,
                 cache_dir=cache_dir, cdn_base=cdn_base),
+            SD15Backend.engine: SD15Backend(
+                use_tiny_vae=self._runtime.use_tiny_vae,
+                cache_dir=cache_dir, cdn_base=cdn_base),
             ZImageBackend.engine: ZImageBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             FluxBackend.engine: FluxBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            ChromaBackend.engine: ChromaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 

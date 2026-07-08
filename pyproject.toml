@@ -72,6 +72,22 @@ zimage = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# SD 1.5 — same diffusers 0.38 stack as SDXL (single CLIP-L encoder, no extra
+# wheel). Byte-for-byte identical to [sdxl]; split for naming symmetry only.
+sd15 = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # FLUX.1 (Black Forest Labs) — same diffusers 0.38 / transformers stack as SDXL
 # and Z-Image (its CLIP-L + T5-XXL text encoders need no wheel those lack;
 # sentencepiece, already present, backs the T5 tokenizer). Byte-for-byte
@@ -92,9 +108,24 @@ flux = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# Chroma — FLUX-derived, single T5 encoder. Same stack as [flux]/[zimage].
+chroma = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
-# union of the per-backend image extras. Prefer [sdxl] / [zimage] / [flux].
-runtime = ["imference-engine[sdxl,zimage,flux]"]
+# union of the per-backend image extras. Prefer the specific extra.
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma]"]
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 

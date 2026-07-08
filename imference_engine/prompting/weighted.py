@@ -82,3 +82,31 @@ def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
         "pooled_prompt_embeds": pooled,
         "negative_pooled_prompt_embeds": neg_pooled,
     }
+
+
+def encode_sd15_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> dict:
+    """Weighted prompt embeddings for SD 1.5 (single CLIP-L encoder).
+
+    Unlike SDXL, SD 1.5 has ONE text encoder and NO pooled embeddings, so this
+    returns just ``prompt_embeds`` / ``negative_prompt_embeds``. sd_embed's sd15
+    path already overcomes the 77-token limit and supports A1111-style weighting;
+    BREAK chunking is not wired here (SDXL-only for now).
+
+    Falls back to raw {prompt, negative_prompt} kwargs if sd_embed is missing.
+    """
+    try:
+        from sd_embed.embedding_funcs import get_weighted_text_embeddings_sd15
+    except ImportError:
+        logger.warning("sd_embed not installed; using raw prompt strings")
+        return {"prompt": prompt, "negative_prompt": negative_prompt or ""}
+
+    neg = negative_prompt or ""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
+        prompt_embeds, neg_prompt_embeds = get_weighted_text_embeddings_sd15(
+            pipe, prompt=prompt, neg_prompt=neg
+        )
+    return {
+        "prompt_embeds": prompt_embeds,
+        "negative_prompt_embeds": neg_prompt_embeds,
+    }
