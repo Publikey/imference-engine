@@ -12,7 +12,7 @@ unifies them behind a single `Engine` API and adds the abstraction needed for
 future desktop / MPS / quantization support.
 
 Inference + backends are wired (SDXL, SD 1.5, Z-Image, FLUX.1, Chroma,
-Qwen-Image, plus a Wan video sub-package). The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in,
+Qwen-Image, Anima, plus a Wan video sub-package). The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in,
 img2img (`Engine.generate(source_image=...)`) is wired, and the catalog YAML
 loader + per-model defaults precedence chain (`Engine(catalog_path=...)`) are in
 (see [`docs/catalog-design.md`](docs/catalog-design.md)). Remaining gap:
@@ -118,6 +118,7 @@ Full env↔param↔default tables per engine:
 - **FLUX.1:** [`flux/README.md`](imference_engine/flux/README.md)
 - **Chroma:** [`chroma/README.md`](imference_engine/chroma/README.md)
 - **Qwen-Image:** [`qwenimage/README.md`](imference_engine/qwenimage/README.md)
+- **Anima (Modular Diffusers):** [`anima/README.md`](imference_engine/anima/README.md)
 - **Wan video:** [`wan/README.md`](imference_engine/wan/README.md)
 
 ## Layout

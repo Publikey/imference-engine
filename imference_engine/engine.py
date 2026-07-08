@@ -167,6 +167,7 @@ class Engine:
         if self._device.kind == "cuda":
             self._tune_cuda()
 
+        from imference_engine.anima.backend import AnimaBackend
         from imference_engine.chroma.backend import ChromaBackend
         from imference_engine.flux.backend import FluxBackend
         from imference_engine.pipelines.sd15 import SD15Backend
@@ -190,6 +191,8 @@ class Engine:
             ChromaBackend.engine: ChromaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             QwenImageBackend.engine: QwenImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
