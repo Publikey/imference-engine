@@ -172,6 +172,7 @@ class Engine:
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
+        from imference_engine.qwenimage.backend import QwenImageBackend
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
         cdn_base = self._runtime.model_cdn
@@ -187,6 +188,8 @@ class Engine:
             FluxBackend.engine: FluxBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             ChromaBackend.engine: ChromaBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            QwenImageBackend.engine: QwenImageBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 

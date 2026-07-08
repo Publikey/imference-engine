@@ -123,9 +123,26 @@ chroma = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# Qwen-Image — 20B MMDiT with a Qwen2.5-VL text encoder. Same diffusers 0.38
+# stack; the VL encoder needs no wheel the others lack (transformers>=5.1 already
+# ships it). Very heavy — pair with cpu-offload / a quantized build.
+qwenimage = [
+    "torch>=2.6",
+    "diffusers==0.38.0",
+    "transformers==5.1.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
 # union of the per-backend image extras. Prefer the specific extra.
-runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma]"]
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage]"]
 azure = ["azure-storage-blob>=12"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
