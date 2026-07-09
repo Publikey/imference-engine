@@ -17,7 +17,7 @@ from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.runtime.device import Device, resolve_device
-from imference_engine.types import GenerationError, GenerationResult
+from imference_engine.core.result import GenerationError, MediaResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -371,7 +371,7 @@ class Engine:
         strength: Optional[float] = None,
         loras: Optional[list[dict]] = None,
         backend_options: Optional[dict] = None,
-    ) -> GenerationResult:
+    ) -> MediaResult:
         """Generate ``batch`` images for ``model``.
 
         The sampling params (``num_steps``, ``guidance_scale``, ``width``,
@@ -456,7 +456,7 @@ class Engine:
         is_img2img: bool,
         source_image: Optional["Image"] = None,
         strength: float = 0.75,
-    ) -> GenerationResult:
+    ) -> MediaResult:
         batch_total = len(seeds)
         max_gpu_batch = self._batch_sizer.get_max_batch_size(backend.engine, is_img2img)
         needs_profiling = max_gpu_batch == 0
@@ -540,7 +540,7 @@ class Engine:
                     ))
                 idx += chunk_size
 
-        return GenerationResult(images=images, seeds=seeds, errors=errors)
+        return MediaResult(kind="image", media=images, seeds=seeds, errors=errors)
 
     # ------------------------------------------------------------------
     # Internal helpers

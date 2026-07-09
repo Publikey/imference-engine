@@ -20,7 +20,7 @@ from imference_engine.runtime.device import resolve_device
 from imference_engine.wan.config import MemoryProfile, WanRuntimeConfig
 from imference_engine.wan.manager import ResidencyManager
 from imference_engine.wan.presets import BUILTIN_VARIANTS, WanVariant
-from imference_engine.wan.result import WanGenerationError, WanVideoResult
+from imference_engine.core.result import GenerationError, MediaResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -187,7 +187,7 @@ class WanEngine:
         guidance_scale_2: Optional[float] = None,
         fps: int = 16,
         seed: Optional[int] = None,
-    ) -> WanVideoResult:
+    ) -> MediaResult:
         if not self._loaded:
             raise RuntimeError("Call WanEngine.load() before generate_video")
         if variant not in self._variants:
@@ -222,15 +222,17 @@ class WanEngine:
                         variant, var.mode, width, height, num_frames, num_steps, seed)
             frames = pipe(**call).frames[0]
             frames = _ensure_pil(frames)
-            return WanVideoResult(
-                frames=frames, fps=fps, seed=seed, variant=variant,
-                width=width, height=height, num_frames=num_frames)
+            return MediaResult(
+                kind="video", media=frames, seeds=[seed],
+                fps=fps, num_frames=num_frames, width=width, height=height,
+                variant=variant)
         except Exception as e:  # noqa: BLE001
             logger.error("generate_video failed: %s", e, exc_info=True)
-            return WanVideoResult(
-                frames=None, fps=fps, seed=seed, variant=variant,
-                width=width, height=height, num_frames=num_frames,
-                error=WanGenerationError(error=str(e), seed=seed))
+            return MediaResult(
+                kind="video", media=[], seeds=[seed],
+                errors=[GenerationError(error=str(e), seed=seed)],
+                fps=fps, num_frames=num_frames, width=width, height=height,
+                variant=variant)
 
     @property
     def resident(self) -> list[str]:
