@@ -52,6 +52,11 @@ class SD15Backend(PipelineBackend):
         # config.json of every sub-model (text_encoder, unet, vae). Glob on
         # config.json only → never pulls weights.
         "*/config.json",
+        # The SD 1.5 model_index lists a feature_extractor (CLIPImageProcessor,
+        # for the safety checker). Even with safety_checker=None, from_single_file
+        # tries to load it and needs feature_extractor/preprocessor_config.json —
+        # which */config.json does NOT match. Mirror it so the cold load resolves.
+        "feature_extractor/*",
     ]
     _VAE_PATTERNS: ClassVar[list] = ["config.json", "diffusion_pytorch_model.safetensors"]
 
@@ -92,8 +97,12 @@ class SD15Backend(PipelineBackend):
             torch_dtype=torch.float16,
             use_safetensors=True,
             # SD 1.5 config ships a safety_checker + feature_extractor we don't
-            # want to load or gate generation on.
+            # want to load or gate generation on. safety_checker=None disables the
+            # NSFW gate; feature_extractor=None skips the CLIPImageProcessor it
+            # feeds (only used by the safety checker). feature_extractor/* is also
+            # mirrored (CONFIG_PATTERNS) as a fallback if the loader still probes it.
             safety_checker=None,
+            feature_extractor=None,
             requires_safety_checker=False,
         )
         pipe = pipe.to(torch.float16)
