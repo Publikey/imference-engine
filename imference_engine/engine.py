@@ -5,7 +5,6 @@ Callers wrap it in whatever surface they need (worker task handler, sidecar
 HTTP server, in-process batch script).
 """
 from __future__ import annotations
-import gc
 import logging
 import random
 from dataclasses import dataclass
@@ -13,21 +12,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional, Union
 
 from imference_engine.catalog.defaults import GLOBAL_DEFAULTS, GenerationDefaults
+from imference_engine.core.config import BaseRuntimeConfig
+from imference_engine.core.engine_base import MAX_SEED, BaseEngine
+from imference_engine.core.result import GenerationError, MediaResult
 from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
-from imference_engine.runtime.device import Device, resolve_device
-from imference_engine.core.config import BaseRuntimeConfig
-from imference_engine.core.result import GenerationError, MediaResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
     from typing import Callable
 
 logger = logging.getLogger(__name__)
-
-# numpy int32 max — keeps seeds in a range schedulers accept
-MAX_SEED = 2 ** 31 - 1
 
 
 @dataclass
@@ -92,12 +88,12 @@ class RuntimeConfig(BaseRuntimeConfig):
         )
 
 
-class Engine:
-    """High-level diffusion inference engine.
+class Engine(BaseEngine):
+    """High-level diffusion inference engine (image side).
 
     Supports single-resident (desktop default) and multi-tier LRU (worker
-    via RuntimeConfig.max_gpu_models / max_cpu_models). LoRA, catalog YAML,
-    and img2img remain TBD.
+    via RuntimeConfig.max_gpu_models / max_cpu_models). Inherits the device /
+    load lifecycle from ``BaseEngine``.
 
     Lifecycle:
         engine = Engine(runtime=RuntimeConfig(...)).load()
@@ -114,15 +110,13 @@ class Engine:
         catalog_path: Optional[Union[str, Path]] = None,
         runtime: Optional[RuntimeConfig] = None,
     ) -> None:
+        super().__init__(runtime=runtime or RuntimeConfig())
         self._catalog_path = Path(catalog_path) if catalog_path else None
-        self._runtime = runtime or RuntimeConfig()
-        self._device: Optional[Device] = None
         self._backends: dict[str, PipelineBackend] = {}
         self._models: Optional[ModelManager] = None
         self._batch_sizer = BatchSizer()
-        self._loaded = False
         # Lifecycle hooks may be set before OR after load(); we wire them
-        # into the ModelManager at load() time, and set_lifecycle_hooks
+        # into the ModelManager at _setup() time, and set_lifecycle_hooks
         # reaches into the manager if it already exists.
         self._on_model_loaded: Optional["Callable[[str], None]"] = None
         self._on_model_evicted: Optional["Callable[[str], None]"] = None
@@ -131,14 +125,9 @@ class Engine:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def load(self) -> "Engine":
-        """Detect device, register default backends. Idempotent."""
-        if self._loaded:
-            return self
-
-        self._device = resolve_device(self._runtime.device)
-        logger.info(f"Engine device: {self._device.torch_str}")
-
+    def _setup(self) -> None:
+        """Build the image backends + ModelManager, load the catalog if given.
+        Device resolution / CUDA tuning already ran in ``BaseEngine.load()``."""
         # Loud warning when we'd silently fall back to CPU: fp16 pipelines on CPU
         # hang at ~0 steps/s in PyTorch since CPU has no native fp16. Most users
         # hit this when they pip-install torch without CUDA in their venv.
@@ -149,10 +138,6 @@ class Engine:
                 "If you have a GPU, install CUDA torch: "
                 "pip install torch --index-url https://download.pytorch.org/whl/cu121"
             )
-
-        # Enable TF32 + flash SDPA when running on CUDA (free perf on Ampere+)
-        if self._device.kind == "cuda":
-            self._tune_cuda()
 
         from imference_engine.anima.backend import AnimaBackend
         from imference_engine.chroma.backend import ChromaBackend
@@ -202,10 +187,10 @@ class Engine:
             # the config surface is the unified enable_offload.
             enable_cpu_offload=self._runtime.enable_offload,
         )
-        self._loaded = True
+        # Catalog load via the internal helper (no _loaded guard — BaseEngine
+        # flips _loaded only after _setup returns).
         if self._catalog_path is not None:
-            self.load_catalog(self._catalog_path)
-        return self
+            self._register_catalog(self._catalog_path)
 
     def set_lifecycle_hooks(
         self,
@@ -231,17 +216,6 @@ class Engine:
             self._models._on_loaded = on_model_loaded
             self._models._on_evicted = on_model_evicted
         return self
-
-    @staticmethod
-    def _tune_cuda() -> None:
-        try:
-            import torch
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_mem_efficient_sdp(True)
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"CUDA tuning skipped: {e}")
 
     # ------------------------------------------------------------------
     # Catalog
@@ -291,11 +265,17 @@ class Engine:
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before load_catalog")
-        from imference_engine.catalog.loader import load as load_catalog_file
         target = path if path is not None else self._catalog_path
         if target is None:
             raise ValueError("no catalog path given and Engine has no catalog_path")
-        configs = load_catalog_file(target, known_engines=set(self._backends))
+        self._register_catalog(target)
+        return self
+
+    def _register_catalog(self, path: Union[str, Path]) -> None:
+        """Parse a catalog and register every row. No ``_loaded`` guard — usable
+        from ``_setup()`` (where the manager exists but load() hasn't returned)."""
+        from imference_engine.catalog.loader import load as load_catalog_file
+        configs = load_catalog_file(path, known_engines=set(self._backends))
         for mc in configs:
             self._models.register(RegisteredModel(
                 name=mc.name,
@@ -304,8 +284,7 @@ class Engine:
                 base_model=mc.base_model,
                 defaults=mc.defaults,
             ))
-        logger.info("Loaded catalog %s (%d models)", target, len(configs))
-        return self
+        logger.info("Loaded catalog %s (%d models)", path, len(configs))
 
     def warm(self, specs: "Iterable[tuple[str, Optional[str]]]" = ()) -> "Engine":
         """Pre-download base-components for the given (backend, base_model) pairs
@@ -544,12 +523,3 @@ class Engine:
         except Exception:  # noqa: BLE001
             pass
         return "out of memory" in str(exc).lower()
-
-    def _free_cache(self) -> None:
-        gc.collect()
-        try:
-            import torch
-            if self._device and self._device.kind == "cuda":
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass
