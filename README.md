@@ -12,11 +12,12 @@ unifies them behind a single `Engine` API and adds the abstraction needed for
 future desktop / MPS / quantization support.
 
 Inference + backends are wired (SDXL, SD 1.5, Z-Image, FLUX.1, Chroma,
-Qwen-Image, Anima, plus a Wan video sub-package). The multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in,
-img2img (`Engine.generate(source_image=...)`) is wired, and the catalog YAML
-loader + per-model defaults precedence chain (`Engine(catalog_path=...)`) are in
-(see [`docs/catalog-design.md`](docs/catalog-design.md)). Remaining gap:
-`LoRAManager`.
+Qwen-Image, Anima, plus a Wan video sub-package) — **all seven image backends
+validated end-to-end on diffusers 0.39** (see [`validation/`](validation/)). The
+multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in, img2img
+(`Engine.generate(source_image=...)`) is wired, and the catalog YAML loader +
+per-model defaults precedence chain (`Engine(catalog_path=...)`) are in (see
+[`docs/catalog-design.md`](docs/catalog-design.md)). Remaining gap: `LoRAManager`.
 
 ## Scope
 

@@ -38,27 +38,30 @@ Each top-level key is a backend name. Edit it to match your setup:
 - **`weights_local`** — point at a `.safetensors` (or diffusers dir for Anima)
   you already have; bypasses the download entirely. The fastest path if you've
   pulled weights from Civitai/HF.
-- **`filename`** — the single-file weight to download from `repo`. Entries marked
-  `(VERIFY)` are best-effort — confirm the exact filename on the HF repo, or use
-  `weights_local`. Notably: **Z-Image / Chroma / Qwen-Image** base transformers
-  may be sharded or named differently than the guess; Qwen-Image in particular is
-  usually sharded in the base repo, so `weights_local` is the reliable route.
+- **`filename`** — the single-file weight to download from `repo`. The shipped
+  entries are all validated (see status below); swap in `weights_local` to
+  validate a specific community checkpoint instead. Z-Image / Qwen-Image use the
+  Comfy-Org transformer-only single files (their official base repos are
+  multi-file), with `base_model` supplying the shared components.
 - **`offload`** — `true` for the 8–20B models (FLUX, Chroma, Qwen-Image) so they
   fit consumer VRAM via `enable_model_cpu_offload`.
 - **`base_model`** — shared-component repo for transformer-only checkpoints
   (FLUX/Chroma/Qwen/Z-Image). Downloaded from HF on first use.
 
-## Notes per engine
+## Status — all 7 validated
 
-| Engine | Base model | Gotcha |
+Every engine below has been validated end-to-end (base model → rendered image) on
+**diffusers 0.39** (RTX PRO 5000 Blackwell, torch 2.12).
+
+| Engine | Base model | Notes |
 |---|---|---|
-| `sdxl` | SDXL 1.0 base | single-file, straightforward |
-| `sd15` | SD 1.5 | single-file, light (~2 GB) |
-| `zimage` | Z-Image-Turbo | confirm the transformer filename; 8-step turbo |
-| `flux` | FLUX.1-dev | **gated** (login); ~24 GB → `offload: true` |
-| `chroma` | Chroma1-HD | confirm filename; real CFG (negative used) |
-| `qwenimage` | Qwen-Image | base transformer sharded → prefer `weights_local`; 20B |
-| `anima` | Anima-Base (diffusers repo) | **Modular pipeline** — the `__call__` kwargs are the unverified seam; if it errors on an unexpected kwarg, trim it in `imference_engine/anima/backend.py` |
+| `sdxl` | SDXL 1.0 base | ✅ single-file |
+| `sd15` | SD 1.5 | ✅ single-file, light (~2 GB) |
+| `zimage` | Z-Image-Turbo (Comfy-Org transformer) | ✅ 8-step turbo, shift 3.0 |
+| `flux` | FLUX.1-dev | ✅ **gated** (`hf auth login`); ~24 GB → `offload: true` |
+| `chroma` | Chroma1-HD | ✅ real CFG (negative used); trends saturated at high CFG |
+| `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow |
+| `anima` | Anima-Base (diffusers repo) | ✅ **Modular pipeline**; t2i only (no img2img) |
 
 ## When something fails
 

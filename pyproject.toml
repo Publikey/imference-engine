@@ -34,10 +34,10 @@ dependencies = [
 # diffusers+transformers+accelerate+peft must be upgraded together with care
 # (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
 # diffusers is on 0.39.0 — the SAME version the [wan] extra uses, so the image
-# and video stacks share one diffusers. NOTE: this is a BLIND bump from 0.38.0;
-# the per-engine e2e smokes (tests/test_e2e_*.py) are being validated one backend
-# at a time on GPU. SDXL/Z-Image from_single_file(config=<local dir>) is exercised
-# on the exact diffusers the Wan side runs.
+# and video stacks share one diffusers. All 7 image backends (sdxl, sd15, zimage,
+# flux, chroma, qwenimage, anima) are VALIDATED end-to-end on 0.39 (RTX PRO 5000
+# Blackwell, torch 2.12) via validation/. Wan was validated on 0.38 and still
+# wants a re-check on 0.39.
 #
 # Per-backend extras: each image backend has its own named runtime, mirroring
 # [wan]. NOTE: [sdxl] and [zimage] are byte-for-byte IDENTICAL — Z-Image rides

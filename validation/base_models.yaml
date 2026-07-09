@@ -19,8 +19,9 @@
 #   prompt / negative_prompt / width / height / num_steps / guidance_scale / seed
 #   backend_options: engine-specific (e.g. Z-Image shift)
 #
-# CONFIDENCE: filenames marked (VERIFY) are best-effort — confirm against the repo
-# on HF, or use weights_local. Gated repos (FLUX.1-dev) need `huggingface-cli login`.
+# STATUS: all 7 entries validated end-to-end on diffusers 0.39 (RTX PRO 5000
+# Blackwell, torch 2.12) — each renders from its base model. Gated repos
+# (FLUX.1-dev) need `hf auth login` + an HF_TOKEN with gated-repo read access.
 
 sdxl:
   mode: single_file
@@ -83,7 +84,7 @@ flux:
 chroma:
   mode: single_file
   repo: lodestones/Chroma1-HD
-  filename: Chroma1-HD.safetensors        # (VERIFY) transformer single file
+  filename: Chroma1-HD.safetensors
   base_model: lodestones/Chroma1-HD
   offload: true
   prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus"

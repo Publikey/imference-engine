@@ -11,21 +11,19 @@ Architecture (for context): a ``CosmosTransformer3DModel`` DiT + a Qwen3 text
 encoder + an ``AnimaTextConditioner`` (learned T5 tokens cross-attending Qwen3
 hidden states) + the ``AutoencoderKLQwenImage`` VAE.
 
-VERIFIED against the diffusers docs/source (main + v0.39.0):
+VALIDATED end-to-end (text-to-image) on diffusers 0.39 — RTX PRO 5000 Blackwell,
+torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
   - Loaded via ``ModularPipeline.from_pretrained(repo)`` then
-    ``pipe.load_components(torch_dtype=torch.bfloat16)``.
-  - ``pipe.to("cuda")`` IS supported → the ModelManager's ``.to(device)`` /
-    ``.to("cpu")`` residency moves work.
-  - ``pipe(prompt=...).images[0]`` — returns ``.images``.
-
-UNVERIFIED — the GPU validation gate (the doc example only passes ``prompt``):
-  - Which extra kwargs the modular ``__call__`` accepts (num_inference_steps,
-    guidance_scale, height, width, generator, negative_prompt,
-    num_images_per_prompt). This backend passes the standard set; if the modular
-    pipeline rejects one, trim it in ``build_inference_kwargs`` / ``encode_prompts``
-    — that is the single place to adjust.
+    ``pipe.load_components(torch_dtype=torch.bfloat16)``; ``pipe.to(device)`` /
+    ``.to("cpu")`` residency moves work; ``pipe(...).images`` returns images.
+  - The modular ``__call__`` ACCEPTS the standard kwarg set this backend passes
+    (num_inference_steps, guidance_scale, height, width, generator,
+    num_images_per_prompt, and negative_prompt when set). If a future diffusers
+    changes the modular signature, ``build_inference_kwargs`` / ``encode_prompts``
+    are the single place to adjust.
   - CPU-offload: ``enable_model_cpu_offload`` may not exist on a ModularPipeline;
-    the ModelManager already falls back to ``.to(device)`` if it raises.
+    the ModelManager already falls back to ``.to(device)`` if it raises. img2img
+    is unsupported (``make_img2img`` raises — no documented modular variant).
 
 NOTE: ``weights_path`` for Anima is a diffusers-format repo id or local directory
 (e.g. ``circlestone-labs/Anima-Base-v1.0-Diffusers``), NOT a single .safetensors.
