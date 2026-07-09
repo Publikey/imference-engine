@@ -96,8 +96,10 @@ chroma:
 
 qwenimage:
   mode: single_file
-  repo: Qwen/Qwen-Image
-  filename: qwen-image.safetensors        # (VERIFY) base transformer is usually sharded — use weights_local
+  # Comfy-Org transformer-only single file (40.9 GB bf16); base_model supplies the
+  # Qwen2.5-VL text encoder + VAE + tokenizer. Heavy — offload + patience.
+  repo: Comfy-Org/Qwen-Image_ComfyUI
+  filename: split_files/diffusion_models/qwen_image_bf16.safetensors
   base_model: Qwen/Qwen-Image
   offload: true
   prompt: 'a bookstore window with a sign that reads "Imference Engine"'
