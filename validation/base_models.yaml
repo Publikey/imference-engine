@@ -52,8 +52,10 @@ sd15:
 
 zimage:
   mode: single_file
-  repo: Tongyi-MAI/Z-Image-Turbo
-  filename: z-image-turbo.safetensors   # (VERIFY) transformer-only single file
+  # Comfy-Org ships the transformer-only single file (split_files/diffusion_models);
+  # the base_model repo supplies the Qwen text_encoder + VAE + tokenizer.
+  repo: Comfy-Org/z_image_turbo
+  filename: split_files/diffusion_models/z_image_turbo_bf16.safetensors
   base_model: Tongyi-MAI/Z-Image-Turbo
   offload: false
   prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus"
