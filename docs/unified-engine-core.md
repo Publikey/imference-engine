@@ -168,7 +168,15 @@ in-repo callers besides tests + the validation harnesses (updated per phase).
   `Engine`/`RuntimeConfig`/`WanEngine` names; base classes internal to `core/`.
 - **Phase 3 ✅** `core/engine_base.py` `BaseEngine` (device/load/seed/cache). Both
   engines subclass it; `_setup()` hook holds modality construction.
-- **Phase 4 ⏭️ next** — detailed below.
+- **Phase 4** — in progress:
+  - **4a ✅** `core/backend.py` `Backend` trunk (minimal: `engine` id +
+    `engine_defaults`); `PipelineBackend` now extends it.
+  - **4b ✅** new `video/` package: `VideoBackend` ABC + `VideoBuildContext` +
+    `WanBackend` (wraps `wan/loader.py`). Additive — nothing drives it yet; it
+    defines the contract LTX will implement.
+  - **4c ⏭️ next** — generify `ResidencyManager` to take a `VideoBackend`; add the
+    `arch` registry on the engine; rewire `WanEngine`. Breaking (test_wan patches
+    move to the backend).
 
 ## 8. Phase 4 addendum — VideoBackend / WanBackend / generic residency
 
@@ -244,11 +252,8 @@ but the seam is in place, which is the point.
 - **4c** — generify `ResidencyManager` to take a `VideoBackend`; add the `arch`
   registry on the engine. Now HunyuanVideo/LTX = a new `VideoBackend` subclass.
 
-**Open question to confirm:** where does `VideoBackend` live — `core/backend.py`
-(alongside the trunk) or `video/backend.py` (a new `video/` package, mirroring the
-`image/` split the doc sketches)? Recommendation: **`video/backend.py`** in a new
-`video/` sub-package that re-exports Wan, so the image/video symmetry is real and
-the 2nd arch has an obvious home. That is a larger move (new package) — the
-alternative is to keep everything under `wan/` for 4a-4b and only introduce
-`video/` when the 2nd arch actually arrives (YAGNI). Lean YAGNI unless a 2nd video
-model is imminent.
+**Resolved (i):** `VideoBackend` lives in a new `video/` sub-package — **LTX-Video
+is imminent**, so the image/video symmetry is justified now, not YAGNI. `video/`
+holds the ABC (`video/backend.py`) + implementations (`video/backends/wan.py`,
+`video/backends/ltx.py` next); the low-level Wan builder stays under
+`imference_engine.wan` and `WanBackend` wraps it.

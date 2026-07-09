@@ -5,29 +5,19 @@ differences between Diffusers pipeline types: loading, prompt encoding,
 scheduler selection, img2img construction, and inference kwargs.
 """
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Optional
+from abc import abstractmethod
+from typing import Any, Optional
 
-from imference_engine.catalog.defaults import GenerationDefaults
+from imference_engine.core.backend import Backend
 
 
-class PipelineBackend(ABC):
-    """One backend per ModelConfig.engine value."""
+class PipelineBackend(Backend):
+    """Image backend — one subclass per pipeline family (sdxl, zimage, ...).
 
-    engine: ClassVar[str]
-    """Identifier matching ModelConfig.engine ("sdxl" | "zimage" | ...)."""
-
-    def engine_defaults(self) -> GenerationDefaults:
-        """Layer 1 of the defaults precedence chain: family-wide generation
-        defaults for this engine, overridable by the model catalog and per
-        request (see ``catalog/defaults.py``).
-
-        Return only what is OPINIONATED for the family — e.g. SDXL's default
-        scheduler, Z-Image's low guidance. Anything left ``None`` falls through
-        to ``GLOBAL_DEFAULTS``. Engine INVARIANTS (dtype, attention) do NOT
-        belong here — they stay hard-coded in the backend. Default: no opinion.
-        """
-        return GenerationDefaults()
+    Extends the shared ``Backend`` trunk (``engine`` id + ``engine_defaults``)
+    with the image-specific interface: single-file loading, prompt encoding,
+    scheduler selection, img2img construction, and inference kwargs.
+    """
 
     @abstractmethod
     def load_pipeline(
