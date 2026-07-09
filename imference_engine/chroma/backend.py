@@ -17,7 +17,7 @@ base-component machinery, same heavy-transformer offload path.
 
 Offline: base components (T5-XXL + VAE + tokenizer + scheduler) resolve into the
 flat tree (``namespace="image"``) and load with ``local_files_only=True``. Run
-the 8.9B transformer with ``RuntimeConfig(enable_cpu_offload=True)`` on consumer
+the 8.9B transformer with ``RuntimeConfig(enable_offload=True)`` on consumer
 VRAM (shared ModelManager path — no Chroma-specific code).
 """
 from __future__ import annotations

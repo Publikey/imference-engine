@@ -14,7 +14,7 @@ FLUX checkpoints come in two flavors, mirroring Z-Image:
   tokenizers, and the VAE from a base repo (``black-forest-labs/FLUX.1-dev``).
 
 VRAM: the 12B transformer is heavy (~24 GB in bf16). On consumer GPUs run with
-``RuntimeConfig(enable_cpu_offload=True)`` — the generic ModelManager then lets
+``RuntimeConfig(enable_offload=True)`` — the generic ModelManager then lets
 accelerate shuttle submodels, dropping peak VRAM to roughly the transformer
 alone. No FLUX-specific code is needed for that; it is the shared offload path.
 

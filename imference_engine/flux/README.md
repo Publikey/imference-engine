@@ -17,7 +17,7 @@ engine class.
 |---|---|
 | Shared `RuntimeConfig` | `IMAGE_DEVICE`, `IMAGE_MODEL_CACHE`, `IMAGE_MODEL_CDN`, `MAX_GPU_MODELS`, `MAX_CPU_MODELS`, `IMAGE_ENABLE_CPU_OFFLOAD` all apply. |
 | `IMAGE_USE_TINY_VAE` | **Ignored.** FLUX uses a 16-channel VAE with no TAESD drop-in. |
-| VRAM | The 12B transformer is ~24 GB in bf16. On consumer GPUs set `IMAGE_ENABLE_CPU_OFFLOAD=1` / `RuntimeConfig(enable_cpu_offload=True)` — peak VRAM drops toward the transformer alone. Handled by the shared ModelManager offload path; no FLUX-specific code. |
+| VRAM | The 12B transformer is ~24 GB in bf16. On consumer GPUs set `IMAGE_ENABLE_CPU_OFFLOAD=1` / `RuntimeConfig(enable_offload=True)` — peak VRAM drops toward the transformer alone. Handled by the shared ModelManager offload path; no FLUX-specific code. |
 | `base_model` (per-model, not env) | Community FLUX checkpoints are transformer-only and need shared components (CLIP-L + T5-XXL text encoders, their tokenizers, VAE, scheduler) from a base repo — pass per model at `register_model(..., base_model="black-forest-labs/FLUX.1-dev")`, resolved offline into the flat tree (or via `IMAGE_MODEL_CDN`). |
 | dtype | `bfloat16` (hard-coded). |
 | scheduler | `FlowMatchEulerDiscreteScheduler` with dynamic shifting (set at load). The per-request `scheduler` name is ignored. An explicit fixed `shift` via `backend_options={"shift": ...}` overrides dynamic shifting (advanced). |

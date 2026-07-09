@@ -94,7 +94,7 @@ sd15 = [
 # sentencepiece, already present, backs the T5 tokenizer). Byte-for-byte
 # identical to [zimage] — the split is a packaging boundary / naming symmetry,
 # not a real dependency fork. The 12B transformer is heavy: run with
-# RuntimeConfig(enable_cpu_offload=True) on consumer VRAM.
+# RuntimeConfig(enable_offload=True) on consumer VRAM.
 flux = [
     "torch>=2.6",
     "diffusers==0.39.0",

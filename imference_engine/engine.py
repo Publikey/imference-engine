@@ -17,6 +17,7 @@ from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.runtime.device import Device, resolve_device
+from imference_engine.core.config import BaseRuntimeConfig
 from imference_engine.core.result import GenerationError, MediaResult
 
 if TYPE_CHECKING:
@@ -30,11 +31,16 @@ MAX_SEED = 2 ** 31 - 1
 
 
 @dataclass
-class RuntimeConfig:
-    """Runtime knobs. All optional — defaults adapt to the host."""
+class RuntimeConfig(BaseRuntimeConfig):
+    """Image-side runtime knobs. Inherits ``device`` / ``model_cache_dir`` /
+    ``model_cdn`` / ``enable_offload`` from ``BaseRuntimeConfig``; adds the
+    image-specific residency + VAE knobs below. All optional.
 
-    device: str = "auto"
-    """auto | cuda | cuda:N | mps | cpu"""
+    ``enable_offload`` (inherited): when True, ModelManager calls
+    ``pipe.enable_model_cpu_offload(device=...)`` instead of moving the whole pipe
+    to GPU — peak VRAM drops to the largest single submodel (~5 GB SDXL unet vs
+    ~7 GB), ~10-30% slower. Strongly recommended on ≤8 GB VRAM. Incompatible with
+    the CPU LRU tier (forces max_cpu_models=0)."""
 
     max_cpu_models: Optional[int] = None
     """Cap on CPU-resident pipes kept warm for fast GPU re-promotion. None
@@ -47,17 +53,6 @@ class RuntimeConfig:
     (every model switch evicts the previous one). Workers with big VRAM
     (e.g. 2x SDXL on a 24 GB A10) can bump this to amortize swap cost."""
 
-    model_cache_dir: Optional[Union[str, Path]] = None
-    """Root of the flat, symlink-free offline model tree (IMAGE_MODEL_CACHE). The
-    backends resolve shared base-components (SDXL config + tokenizers + fp16-fix
-    VAE; Z-Image base text_encoder/vae) into it, so a cold load is fully offline
-    under HF_HUB_OFFLINE=1 once the tree is populated (base tarball / prefetch)."""
-
-    model_cdn: Optional[str] = None
-    """Base URL of a CDN (R2) mirroring the same <repo>/<file> layout. When set,
-    on-demand base-components download from the CDN instead of HF. Mirror of
-    WanRuntimeConfig.model_cdn."""
-
     lora_cache_dir: Optional[Union[str, Path]] = None
 
     use_tiny_vae: bool = False
@@ -66,16 +61,6 @@ class RuntimeConfig:
     at the cost of slight quality loss. Recommended for previews / dev
     iteration; toggle off for final-quality renders. No effect on Z-Image
     (which uses a different VAE architecture without a TAESD equivalent)."""
-
-    enable_cpu_offload: bool = False
-    """When True, ModelManager calls `pipe.enable_model_cpu_offload(device=...)`
-    instead of moving the whole pipe to GPU. Diffusers/accelerate then
-    shuttles individual submodels (text_encoder, unet, vae) between CPU and
-    GPU as inference progresses — peak VRAM drops to the largest single
-    submodel (~5 GB for SDXL unet) instead of the sum (~7 GB).
-    Cost: ~10-30 % slower per gen due to per-forward CPU↔GPU transfers.
-    Strongly recommended on ≤8 GB VRAM where the model otherwise saturates.
-    Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
 
     @classmethod
     def from_env(cls) -> "RuntimeConfig":
@@ -101,7 +86,9 @@ class RuntimeConfig:
             max_gpu_models=env_int_or_none("MAX_GPU_MODELS"),
             max_cpu_models=env_int_or_none("MAX_CPU_MODELS"),
             use_tiny_vae=env_bool("IMAGE_USE_TINY_VAE", False),
-            enable_cpu_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+            # Env var name kept (IMAGE_ENABLE_CPU_OFFLOAD) — the field is the
+            # unified enable_offload. See BaseRuntimeConfig.
+            enable_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
         )
 
 
@@ -198,9 +185,9 @@ class Engine:
 
         max_gpu = self._runtime.max_gpu_models or 1
         max_cpu = self._runtime.max_cpu_models or 0
-        if self._runtime.enable_cpu_offload and max_cpu > 0:
+        if self._runtime.enable_offload and max_cpu > 0:
             logger.warning(
-                "enable_cpu_offload=True forces max_cpu_models=0 — the CPU LRU tier "
+                "enable_offload=True forces max_cpu_models=0 — the CPU LRU tier "
                 "would shadow accelerate's hook-based offloader and confuse residency."
             )
             max_cpu = 0
@@ -211,7 +198,9 @@ class Engine:
             max_cpu_models=max_cpu,
             on_loaded=self._on_model_loaded,
             on_evicted=self._on_model_evicted,
-            enable_cpu_offload=self._runtime.enable_cpu_offload,
+            # ModelManager keeps its internal param name (converged in Phase 6);
+            # the config surface is the unified enable_offload.
+            enable_cpu_offload=self._runtime.enable_offload,
         )
         self._loaded = True
         if self._catalog_path is not None:

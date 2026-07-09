@@ -5,7 +5,7 @@ Parallel to ``imference_engine.zimage`` / ``.wan``: FLUX rides the generic
 0.39 stack as SDXL / Z-Image, so there is no separate ``FluxEngine`` — just the
 backend, its offline base-component loading, and (via a catalog) per-model
 defaults. The 12B transformer is heavy; run it with
-``RuntimeConfig(enable_cpu_offload=True)`` on consumer VRAM.
+``RuntimeConfig(enable_offload=True)`` on consumer VRAM.
 """
 from imference_engine.flux.backend import FluxBackend
 

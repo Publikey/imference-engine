@@ -30,7 +30,7 @@ def test_qwenimage_generates_an_image(tmp_path):
     from imference_engine import Engine, RuntimeConfig
 
     engine = Engine(runtime=RuntimeConfig(
-        device="auto", enable_cpu_offload=True)).load()
+        device="auto", enable_offload=True)).load()
     engine.register_model(
         "test-qwenimage",
         backend="qwenimage",

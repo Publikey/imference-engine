@@ -31,7 +31,7 @@ def test_flux_generates_an_image(tmp_path):
 
     # cpu-offload keeps peak VRAM near the transformer alone on consumer GPUs.
     engine = Engine(runtime=RuntimeConfig(
-        device="auto", enable_cpu_offload=True)).load()
+        device="auto", enable_offload=True)).load()
     engine.register_model(
         "test-flux",
         backend="flux",

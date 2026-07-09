@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Optional, Union
+
+from imference_engine.core.config import BaseRuntimeConfig
 
 
 class MemoryProfile(str, Enum):
@@ -76,34 +77,25 @@ class MemoryProfile(str, Enum):
 
 
 @dataclass
-class WanRuntimeConfig:
-    """Runtime knobs for ``WanEngine``. All optional — defaults are safe."""
+class WanRuntimeConfig(BaseRuntimeConfig):
+    """Video-side runtime knobs for ``WanEngine``. Inherits ``device`` /
+    ``model_cache_dir`` / ``model_cdn`` / ``enable_offload`` from
+    ``BaseRuntimeConfig`` (with ``enable_offload`` defaulted True below — offload
+    is the norm for the A14B experts); adds the GGUF/quant knobs. All optional."""
 
-    device: str = "auto"
-    """auto | cuda | cuda:N | cpu (mps untested for Wan)."""
+    enable_offload: bool = True
+    """(Inherited field, default overridden to True.) enable_model_cpu_offload on
+    each pipe. Keeps VRAM at ~one expert (~17 GB) and is what makes multi-residency
+    cheap (P1g). Disable only on a GPU big enough to hold a whole variant."""
 
     memory_profile: Union[MemoryProfile, str] = MemoryProfile.GGUF_Q8
     """Default weight format, or "auto" to pick the GGUF quant from the GPU's
     VRAM at load() (Q8 ≥20 GB, Q6 ≥14 GB, else Q4)."""
 
-    enable_offload: bool = True
-    """enable_model_cpu_offload on each pipe. Keeps VRAM at ~one expert (~17 GB)
-    and is what makes multi-residency cheap (P1g). Disable only on a GPU big
-    enough to hold a whole variant resident (rare)."""
-
     max_resident_variants: Optional[int] = 1
     """How many built pipelines to keep warm in CPU RAM (LRU). ~31 GB RAM per
     GGUF-Q8 variant + ~30 GB generation working set — size from the host's RAM.
     None or 1 = single-resident (desktop default)."""
-
-    model_cache_dir: Optional[Union[str, Path]] = None
-    """HF cache dir (maps to HF_HOME). Put on a big volume — GGUF experts are
-    ~15 GB each. None = default HF cache."""
-
-    model_cdn: Optional[str] = None
-    """Base URL of a CDN mirroring `<repo>/<filename>` paths. When set, GGUF
-    experts + LoRAs are fetched on demand from the CDN instead of HuggingFace
-    (the shared base still loads from the cached HF repo). None = use HF."""
 
     vae_tiling: bool = True
     """Enable VAE tiling + slicing (cuts decode VRAM for long/large videos)."""

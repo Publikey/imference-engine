@@ -80,7 +80,7 @@ def run_one(engine: str, entry: dict, args) -> dict:
     try:
         eng = Engine(runtime=RuntimeConfig(
             device=args.device,
-            enable_cpu_offload=bool(entry.get("offload", False)),
+            enable_offload=bool(entry.get("offload", False)),
         )).load()
 
         weights = resolve_weights(engine, entry, Path(args.cache_dir))
