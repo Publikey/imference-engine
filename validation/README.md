@@ -63,6 +63,24 @@ Every engine below has been validated end-to-end (base model → rendered image)
 | `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow |
 | `anima` | Anima-Base (diffusers repo) | ✅ **Modular pipeline**; t2i only (no img2img) |
 
+## Wan 2.2 (video) — separate harness
+
+Wan is not an image `Engine` backend; it's its own `WanEngine` (GGUF-MoE video).
+Validate it with **`validate_wan.py`** (needs `pip install -e ".[wan,dev]"`):
+
+```bash
+python validation/validate_wan.py --list                       # builtin variants (no torch)
+python validation/validate_wan.py --variant wan22-t2v-lightning # text-to-video (4-step)
+python validation/validate_wan.py --variant wan22-i2v-lightning --image in.png  # image-to-video
+python validation/validate_wan.py --frames 33                  # lighter/faster smoke
+```
+
+Outputs `renders/wan_<variant>_seed42.mp4` + a sample frame PNG. Heavy: A14B
+experts are ~15 GB GGUF each (×2) + shared UMT5/VAE (~11.5 GB); `WAN_PROFILE=auto`
+picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB). **Status:
+Wan was validated on diffusers 0.38; re-validation on 0.39 is pending** (it moved
+with the blind 0.38→0.39 bump to keep one shared diffusers).
+
 ## When something fails
 
 `report.json` records the `error` and full `traceback` per engine. For the newer
