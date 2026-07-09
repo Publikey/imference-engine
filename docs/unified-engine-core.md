@@ -157,3 +157,98 @@ in-repo callers besides tests + the validation harnesses (updated per phase).
   today (5 methods); don't invent hooks for hypothetical modalities.
 - **Scope creep.** Each phase lands independently and leaves the tree green; we can
   stop after Phase 4 (the extensibility win) if the rest isn't worth it.
+
+## 7. Progress
+
+- **Phase 1 ✅** `core/result.py` `MediaResult` (+ `GenerationError`). `.images`/
+  `.frames` aliases kept callers unchanged.
+- **Phase 2 ✅** `core/config.py` `BaseRuntimeConfig`; image/video configs subclass
+  it. `enable_offload` unified (env `IMAGE_ENABLE_CPU_OFFLOAD` kept). Decisions:
+  1 = unify offload, 2 = keep `IMAGE_*`/`WAN_*` env prefixes, 3 = (b) keep public
+  `Engine`/`RuntimeConfig`/`WanEngine` names; base classes internal to `core/`.
+- **Phase 3 ✅** `core/engine_base.py` `BaseEngine` (device/load/seed/cache). Both
+  engines subclass it; `_setup()` hook holds modality construction.
+- **Phase 4 ⏭️ next** — detailed below.
+
+## 8. Phase 4 addendum — VideoBackend / WanBackend / generic residency
+
+**Reality check (good news):** the video builder seam already exists. The Wan
+pipeline is NOT built inside the engine — `wan/loader.py` already exposes clean
+functions and `ResidencyManager` delegates to them:
+
+- `load_shared_components(base_repo, cache_dir, text_encoder_quant, cdn_base) ->
+  SharedComponents` (the shared UMT5 text_encoder + Wan VAE, loaded once).
+- `build_pipeline(variant, quant, shared, device, enable_offload, vae_tiling,
+  cache_dir, cdn_base) -> pipe`.
+- `ResidencyManager` holds the CPU-LRU, calls those two, and has a Wan-specific
+  `_teardown(pipe)` (removes accelerate hooks + drops the MoE `transformer` /
+  `transformer_2`).
+
+So Phase 4 is mostly **re-homing** that Wan-specific logic behind an ABC, not a
+rewrite.
+
+**Honest scope of the shared `Backend` trunk.** Image `PipelineBackend` (load a
+single-file diffusion pipe, encode prompts, scheduler, img2img) and a video
+backend (assemble GGUF-MoE experts + LoRA + shared components, produce frames)
+share almost NO method signatures. Forcing them into one rich interface would be
+fake unification. So the shared `core/backend.py` `Backend` trunk stays minimal:
+
+```python
+class Backend(Protocol):
+    engine: ClassVar[str]                 # id ("sdxl" | "wan" | "hunyuan" | ...)
+    def engine_defaults(self) -> GenerationDefaults: ...   # layer-1 defaults
+```
+
+`PipelineBackend` (image) and `VideoBackend` (video) each extend it with their
+modality methods. The value of Phase 4 is the **`VideoBackend` ABC + generic
+residency**, so a 2nd video arch plugs in — NOT a common image/video method set.
+
+**`VideoBackend` ABC** (`core` or `video/backend.py`) — maps 1:1 onto today's
+loader functions:
+
+```python
+class VideoBackend(Backend):
+    def load_shared(self, cfg) -> Any: ...             # <- load_shared_components
+    def build(self, spec, shared, cfg) -> pipe: ...    # <- build_pipeline
+    def teardown(self, pipe) -> None: ...              # <- ResidencyManager._teardown
+    def build_call(self, *, prompt, negative_prompt, width, height,
+                   num_frames, num_steps, guidance_scale, guidance_scale_2,
+                   image, generator) -> dict: ...      # the pipe(**call) kwargs
+    def warm(self, spec, cfg) -> None: ...             # prefetch base + variant cfgs
+```
+
+(`cfg` carries quant/device/offload/vae_tiling/cache/cdn — a small builder-config,
+derived from `VideoRuntimeConfig`.)
+
+**`WanBackend(VideoBackend)`** — wraps `wan/loader.py`: `load_shared` →
+`load_shared_components`, `build` → `build_pipeline`, `teardown` → the current
+`_teardown`, `build_call` → the dict `WanEngine.generate_video` builds today,
+`warm` → the shared+variant prefetch in `WanEngine.warm`. `engine = "wan"`.
+
+**Generic `ResidencyManager`** — becomes backend-agnostic: holds a
+`backend: VideoBackend`, keeps the CPU-LRU, and calls `backend.load_shared()` /
+`backend.build(spec, shared)` / `backend.teardown(pipe)`. No Wan specifics remain
+in the manager. (Same shape can later host `ImageResidency` in Phase 6.)
+
+**`VideoEngine` (WanEngine) routing.** Today one backend (Wan). To prepare the 2nd
+arch, add an `arch` discriminator to the variant (`WanVariant.arch = "wan"`
+default) and a `{arch: VideoBackend}` registry on the engine; `generate_video`
+selects `backends[variant.arch]`. Until a 2nd arch lands this is a 1-entry map —
+but the seam is in place, which is the point.
+
+**Sub-steps (each green + re-validate Wan on GPU):**
+- **4a** — add `core/backend.py` `Backend` trunk; make `PipelineBackend` extend it
+  (no behaviour change).
+- **4b** — add `VideoBackend` ABC + `WanBackend` wrapping `wan/loader.py`; leave
+  `ResidencyManager` calling `WanBackend` internally (behaviour identical).
+- **4c** — generify `ResidencyManager` to take a `VideoBackend`; add the `arch`
+  registry on the engine. Now HunyuanVideo/LTX = a new `VideoBackend` subclass.
+
+**Open question to confirm:** where does `VideoBackend` live — `core/backend.py`
+(alongside the trunk) or `video/backend.py` (a new `video/` package, mirroring the
+`image/` split the doc sketches)? Recommendation: **`video/backend.py`** in a new
+`video/` sub-package that re-exports Wan, so the image/video symmetry is real and
+the 2nd arch has an obvious home. That is a larger move (new package) — the
+alternative is to keep everything under `wan/` for 4a-4b and only introduce
+`video/` when the 2nd arch actually arrives (YAGNI). Lean YAGNI unless a 2nd video
+model is imminent.
