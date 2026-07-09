@@ -5,14 +5,46 @@ build/load are monkeypatched so LRU behaviour is testable without weights.
 """
 import pytest
 
+from imference_engine.video import VideoBackend, VideoBuildContext
+from imference_engine.video.residency import ResidencyManager
 from imference_engine.wan import MemoryProfile, WanLora, WanVariant
-from imference_engine.wan import manager as mgr_mod
-from imference_engine.wan.manager import ResidencyManager
 
 
 def _variant(name: str, mode: str = "t2v") -> WanVariant:
     return WanVariant(name=name, mode=mode, base_repo="base",
                       gguf_repo="gguf", lightning_baked=True)
+
+
+class FakeVideoBackend(VideoBackend):
+    """Records build/teardown so residency LRU is testable without weights."""
+
+    engine = "fake"
+
+    def __init__(self, events=None):
+        self.events = events if events is not None else []
+        self.shared_ctx = None
+        self.build_ctx = None
+
+    def load_shared(self, ctx):
+        self.shared_ctx = ctx
+        return object()
+
+    def build(self, spec, shared, ctx):
+        self.build_ctx = ctx
+        self.events.append(("build", spec.name))
+        return f"pipe:{spec.name}"
+
+    def build_call(self, **kw):
+        return {}
+
+    def teardown(self, pipe):
+        pass
+
+
+def _ctx(**over):
+    base = dict(quant="Q8_0", device="cpu", enable_offload=True, vae_tiling=True)
+    base.update(over)
+    return VideoBuildContext(**base)
 
 
 def test_cdn_routing(monkeypatch):
@@ -69,21 +101,10 @@ def test_variant_rejects_bad_mode():
         WanVariant(name="x", mode="zzz", base_repo="b", gguf_repo="g")
 
 
-def test_residency_lru(monkeypatch):
-    built: list[str] = []
+def test_residency_lru():
+    be = FakeVideoBackend()
     evicted: list[str] = []
-    monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None, text_encoder_quant="none",
-                        cdn_base=None: object())
-
-    def fake_build(variant, **kwargs):
-        built.append(variant.name)
-        return f"pipe:{variant.name}"
-
-    monkeypatch.setattr(mgr_mod, "build_pipeline", fake_build)
-
-    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
-                         vae_tiling=True, max_resident=2,
+    m = ResidencyManager(backend=be, ctx=_ctx(), max_resident=2,
                          on_evicted=evicted.append)
     a, b, c = _variant("a"), _variant("b"), _variant("c")
 
@@ -102,38 +123,24 @@ def test_residency_lru(monkeypatch):
 
     # cached pipe is not rebuilt
     m.get_or_load(a)
+    built = [name for kind, name in be.events if kind == "build"]
     assert built == ["a", "b", "c"]  # a built once
 
 
-def test_residency_threads_cdn_into_shared_and_build(monkeypatch):
-    """cdn_base (WAN_MODEL_CDN) must reach BOTH load_shared_components and
-    build_pipeline so a cold load pulls base-components from the CDN, not HF.
-    Regression guard: _shared_components() used to drop cdn_base."""
-    seen: dict = {}
-    monkeypatch.setattr(
-        mgr_mod, "load_shared_components",
-        lambda base, cache_dir=None, text_encoder_quant="none", cdn_base=None:
-        seen.update(shared_cdn=cdn_base) or object())
-    monkeypatch.setattr(
-        mgr_mod, "build_pipeline",
-        lambda variant, **kw: seen.update(build_cdn=kw.get("cdn_base")) or "pipe")
-
-    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
-                         vae_tiling=True, max_resident=1,
-                         cdn_base="https://cdn.x/wan")
+def test_residency_threads_ctx_into_shared_and_build():
+    """The build context (incl. cdn_base) must reach BOTH load_shared and build
+    so a cold load pulls base-components from the CDN, not HF."""
+    be = FakeVideoBackend()
+    m = ResidencyManager(backend=be, ctx=_ctx(cdn_base="https://cdn.x/wan"),
+                         max_resident=1)
     m.get_or_load(_variant("a"))
-    assert seen["shared_cdn"] == "https://cdn.x/wan"
-    assert seen["build_cdn"] == "https://cdn.x/wan"
+    assert be.shared_ctx.cdn_base == "https://cdn.x/wan"
+    assert be.build_ctx.cdn_base == "https://cdn.x/wan"
 
 
-def test_residency_single_resident(monkeypatch):
-    monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None, text_encoder_quant="none",
-                        cdn_base=None: object())
-    monkeypatch.setattr(mgr_mod, "build_pipeline",
-                        lambda variant, **kw: f"pipe:{variant.name}")
-    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
-                         vae_tiling=True, max_resident=1)
+def test_residency_single_resident():
+    be = FakeVideoBackend()
+    m = ResidencyManager(backend=be, ctx=_ctx(), max_resident=1)
     m.get_or_load(_variant("a"))
     m.get_or_load(_variant("b"))
     assert m.resident == ["b"]  # single-resident evicts immediately
@@ -158,21 +165,12 @@ def test_auto_profile_clamps_to_lighter():
     assert _clamp_profile(Q8, Q8) == Q8
 
 
-def test_residency_evicts_before_build(monkeypatch):
+def test_residency_evicts_before_build():
     """A switch must FREE the old variant before BUILDING the new one, so RAM
     never holds two variants at once (the small-RAM OOM)."""
     events: list = []
-    monkeypatch.setattr(mgr_mod, "load_shared_components",
-                        lambda base, cache_dir=None, text_encoder_quant="none",
-                        cdn_base=None: object())
-
-    def fake_build(variant, **kw):
-        events.append(("build", variant.name))
-        return f"pipe:{variant.name}"
-
-    monkeypatch.setattr(mgr_mod, "build_pipeline", fake_build)
-    m = ResidencyManager(quant="Q8_0", device="cpu", enable_offload=True,
-                         vae_tiling=True, max_resident=1,
+    be = FakeVideoBackend(events)
+    m = ResidencyManager(backend=be, ctx=_ctx(), max_resident=1,
                          on_evicted=lambda n: events.append(("evict", n)))
     m.get_or_load(_variant("a"))
     m.get_or_load(_variant("b"))

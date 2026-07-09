@@ -45,6 +45,7 @@ class WanVariant:
     mode: str                       # "t2v" | "i2v"
     base_repo: str                  # diffusers repo: config + shared text_encoder/vae
     gguf_repo: str                  # GGUF repo for the two experts
+    arch: str = "wan"               # video backend key — routes to a VideoBackend
     lightning_baked: bool = False   # True for merges (SmoothMix/DaSiWa) → no LoRA
     loras: list[WanLora] = field(default_factory=list)
     flow_shift: float = 3.0         # 3.0 ≈ 480p, 5.0 ≈ 720p

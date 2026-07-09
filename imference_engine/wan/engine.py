@@ -17,8 +17,10 @@ from typing import TYPE_CHECKING, Optional
 
 from imference_engine.core.engine_base import BaseEngine
 from imference_engine.core.result import GenerationError, MediaResult
+from imference_engine.video.backend import VideoBackend, VideoBuildContext
+from imference_engine.video.backends.wan import WanBackend
+from imference_engine.video.residency import ResidencyManager
 from imference_engine.wan.config import MemoryProfile, WanRuntimeConfig
-from imference_engine.wan.manager import ResidencyManager
 from imference_engine.wan.presets import BUILTIN_VARIANTS, WanVariant
 
 if TYPE_CHECKING:
@@ -67,13 +69,18 @@ def _total_ram_gb() -> float:
 class WanEngine(BaseEngine):
     def __init__(self, *, runtime: Optional[WanRuntimeConfig] = None) -> None:
         super().__init__(runtime=runtime or WanRuntimeConfig())
-        self._manager: Optional[ResidencyManager] = None
         self._variants: dict[str, WanVariant] = dict(BUILTIN_VARIANTS)
+        # arch -> VideoBackend registry (a 2nd arch, e.g. LTX, registers here);
+        # arch -> ResidencyManager, built lazily on first use per arch.
+        self._backends: dict[str, VideoBackend] = {}
+        self._managers: dict[str, ResidencyManager] = {}
+        self._ctx: Optional[VideoBuildContext] = None
 
     # ------------------------------------------------------------------
     def _setup(self) -> None:
-        """Resolve the GGUF profile + build the ResidencyManager. Device
-        resolution / CUDA tuning already ran in ``BaseEngine.load()``."""
+        """Resolve the GGUF profile + build the backend build-context. Device
+        resolution / CUDA tuning already ran in ``BaseEngine.load()``. Residency
+        managers are built lazily per arch (first ``generate_video``)."""
         if self._device.kind != "cuda":
             logger.warning(
                 "WanEngine on %s — Wan is validated on CUDA only; expect slowness/failure.",
@@ -96,16 +103,28 @@ class WanEngine(BaseEngine):
 
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
-        self._manager = ResidencyManager(
+        self._ctx = VideoBuildContext(
             quant=profile.gguf_quant,
             device=self._device.torch_str,
             enable_offload=self._runtime.enable_offload,
             vae_tiling=self._runtime.vae_tiling,
-            max_resident=self._runtime.max_resident_variants or 1,
             cache_dir=cache_dir,
             cdn_base=self._runtime.model_cdn,
             text_encoder_quant=self._runtime.text_encoder_quant,
         )
+        self._backends = {WanBackend.engine: WanBackend()}
+
+    def _manager_for(self, arch: str) -> ResidencyManager:
+        """Return (building on first use) the residency manager for ``arch``."""
+        if arch not in self._managers:
+            backend = self._backends.get(arch)
+            if backend is None:
+                raise KeyError(
+                    f"no video backend for arch {arch!r}; have {list(self._backends)}")
+            self._managers[arch] = ResidencyManager(
+                backend=backend, ctx=self._ctx,
+                max_resident=self._runtime.max_resident_variants or 1)
+        return self._managers[arch]
 
     @staticmethod
     def _auto_profile(is_cuda: bool) -> MemoryProfile:
@@ -146,9 +165,11 @@ class WanEngine(BaseEngine):
         cdn = self._runtime.model_cdn
         # The shared UMT5/VAE base (heavy) + each distinct variant base_repo
         # (small configs for the GGUF transformer). Dedup so the shared base
-        # isn't pulled twice.
-        targets = [(self._manager._shared_base_repo, _SHARED_PATTERNS)]
-        seen = {self._manager._shared_base_repo}
+        # isn't pulled twice. NOTE: single-arch (Wan) shared base for now; a 2nd
+        # arch would warm its own shared base too.
+        shared_base = self._backends[WanBackend.engine].SHARED_BASE_REPO
+        targets = [(shared_base, _SHARED_PATTERNS)]
+        seen = {shared_base}
         for v in self._variants.values():
             if v.base_repo not in seen:
                 seen.add(v.base_repo)
@@ -190,26 +211,24 @@ class WanEngine(BaseEngine):
 
         try:
             import torch
-            pipe = self._manager.get_or_load(var)
+            backend = self._backends[var.arch]
+            pipe = self._manager_for(var.arch).get_or_load(var)
 
-            call = dict(
+            call = backend.build_call(
                 prompt=prompt,
-                negative_prompt=negative_prompt or "",
-                height=height,
+                negative_prompt=negative_prompt,
                 width=width,
+                height=height,
                 num_frames=num_frames,
-                num_inference_steps=num_steps,
+                num_steps=num_steps,
                 guidance_scale=guidance_scale,
-                guidance_scale_2=(guidance_scale_2 if guidance_scale_2 is not None
-                                  else guidance_scale),
+                guidance_scale_2=guidance_scale_2,
+                image=image if var.mode == "i2v" else None,
                 generator=torch.Generator("cpu").manual_seed(seed),
-                output_type="pil",
             )
-            if var.mode == "i2v":
-                call["image"] = image.convert("RGB").resize((width, height))
 
-            logger.info("generate_video variant=%s mode=%s %dx%d frames=%d steps=%d seed=%d",
-                        variant, var.mode, width, height, num_frames, num_steps, seed)
+            logger.info("generate_video variant=%s mode=%s arch=%s %dx%d frames=%d steps=%d seed=%d",
+                        variant, var.mode, var.arch, width, height, num_frames, num_steps, seed)
             frames = pipe(**call).frames[0]
             frames = _ensure_pil(frames)
             return MediaResult(
@@ -226,7 +245,7 @@ class WanEngine(BaseEngine):
 
     @property
     def resident(self) -> list[str]:
-        return self._manager.resident if self._manager else []
+        return [name for m in self._managers.values() for name in m.resident]
 
 
 def _ensure_pil(frames) -> list["Image"]:

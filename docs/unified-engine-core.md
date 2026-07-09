@@ -174,9 +174,12 @@ in-repo callers besides tests + the validation harnesses (updated per phase).
   - **4b ✅** new `video/` package: `VideoBackend` ABC + `VideoBuildContext` +
     `WanBackend` (wraps `wan/loader.py`). Additive — nothing drives it yet; it
     defines the contract LTX will implement.
-  - **4c ⏭️ next** — generify `ResidencyManager` to take a `VideoBackend`; add the
-    `arch` registry on the engine; rewire `WanEngine`. Breaking (test_wan patches
-    move to the backend).
+  - **4c ✅** `video/residency.py` generic `ResidencyManager` (driven by a
+    `VideoBackend`); `wan/manager.py` is now a shim. `WanVariant.arch` added;
+    `WanEngine` holds an `{arch: VideoBackend}` registry + lazy per-arch managers
+    and routes `generate_video` by `variant.arch`. test_wan residency tests use a
+    `FakeVideoBackend`. **A 2nd video arch (LTX) = a new `VideoBackend` subclass +
+    register it + variants with `arch="ltx"`.**
 
 ## 8. Phase 4 addendum — VideoBackend / WanBackend / generic residency
 
