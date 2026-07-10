@@ -72,7 +72,10 @@ def test_builtins_have_offline_safe_templates():
         assert v.gguf_high_template and v.gguf_low_template, name
         hi = v.gguf_high_template.format(quant="Q8_0")
         lo = v.gguf_low_template.format(quant="Q6_K")
-        assert hi.endswith("-Q8_0.gguf") and lo.endswith("-Q6_K.gguf")
+        # deterministic, quant-substituted .gguf name (provider naming varies:
+        # QuantStack "...-Q8_0.gguf" in HighNoise/, bullerwins flat "..._Q8_0.gguf")
+        assert hi.endswith(".gguf") and "Q8_0" in hi, name
+        assert lo.endswith(".gguf") and "Q6_K" in lo, name
 
 
 def test_memory_profile_mapping():
