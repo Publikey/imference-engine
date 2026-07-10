@@ -96,7 +96,14 @@ def main() -> int:
         # not HuggingFace). --device / --profile override on top.
         cfg = WanRuntimeConfig.from_env()
         cfg.device = args.device
-        cfg.memory_profile = args.profile
+        # --profile is a plain string; "auto" stays a string (engine resolves it
+        # from VRAM/RAM at load), a concrete quant must become the MemoryProfile
+        # enum (a bare "gguf_q6" string is rejected by _setup).
+        if args.profile == "auto":
+            cfg.memory_profile = "auto"
+        else:
+            from imference_engine.wan import MemoryProfile
+            cfg.memory_profile = MemoryProfile(args.profile)
         engine = WanEngine(runtime=cfg).load()
 
         img = None
