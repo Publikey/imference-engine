@@ -162,6 +162,9 @@ anima = [
 # union of the per-backend image extras. Prefer the specific extra.
 runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima]"]
 azure = ["azure-storage-blob>=12"]
+# R2 / S3-compatible CDN staging (validation/stage_r2.py — upload base components
+# to the mirror). boto3 talks to Cloudflare R2's S3 API.
+stage = ["boto3>=1.34"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
 # Wan2.2 video stack (diffusers + gguf). Shares the same diffusers pin as

@@ -81,6 +81,36 @@ picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB). **Sta
 Wan was validated on diffusers 0.38; re-validation on 0.39 is pending** (it moved
 with the blind 0.38→0.39 bump to keep one shared diffusers).
 
+## Stage base components onto R2 — `stage_r2.py`
+
+Push each backend's **shared base components** onto the R2 (S3-compatible) CDN
+mirror, so workers / imference-desktop with `IMAGE_MODEL_CDN=<bucket-url>` load
+them straight from R2 and never touch HuggingFace — immune to a repo going gated
+or being removed. Pure I/O, **no GPU** (the model is never loaded): it pulls the
+exact `BASE_PATTERNS` the backend uses (never the transformer weights the
+checkpoint replaces), writes the `.manifest.json` the CDN reader expects, and
+uploads `<prefix>/<repo>/<file>` idempotently.
+
+```bash
+pip install -e ".[runtime,stage]"          # stage = boto3
+hf auth login                              # once, for the gated FLUX base
+export R2_ACCOUNT_ID=...  R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=models
+
+python validation/stage_r2.py              # the 4 CDN-wired bases (flux, chroma, sd15, qwenimage)
+python validation/stage_r2.py --rm         # delete each local dir after upload (disk-tight streaming)
+python validation/stage_r2.py --dry-run    # print the plan + resolved repos, touch nothing
+```
+
+Best run on the same remote instance as `validate.py`: fat pipe to HF **and**
+Cloudflare, HF auth already set up for gated FLUX, and `--rm` streams one base at
+a time so the disk never holds them all. Uploads are resumable (an object already
+present with the same size is skipped).
+
+> **anima is excluded by default.** Its loader calls
+> `ModularPipeline.from_pretrained(repo)` directly and does not yet route through
+> `local_repo_dir`/`cdn_base`, so an uploaded anima base is not served from R2
+> until the backend is wired. Pass `--engines anima` to stage it anyway.
+
 ## When something fails
 
 `report.json` records the `error` and full `traceback` per engine. For the newer
