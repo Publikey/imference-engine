@@ -69,6 +69,13 @@ def main() -> int:
     ap.add_argument("--no-lora", action="store_true",
                     help="drop the variant's Lightning LoRA (test the base experts; pair with "
                          "--steps 20 --guidance 3.5 for the non-distilled recipe)")
+    ap.add_argument("--gguf-repo", default=None,
+                    help="override the variant's gguf_repo (test another GGUF provider without "
+                         "touching presets, e.g. bullerwins/Wan2.2-I2V-A14B-GGUF)")
+    ap.add_argument("--gguf-high-template", default=None,
+                    help="override gguf_high_template ({quant} placeholder; a literal filename "
+                         "with no {quant} also works)")
+    ap.add_argument("--gguf-low-template", default=None, help="override gguf_low_template")
     ap.add_argument("--list", action="store_true", help="list builtin variants and exit (no torch)")
     ap.add_argument("-q", "--quiet", action="store_true", help="suppress engine INFO logs")
     args = ap.parse_args()
@@ -114,7 +121,10 @@ def main() -> int:
         # --flow-shift: re-register the builtin variant with an overridden shift so
         # we can sweep it without editing presets.py (register_variant replaces by
         # name). Cheap: only the WanVariant recipe changes, not the cached weights.
-        if args.flow_shift is not None or args.no_lora:
+        _wan_overrides = (args.flow_shift is not None or args.no_lora
+                          or args.gguf_repo or args.gguf_high_template
+                          or args.gguf_low_template)
+        if _wan_overrides:
             import dataclasses
 
             from imference_engine.wan.presets import BUILTIN_VARIANTS
@@ -125,6 +135,15 @@ def main() -> int:
                     overrides["flow_shift"] = args.flow_shift
                 if args.no_lora:
                     overrides["loras"] = []  # base experts, no Lightning distillation
+                if args.gguf_repo:
+                    overrides["gguf_repo"] = args.gguf_repo
+                # override the templates and clear explicit names so the template wins
+                if args.gguf_high_template:
+                    overrides["gguf_high_template"] = args.gguf_high_template
+                    overrides["gguf_high_name"] = None
+                if args.gguf_low_template:
+                    overrides["gguf_low_template"] = args.gguf_low_template
+                    overrides["gguf_low_name"] = None
                 engine.register_variant(dataclasses.replace(base_v, **overrides))
                 print(f"  variant override: {overrides}", flush=True)
 
