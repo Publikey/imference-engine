@@ -66,6 +66,9 @@ def main() -> int:
                     help="override the variant's flow_shift (i2v often wants 5.0 vs t2v 3.0)")
     ap.add_argument("--guidance", type=float, default=None, help="guidance_scale (high-noise expert)")
     ap.add_argument("--guidance2", type=float, default=None, help="guidance_scale_2 (low-noise expert)")
+    ap.add_argument("--no-lora", action="store_true",
+                    help="drop the variant's Lightning LoRA (test the base experts; pair with "
+                         "--steps 20 --guidance 3.5 for the non-distilled recipe)")
     ap.add_argument("--list", action="store_true", help="list builtin variants and exit (no torch)")
     ap.add_argument("-q", "--quiet", action="store_true", help="suppress engine INFO logs")
     args = ap.parse_args()
@@ -104,14 +107,19 @@ def main() -> int:
         # --flow-shift: re-register the builtin variant with an overridden shift so
         # we can sweep it without editing presets.py (register_variant replaces by
         # name). Cheap: only the WanVariant recipe changes, not the cached weights.
-        if args.flow_shift is not None:
+        if args.flow_shift is not None or args.no_lora:
             import dataclasses
 
             from imference_engine.wan.presets import BUILTIN_VARIANTS
             base_v = BUILTIN_VARIANTS.get(args.variant)
             if base_v is not None:
-                engine.register_variant(dataclasses.replace(base_v, flow_shift=args.flow_shift))
-                print(f"  override flow_shift={args.flow_shift}", flush=True)
+                overrides: dict = {}
+                if args.flow_shift is not None:
+                    overrides["flow_shift"] = args.flow_shift
+                if args.no_lora:
+                    overrides["loras"] = []  # base experts, no Lightning distillation
+                engine.register_variant(dataclasses.replace(base_v, **overrides))
+                print(f"  variant override: {overrides}", flush=True)
 
         gv = dict(
             variant=args.variant, prompt=args.prompt, image=img,
