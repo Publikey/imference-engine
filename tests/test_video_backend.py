@@ -37,6 +37,8 @@ def test_build_call_t2v_no_image():
 
 def test_build_call_dual_guidance_and_i2v():
     class FakeImg:
+        def __init__(self, w, h):
+            self.width, self.height = w, h
         def convert(self, mode):
             assert mode == "RGB"
             return self
@@ -44,14 +46,29 @@ def test_build_call_dual_guidance_and_i2v():
             self.size = size
             return self
 
-    img = FakeImg()
+    # Square image, square budget -> aspect preserved, dims aligned to 16.
+    img = FakeImg(1024, 1024)
     call = WanBackend().build_call(
         prompt="p", negative_prompt="bad", width=640, height=640,
         num_frames=49, num_steps=6, guidance_scale=3.0, guidance_scale_2=1.5,
         image=img, generator="G")
     assert call["guidance_scale"] == 3.0 and call["guidance_scale_2"] == 1.5
     assert call["negative_prompt"] == "bad"
-    assert call["image"] is img and img.size == (640, 640)  # resized to w,h
+    # square in a 640*640 area budget -> 640x640 (already 16-aligned), no squash
+    assert call["image"] is img and img.size == (640, 640)
+    assert call["width"] == 640 and call["height"] == 640
+
+    # Landscape 16:9 image in the same area budget: aspect preserved, not forced
+    # to 640x640; both dims multiples of 16; area ~ budget.
+    wide = FakeImg(1920, 1080)
+    c2 = WanBackend().build_call(
+        prompt="p", negative_prompt=None, width=640, height=640,
+        num_frames=49, num_steps=6, guidance_scale=1.0, guidance_scale_2=None,
+        image=wide, generator="G")
+    w, h = c2["width"], c2["height"]
+    assert w % 16 == 0 and h % 16 == 0
+    assert w > h  # landscape preserved
+    assert c2["image"].size == (w, h)
 
 
 def test_load_shared_and_build_delegate_to_loader(monkeypatch):

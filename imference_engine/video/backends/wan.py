@@ -63,7 +63,19 @@ class WanBackend(VideoBackend):
             output_type="pil",
         )
         if image is not None:
-            call["image"] = image.convert("RGB").resize((width, height))
+            # Preserve the image's aspect ratio within the width*height area budget,
+            # aligned to the Wan latent grid (vae_scale_factor_spatial 8 * patch 2 =
+            # 16) — the canonical diffusers i2v resize. A hard resize to
+            # (width, height) squashed any aspect that didn't match the request.
+            img = image.convert("RGB")
+            mod = 16
+            max_area = width * height
+            ar = img.height / img.width
+            h = max(mod, round((max_area * ar) ** 0.5) // mod * mod)
+            w = max(mod, round((max_area / ar) ** 0.5) // mod * mod)
+            call["image"] = img.resize((w, h))
+            call["height"] = h  # generation dims follow the image aspect
+            call["width"] = w
         return call
 
     def teardown(self, pipe: Any) -> None:
