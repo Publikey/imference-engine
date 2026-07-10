@@ -80,6 +80,29 @@ def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
     return te
 
 
+def _tie_umt5_input_embedding(text_encoder: Any) -> None:
+    """Re-tie the UMT5 input embedding to ``shared`` after load.
+
+    UMT5/T5 tie the input embedding: the checkpoint stores only ``shared.weight``
+    (``encoder.embed_tokens`` is tied to it and NOT saved separately). transformers
+    5.1 does not re-tie ``UMT5EncoderModel`` on ``from_pretrained`` — it leaves
+    ``encoder.embed_tokens.weight`` zero-initialized, so the encoder emits garbage
+    and generation IGNORES the prompt (confirmed: embed norm 0.0 vs shared norm
+    262741.8). Point embed_tokens at ``shared`` explicitly. Guarded + idempotent:
+    a no-op when the loader already tied them, and best-effort (never raises)."""
+    try:
+        shared = getattr(text_encoder, "shared", None)
+        enc = getattr(text_encoder, "encoder", None)
+        embed = getattr(enc, "embed_tokens", None) if enc is not None else None
+        if shared is None or embed is None:
+            return
+        if embed.weight.data_ptr() != shared.weight.data_ptr():
+            embed.weight = shared.weight
+            logger.info("Re-tied UMT5 encoder.embed_tokens -> shared (transformers 5.1 load fix)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("UMT5 embedding re-tie skipped (%s)", e)
+
+
 def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
                            text_encoder_quant: str = "none",
                            cdn_base: Optional[str] = None) -> SharedComponents:
@@ -93,6 +116,7 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
     logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
         d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+    _tie_umt5_input_embedding(text_encoder)
     text_encoder = _quantize_text_encoder(text_encoder, text_encoder_quant)
     tokenizer = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(
