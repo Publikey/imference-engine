@@ -168,7 +168,20 @@ in-repo callers besides tests + the validation harnesses (updated per phase).
   `Engine`/`RuntimeConfig`/`WanEngine` names; base classes internal to `core/`.
 - **Phase 3 ✅** `core/engine_base.py` `BaseEngine` (device/load/seed/cache). Both
   engines subclass it; `_setup()` hook holds modality construction.
-- **Phase 4** — in progress:
+- **Phase 5 ✅** unified catalog: `kind: image|video` in one `models.yml`.
+  `catalog/loader.py` gains `VideoModelConfig` + `load_video`/`loads_video`;
+  `load()` reads image rows, `load_video()` reads video rows. `wan/presets.py`
+  `variant_from_catalog()` converts a video row → `WanVariant`;
+  `WanEngine(catalog_path=...)` / `load_catalog()` register them (built-ins stay).
+  One file feeds both engines.
+- **Phase 6 ✅** residency convergence — **deliberately light**. The image
+  two-tier LRU (`ModelManager`, moves whole pipes GPU↔CPU) and the video CPU-LRU
+  (offload keeps one submodel on GPU) are genuinely different mechanics; a forced
+  merge would be the over-abstraction the risks section warns against. Delivered:
+  the naming convergence — `ModelManager`'s internal `enable_cpu_offload` →
+  `enable_offload`, so the offload knob has ONE name everywhere (config → both
+  managers). The two residency impls stay separate by design.
+- **Phase 4** — done (4a/4b/4c below):
   - **4a ✅** `core/backend.py` `Backend` trunk (minimal: `engine` id +
     `engine_defaults`); `PipelineBackend` now extends it.
   - **4b ✅** new `video/` package: `VideoBackend` ABC + `VideoBuildContext` +

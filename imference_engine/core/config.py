@@ -30,9 +30,10 @@ class BaseRuntimeConfig:
     on-demand base-components download from the CDN instead of HuggingFace."""
 
     enable_offload: bool = False
-    """Unified offload knob (image ``enable_cpu_offload`` + video ``enable_offload``
-    merged here). When True the engine uses accelerate's
-    ``enable_model_cpu_offload`` — individual submodels shuttle CPU<->GPU so peak
-    VRAM drops to the largest single submodel, at ~10-30% throughput cost.
-    Defaults False on the image side; the video subclass overrides the default to
-    True (offload is the norm for the heavy A14B experts)."""
+    """Unified offload knob — the image and video sides use this one name (the
+    image ``ModelManager`` and Wan residency both key off it). When True the
+    engine uses accelerate's ``enable_model_cpu_offload`` — individual submodels
+    shuttle CPU<->GPU so peak VRAM drops to the largest single submodel, at
+    ~10-30% throughput cost. Defaults False on the image side; the video subclass
+    overrides the default to True (offload is the norm for the heavy A14B
+    experts)."""

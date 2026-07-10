@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union
 
 from imference_engine.core.engine_base import BaseEngine
 from imference_engine.core.result import GenerationError, MediaResult
@@ -67,8 +68,14 @@ def _total_ram_gb() -> float:
 
 
 class WanEngine(BaseEngine):
-    def __init__(self, *, runtime: Optional[WanRuntimeConfig] = None) -> None:
+    def __init__(
+        self,
+        *,
+        catalog_path: Optional[Union[str, Path]] = None,
+        runtime: Optional[WanRuntimeConfig] = None,
+    ) -> None:
         super().__init__(runtime=runtime or WanRuntimeConfig())
+        self._catalog_path = Path(catalog_path) if catalog_path else None
         self._variants: dict[str, WanVariant] = dict(BUILTIN_VARIANTS)
         # arch -> VideoBackend registry (a 2nd arch, e.g. LTX, registers here);
         # arch -> ResidencyManager, built lazily on first use per arch.
@@ -113,6 +120,31 @@ class WanEngine(BaseEngine):
             text_encoder_quant=self._runtime.text_encoder_quant,
         )
         self._backends = {WanBackend.engine: WanBackend()}
+        if self._catalog_path is not None:
+            self._register_catalog(self._catalog_path)
+
+    def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "WanEngine":
+        """Load ``kind: video`` rows from a (possibly shared) ``models.yml`` and
+        register them as variants. Rows add to / override the built-ins by name —
+        also the hot-reload entry point. ``path`` defaults to the constructor's
+        ``catalog_path`` (which ``load()`` loads automatically)."""
+        if not self._loaded:
+            raise RuntimeError("Call WanEngine.load() before load_catalog")
+        target = path if path is not None else self._catalog_path
+        if target is None:
+            raise ValueError("no catalog path given and WanEngine has no catalog_path")
+        self._register_catalog(target)
+        return self
+
+    def _register_catalog(self, path) -> None:
+        """Parse video rows + register variants. No ``_loaded`` guard — usable
+        from ``_setup()``."""
+        from imference_engine.catalog.loader import load_video
+        from imference_engine.wan.presets import variant_from_catalog
+        configs = load_video(path, known_archs=set(self._backends))
+        for cfg in configs:
+            self.register_variant(variant_from_catalog(cfg))
+        logger.info("Loaded video catalog %s (%d variants)", path, len(configs))
 
     def _manager_for(self, arch: str) -> ResidencyManager:
         """Return (building on first use) the residency manager for ``arch``."""

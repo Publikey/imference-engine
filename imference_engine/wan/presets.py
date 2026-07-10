@@ -109,3 +109,42 @@ BUILTIN_VARIANTS: dict[str, WanVariant] = {
         gguf_low_template="LowNoise/dasiwaWAN22I2V14B_midnightflirtLow-{quant}.gguf",
     ),
 }
+
+
+def variant_from_catalog(cfg) -> WanVariant:
+    """Build a ``WanVariant`` from a ``catalog.loader.VideoModelConfig`` (a
+    ``kind: video`` row with ``engine: wan``). The arch-specific fields live in
+    ``cfg.spec``; ``base_repo`` + ``gguf_repo`` are required, the rest optional.
+
+    Catalog row example::
+
+        - name: my-wan-t2v
+          kind: video
+          engine: wan
+          mode: t2v
+          base_repo: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+          gguf_repo: QuantStack/Wan2.2-T2V-A14B-GGUF
+          flow_shift: 3.0
+          gguf_high_template: HighNoise/...-{quant}.gguf
+          gguf_low_template: LowNoise/...-{quant}.gguf
+          loras:
+            - {repo: lightx2v/..., high_weight_name: ..., low_weight_name: ...}
+    """
+    from imference_engine.catalog.loader import CatalogError
+
+    s = cfg.spec
+    for req in ("base_repo", "gguf_repo"):
+        if not s.get(req):
+            raise CatalogError(f"video model {cfg.name!r} (wan): missing '{req}'")
+    loras = [WanLora(**lora) for lora in s.get("loras", [])]
+    return WanVariant(
+        name=cfg.name, mode=cfg.mode, arch=cfg.arch,
+        base_repo=s["base_repo"], gguf_repo=s["gguf_repo"],
+        lightning_baked=s.get("lightning_baked", False),
+        loras=loras,
+        flow_shift=s.get("flow_shift", 3.0),
+        gguf_high_name=s.get("gguf_high_name"),
+        gguf_low_name=s.get("gguf_low_name"),
+        gguf_high_template=s.get("gguf_high_template"),
+        gguf_low_template=s.get("gguf_low_template"),
+    )

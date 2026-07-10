@@ -72,7 +72,7 @@ class ModelManager:
         max_cpu_models: int = 0,
         on_loaded: Optional[Callable[[str], None]] = None,
         on_evicted: Optional[Callable[[str], None]] = None,
-        enable_cpu_offload: bool = False,
+        enable_offload: bool = False,
     ) -> None:
         self._backends = backends
         self._device = device
@@ -85,12 +85,12 @@ class ModelManager:
         self._max_cpu = max(0, max_cpu_models)
         self._on_loaded = on_loaded
         self._on_evicted = on_evicted
-        self._enable_cpu_offload = enable_cpu_offload
+        self._enable_offload = enable_offload
 
         logger.info(
             f"ModelManager configured: max_gpu_models={self._max_gpu}, "
             f"max_cpu_models={self._max_cpu}, "
-            f"enable_cpu_offload={self._enable_cpu_offload}"
+            f"enable_offload={self._enable_offload}"
         )
 
     # ------------------------------------------------------------------
@@ -183,7 +183,7 @@ class ModelManager:
             evict_name = next(iter(self._gpu))  # oldest = LRU
             evict_pipe = self._gpu.pop(evict_name)
 
-            if self._enable_cpu_offload:
+            if self._enable_offload:
                 # Accelerate's hooks are attached to the pipe's submodules.
                 # Calling pipe.to("cpu") manually would corrupt the offloader's
                 # device-pinning state. Drop the pipe entirely — GC frees the
@@ -256,7 +256,7 @@ class ModelManager:
         from v1's swap_model_to_gpu — two retry attempts, then bail and
         purge the pipe entirely if VRAM is genuinely insufficient.
 
-        When `enable_cpu_offload=True`, takes the accelerate path instead:
+        When `enable_offload=True`, takes the accelerate path instead:
         diffusers' `pipe.enable_model_cpu_offload(device=...)` installs
         hooks that shuttle individual submodels (text_encoder, unet, vae)
         between CPU and GPU on demand. Peak VRAM drops to the largest
@@ -265,7 +265,7 @@ class ModelManager:
         device = self._device.torch_str
         self._free_device_cache()
 
-        if self._enable_cpu_offload:
+        if self._enable_offload:
             # Accelerate manages device placement per-submodel from here on —
             # we do NOT call pipe.to(device), the hook system would conflict.
             try:

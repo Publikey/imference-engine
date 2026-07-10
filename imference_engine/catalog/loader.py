@@ -114,6 +114,8 @@ def loads(
             raise CatalogError(f"{ctx}: each entry must be a mapping, got {type(entry).__name__}")
 
         name = _require_str(entry, "name", ctx)
+        if _row_kind(entry, ctx) != "image":
+            continue  # video rows are read by load_video(); skip here
         if name in seen:
             raise CatalogError(f"{ctx}: duplicate model name {name!r}")
         seen.add(name)
@@ -130,7 +132,7 @@ def loads(
         if base_model is not None and not isinstance(base_model, str):
             raise CatalogError(f"{ctx}: 'base_model' must be a string, got {type(base_model).__name__}")
 
-        known_keys = {"name", "engine", "weights", "base_model", "defaults"}
+        known_keys = {"kind", "name", "engine", "weights", "base_model", "defaults"}
         extra = set(entry) - known_keys
         if extra:
             raise CatalogError(f"{ctx}: unknown key(s) {sorted(extra)}. Allowed: {sorted(known_keys)}")
@@ -140,6 +142,91 @@ def loads(
             name=name, engine=engine, weights=weights,
             base_model=base_model, defaults=defaults,
         ))
+
+    return configs
+
+
+def _row_kind(entry: dict, ctx: str) -> str:
+    kind = entry.get("kind", "image")
+    if kind not in ("image", "video"):
+        raise CatalogError(f"{ctx}: 'kind' must be image|video, got {kind!r}")
+    return kind
+
+
+@dataclass
+class VideoModelConfig:
+    """One video catalog row. ``spec`` is the arch-specific passthrough (base_repo,
+    gguf_repo, loras, flow_shift, gguf_* for Wan) — the video backend converts it
+    to its variant type. Generic here so LTX etc. carry their own spec fields."""
+
+    name: str
+    arch: str            # video backend key ("wan" | "ltx"); = the row's `engine`
+    mode: str            # "t2v" | "i2v"
+    spec: dict = field(default_factory=dict)
+
+
+def load_video(
+    source: Union[str, Path],
+    *,
+    known_archs: Optional[set] = None,
+) -> list[VideoModelConfig]:
+    """Parse the ``kind: video`` rows of a catalog into ``VideoModelConfig``.
+
+    ``known_archs`` (typically ``set(engine._backends)`` on the video engine)
+    validates each row's arch. Image rows are ignored (read by ``load``)."""
+    path = Path(source)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise CatalogError(f"cannot read catalog {path}: {e}") from e
+    return loads_video(text, known_archs=known_archs, origin=str(path))
+
+
+def loads_video(
+    text: str,
+    *,
+    known_archs: Optional[set] = None,
+    origin: str = "<string>",
+) -> list[VideoModelConfig]:
+    """Parse video rows from catalog YAML. See ``load_video``."""
+    import yaml
+
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise CatalogError(f"{origin}: invalid YAML: {e}") from e
+    if doc is None:
+        return []
+    if not isinstance(doc, dict):
+        raise CatalogError(f"{origin}: top level must be a mapping, got {type(doc).__name__}")
+    raw_models = doc.get("models")
+    if not isinstance(raw_models, list):
+        raise CatalogError(f"{origin}: 'models' must be a list")
+
+    configs: list[VideoModelConfig] = []
+    seen: set = set()
+    for i, entry in enumerate(raw_models):
+        ctx = f"{origin}: models[{i}]"
+        if not isinstance(entry, dict):
+            raise CatalogError(f"{ctx}: each entry must be a mapping, got {type(entry).__name__}")
+        name = _require_str(entry, "name", ctx)
+        if _row_kind(entry, ctx) != "video":
+            continue  # image rows read by load()
+        if name in seen:
+            raise CatalogError(f"{ctx}: duplicate model name {name!r}")
+        seen.add(name)
+        ctx = f"{origin}: model {name!r}"
+
+        arch = _require_str(entry, "engine", ctx)
+        if known_archs is not None and arch not in known_archs:
+            raise CatalogError(f"{ctx}: unknown video arch {arch!r}. Known: {sorted(known_archs)}")
+        mode = _require_str(entry, "mode", ctx)
+        if mode not in ("t2v", "i2v"):
+            raise CatalogError(f"{ctx}: 'mode' must be t2v|i2v, got {mode!r}")
+
+        spec = {k: v for k, v in entry.items()
+                if k not in ("kind", "name", "engine", "mode")}
+        configs.append(VideoModelConfig(name=name, arch=arch, mode=mode, spec=spec))
 
     return configs
 

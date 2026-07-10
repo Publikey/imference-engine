@@ -185,7 +185,7 @@ class Engine(BaseEngine):
             on_evicted=self._on_model_evicted,
             # ModelManager keeps its internal param name (converged in Phase 6);
             # the config surface is the unified enable_offload.
-            enable_cpu_offload=self._runtime.enable_offload,
+            enable_offload=self._runtime.enable_offload,
         )
         # Catalog load via the internal helper (no _loaded guard — BaseEngine
         # flips _loaded only after _setup returns).
