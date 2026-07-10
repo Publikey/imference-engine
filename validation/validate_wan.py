@@ -62,6 +62,10 @@ def main() -> int:
     ap.add_argument("--height", type=int, default=480)
     ap.add_argument("--fps", type=int, default=16)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--flow-shift", type=float, default=None,
+                    help="override the variant's flow_shift (i2v often wants 5.0 vs t2v 3.0)")
+    ap.add_argument("--guidance", type=float, default=None, help="guidance_scale (high-noise expert)")
+    ap.add_argument("--guidance2", type=float, default=None, help="guidance_scale_2 (low-noise expert)")
     ap.add_argument("--list", action="store_true", help="list builtin variants and exit (no torch)")
     ap.add_argument("-q", "--quiet", action="store_true", help="suppress engine INFO logs")
     args = ap.parse_args()
@@ -97,17 +101,28 @@ def main() -> int:
             from PIL import Image
             img = Image.open(args.image)
 
-        res = engine.generate_video(
-            variant=args.variant,
-            prompt=args.prompt,
-            image=img,
-            width=args.width,
-            height=args.height,
-            num_frames=args.frames,
-            num_steps=args.steps,
-            fps=args.fps,
-            seed=args.seed,
+        # --flow-shift: re-register the builtin variant with an overridden shift so
+        # we can sweep it without editing presets.py (register_variant replaces by
+        # name). Cheap: only the WanVariant recipe changes, not the cached weights.
+        if args.flow_shift is not None:
+            import dataclasses
+
+            from imference_engine.wan.presets import BUILTIN_VARIANTS
+            base_v = BUILTIN_VARIANTS.get(args.variant)
+            if base_v is not None:
+                engine.register_variant(dataclasses.replace(base_v, flow_shift=args.flow_shift))
+                print(f"  override flow_shift={args.flow_shift}", flush=True)
+
+        gv = dict(
+            variant=args.variant, prompt=args.prompt, image=img,
+            width=args.width, height=args.height, num_frames=args.frames,
+            num_steps=args.steps, fps=args.fps, seed=args.seed,
         )
+        if args.guidance is not None:
+            gv["guidance_scale"] = args.guidance
+        if args.guidance2 is not None:
+            gv["guidance_scale_2"] = args.guidance2
+        res = engine.generate_video(**gv)
         secs = round(time.time() - t0, 1)
 
         if not res.ok:
