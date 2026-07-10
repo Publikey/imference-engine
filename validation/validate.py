@@ -21,6 +21,10 @@ Usage (on a GPU instance, after `pip install -e ".[<engine>,dev]"`):
     # check the plan without loading torch / downloading anything
     python validation/validate.py --dry-run
 
+    # tight-disk box: delete each engine's downloaded weights right after its
+    # render, so the disk never holds more than one model at a time
+    python validation/validate.py --rm-weights
+
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
 from __future__ import annotations
@@ -124,6 +128,8 @@ def run_one(engine: str, entry: dict, args) -> dict:
         del eng
         gc.collect()
         _free_cuda()
+        if getattr(args, "rm_weights", False):
+            _cleanup_weights(engine, entry, args)
     return rec
 
 
@@ -136,6 +142,38 @@ def _free_cuda() -> None:
         pass
 
 
+def _cleanup_weights(engine: str, entry: dict, args) -> None:
+    """Delete ONLY what the harness downloaded for this engine, so the disk never
+    holds more than one model at a time. Never touches a user's ``weights_local``
+    or the rendered PNGs — only the harness's own caches (reproducible)."""
+    import shutil
+
+    if entry.get("weights_local"):
+        return  # user-owned file — never delete
+    removed = []
+    # 1. the single-file download under --cache-dir
+    if entry.get("mode", "single_file") == "single_file":
+        d = Path(args.cache_dir) / entry["repo"].replace("/", "__")
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+            removed.append(str(d))
+    # 2. the shared base-components in the flat offline tree (the whales:
+    #    T5 / Qwen2.5-VL / Z-Image encoder). base_model is None for sdxl/sd15
+    #    (they use a tiny config repo) and for Anima (repo mode) — nothing to free.
+    base = entry.get("base_model")
+    if base:
+        try:
+            from imference_engine.runtime.offline import flat_root
+            bd = Path(flat_root(None, namespace="image")) / base
+            if bd.exists():
+                shutil.rmtree(bd, ignore_errors=True)
+                removed.append(str(bd))
+        except Exception:  # noqa: BLE001
+            pass
+    if removed:
+        print(f"  rm-weights: freed {' + '.join(removed)}", flush=True)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="GPU validation harness for imference-engine backends")
     ap.add_argument("--config", default=str(DEFAULT_CONFIG), help="base_models.yaml")
@@ -144,6 +182,10 @@ def main() -> int:
     ap.add_argument("--device", default="auto", help="auto|cuda|cuda:N|mps|cpu")
     ap.add_argument("--cache-dir", default=str(HERE / "weights"), help="download cache for base weights")
     ap.add_argument("--dry-run", action="store_true", help="print the plan, load nothing")
+    ap.add_argument("--rm-weights", action="store_true",
+                    help="delete each engine's downloaded weights after its render so the "
+                         "disk never holds more than one model at a time (never touches "
+                         "weights_local or the rendered PNGs)")
     args = ap.parse_args()
 
     config = load_config(Path(args.config))
