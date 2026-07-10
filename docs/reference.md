@@ -184,6 +184,11 @@ blank fields fall through to `GLOBAL_DEFAULTS`.
 | **qwenimage** | `guidance_scale=4.0` | **honored**, mapped to `true_cfg_scale`; default `" "` (single space) | ignored; flow-match. `shift` → fixed. | `shift` | ✅ `QwenImageImg2ImgPipeline` | ignored | — | bf16 |
 | **anima** | *(none — all global)* | honored **only if truthy** (no default injected) | ignored; block-defined in the modular pipeline (no-op) | — | ❌ raises `NotImplementedError` (t2i only) | ignored | — | bf16 |
 
+> **Anima ignores `guidance_scale`.** Its modular pipeline configures guidance via
+> a separate Guider block, not a `guidance_scale` __call__ kwarg — the backend
+> does not forward it, so a request/engine `guidance_scale` has **no effect** on
+> Anima (unlike every other backend).
+
 Behavioral highlights:
 
 - **Scheduler name** is honored **only** by `sdxl` / `sd15`. The four

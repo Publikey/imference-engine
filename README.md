@@ -210,13 +210,14 @@ the complete cross-engine reference is in
 | `flux` | flow DiT (12B) | **ignored** (distilled) | 3.5 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `chroma` | flow DiT (8.9B) | honored (real CFG) | 2.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
-| `anima` | modular DiT | honored (if set) | 6.0 (global) | ignored (block) | — | ❌ (t2i) | — | bf16 |
+| `anima` | modular DiT | honored (if set) | **ignored** (Guider block) | ignored (block) | — | ❌ (t2i) | — | bf16 |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
 oversaturates); **Qwen-Image** maps `guidance_scale → true_cfg_scale`, negative
 default is a single space `" "`, and it wants ~40–50 steps (set per-model);
-**Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, no img2img);
+**Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, no img2img,
+`guidance_scale` ignored — guidance is a Guider block);
 the four flow-matching DiTs ignore the `scheduler` name and take an explicit
 `shift` via `backend_options` only.
 

@@ -45,9 +45,13 @@ def test_build_inference_kwargs_standard_set():
         width=1024, height=1024, num_steps=28, guidance_scale=6.0,
         clip_skip=None, chunk_size=1, generator=None)
     assert kw["num_inference_steps"] == 28
-    assert kw["guidance_scale"] == 6.0
     assert kw["num_images_per_prompt"] == 1
+    assert kw["width"] == 1024 and kw["height"] == 1024
     assert "clip_skip" not in kw  # Anima has none
+    # Anima's modular __call__ ignores guidance_scale (separate Guider block) —
+    # forwarding it triggers a diffusers "Unexpected input" warning, so it must
+    # NOT be in the kwargs.
+    assert "guidance_scale" not in kw
 
 
 def test_registered_as_a_backend():

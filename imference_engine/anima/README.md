@@ -23,6 +23,7 @@ hidden states) + the `AutoencoderKLQwenImage` VAE.
 | img2img | **Not supported** (no documented modular img2img) — `make_img2img` raises; call `generate()` without `source_image`. |
 | dtype | `bfloat16`. |
 | scheduler | Block-defined in the modular pipeline; the `scheduler` name arg is ignored. |
+| guidance | **`guidance_scale` is ignored.** Guidance is a separate Guider block, not a `__call__` kwarg — the backend does not forward it (passing it warns "Unexpected input … will be ignored"). The request's `guidance_scale` has no effect on Anima. |
 | device / residency | `pipe.to(...)` is supported → the ModelManager's GPU/CPU moves work. |
 | offline flat-tree / CDN | **Supported.** A repo-id `weights` is resolved through `local_repo_dir` (whole modular repo) before `ModularPipeline.from_pretrained`, so with `IMAGE_MODEL_CDN` set it loads from the R2 mirror — same contract as the other backends. A `weights` that is already a local dir is used verbatim. |
 

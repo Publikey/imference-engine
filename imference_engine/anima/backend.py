@@ -16,11 +16,13 @@ torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
   - Loaded via ``ModularPipeline.from_pretrained(repo)`` then
     ``pipe.load_components(torch_dtype=torch.bfloat16)``; ``pipe.to(device)`` /
     ``.to("cpu")`` residency moves work; ``pipe(...).images`` returns images.
-  - The modular ``__call__`` ACCEPTS the standard kwarg set this backend passes
-    (num_inference_steps, guidance_scale, height, width, generator,
-    num_images_per_prompt, and negative_prompt when set). If a future diffusers
-    changes the modular signature, ``build_inference_kwargs`` / ``encode_prompts``
-    are the single place to adjust.
+  - The modular ``__call__`` accepts num_inference_steps, height, width,
+    generator, num_images_per_prompt, and negative_prompt (when set). It does
+    NOT take ``guidance_scale`` — guidance is a separate Guider block, so passing
+    it warns "Unexpected input ... will be ignored" (confirmed on GPU); this
+    backend therefore omits it and the request's guidance_scale is a no-op for
+    Anima. If a future diffusers changes the modular signature,
+    ``build_inference_kwargs`` / ``encode_prompts`` are the single place to adjust.
   - CPU-offload: ``enable_model_cpu_offload`` may not exist on a ModularPipeline;
     the ModelManager already falls back to ``.to(device)`` if it raises. img2img
     is unsupported (``make_img2img`` raises — no documented modular variant).
@@ -150,19 +152,21 @@ class AnimaBackend(PipelineBackend):
         width: int,
         height: int,
         num_steps: int,
-        guidance_scale: float,
+        guidance_scale: float,  # noqa: ARG002 — ignored by Anima's modular __call__
         clip_skip: Optional[int],  # noqa: ARG002 — Anima has no clip_skip
         chunk_size: int,
         generator: Any,
         image: Any = None,  # noqa: ARG002 — img2img unsupported (make_img2img raises)
         strength: float = 0.75,  # noqa: ARG002
     ) -> dict:
-        # Standard diffusion kwargs. If the modular __call__ rejects any of these
-        # on the first GPU run, remove it here (see the module docstring). t2i
-        # only — `image`/`strength` are ignored (make_img2img raises before here).
+        # Anima's modular pipeline configures guidance via a separate Guider block,
+        # NOT a `guidance_scale` __call__ kwarg — passing it triggers a diffusers
+        # "Unexpected input 'guidance_scale' ... will be ignored" warning on every
+        # render (confirmed on GPU). So it's deliberately NOT forwarded here; the
+        # request's guidance_scale has no effect on Anima. t2i only — `image` /
+        # `strength` are ignored (make_img2img raises before this is reached).
         return {
             "num_inference_steps": num_steps,
-            "guidance_scale": guidance_scale,
             "width": width,
             "height": height,
             "generator": generator,
