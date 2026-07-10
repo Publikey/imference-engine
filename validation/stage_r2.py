@@ -30,19 +30,18 @@ Repo staged per engine (from base_models.yaml + the backend, single source of tr
     anima      circlestone-labs/Anima-Base-v1.0-Diffusers    (whole modular repo)
     (sdxl/zimage work too if you pass them — already mirrored in your setup)
 
-Credentials (env): R2_ENDPOINT_URL (or R2_ACCOUNT_ID), R2_ACCESS_KEY_ID,
-R2_SECRET_ACCESS_KEY, R2_BUCKET.
+Credentials (env): R2_ENDPOINT (full S3 endpoint; R2_ENDPOINT_URL / R2_ACCOUNT_ID
+also accepted), R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET.
 
 Usage (on the remote instance, after ``pip install -e ".[runtime,stage]"``):
     hf auth login                     # once, for the gated FLUX base
-    export R2_ACCOUNT_ID=...          # or R2_ENDPOINT_URL=https://<acct>.r2.cloudflarestorage.com
-    export R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=models
+    export R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+    export R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=gen-models
 
-    python validation/stage_r2.py                    # all CDN-wired bases
-    python validation/stage_r2.py --engines flux,chroma
-    python validation/stage_r2.py --rm               # delete each local dir after upload
-    python validation/stage_r2.py --dry-run          # print the plan + resolved repos, touch nothing
-    python validation/stage_r2.py --prefix models    # object keys under <bucket>/models/<repo>/...
+    python validation/stage_r2.py --prefix image                 # all CDN-wired bases -> gen-models/image/<repo>/...
+    python validation/stage_r2.py --prefix image --engines flux,chroma
+    python validation/stage_r2.py --prefix image --rm            # delete each local dir after upload
+    python validation/stage_r2.py --prefix image --dry-run       # print the plan + resolved repos, touch nothing
 
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
@@ -140,11 +139,14 @@ def populate(repo: str, patterns, cache_dir: str | None) -> str:
 def r2_client():
     import boto3
 
-    endpoint = os.environ.get("R2_ENDPOINT_URL")
+    # R2_ENDPOINT is the worker convention (full S3 endpoint). R2_ENDPOINT_URL is
+    # accepted as an alias; R2_ACCOUNT_ID is a fallback that builds the default
+    # endpoint from the account id.
+    endpoint = os.environ.get("R2_ENDPOINT") or os.environ.get("R2_ENDPOINT_URL")
     if not endpoint:
         acct = os.environ.get("R2_ACCOUNT_ID")
         if not acct:
-            raise SystemExit("set R2_ENDPOINT_URL or R2_ACCOUNT_ID in the environment")
+            raise SystemExit("set R2_ENDPOINT (or R2_ENDPOINT_URL / R2_ACCOUNT_ID)")
         endpoint = f"https://{acct}.r2.cloudflarestorage.com"
     try:
         key_id = os.environ["R2_ACCESS_KEY_ID"]

@@ -94,11 +94,14 @@ uploads `<prefix>/<repo>/<file>` idempotently.
 ```bash
 pip install -e ".[runtime,stage]"          # stage = boto3
 hf auth login                              # once, for the gated FLUX base
-export R2_ACCOUNT_ID=...  R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=models
+export R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+export R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=gen-models
 
-python validation/stage_r2.py              # all CDN-wired bases (flux, chroma, sd15, qwenimage, anima)
-python validation/stage_r2.py --rm         # delete each local dir after upload (disk-tight streaming)
-python validation/stage_r2.py --dry-run    # print the plan + resolved repos, touch nothing
+# --prefix is the path between the bucket root and <repo> (matches IMAGE_MODEL_CDN).
+# With bucket gen-models + CDN at .../image, keys become image/<repo>/<file>.
+python validation/stage_r2.py --prefix image           # all CDN-wired bases (flux, chroma, sd15, qwenimage, anima)
+python validation/stage_r2.py --prefix image --rm      # delete each local dir after upload (disk-tight streaming)
+python validation/stage_r2.py --prefix image --dry-run # print the plan + resolved repos, touch nothing
 ```
 
 Best run on the same remote instance as `validate.py`: fat pipe to HF **and**
