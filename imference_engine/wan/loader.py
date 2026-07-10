@@ -321,3 +321,18 @@ def _log_build_diagnostics(pipe: Any, shared: SharedComponents, variant: Any) ->
         "DIAG pipeline=%s mode=%s boundary_ratio=%s active_adapters=%s baked=%s",
         type(pipe).__name__, variant.mode, getattr(pipe, "boundary_ratio", None),
         active, variant.lightning_baked)
+    # i2v conditioning surface: does the transformer want a CLIP image encoder
+    # (image_dim set), and did we actually load one? If image_dim is set but
+    # image_encoder is None, the CLIP conditioning is silently missing -> shape
+    # survives (VAE first-frame concat) but detail/motion is mush.
+    if variant.mode == "i2v":
+        try:
+            tc = pipe.transformer.config
+            logger.info(
+                "DIAG i2v-cond: image_dim=%s in_channels=%s image_encoder=%s "
+                "image_processor=%s",
+                getattr(tc, "image_dim", "?"), getattr(tc, "in_channels", "?"),
+                type(getattr(pipe, "image_encoder", None)).__name__,
+                type(getattr(pipe, "image_processor", None)).__name__)
+        except Exception as e:  # noqa: BLE001
+            logger.info("DIAG i2v-cond: unavailable (%s)", e)
