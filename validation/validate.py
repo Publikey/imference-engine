@@ -25,6 +25,14 @@ Usage (on a GPU instance, after `pip install -e ".[<engine>,dev]"`):
     # render, so the disk never holds more than one model at a time
     python validation/validate.py --rm-weights
 
+    # load base components from an R2/CDN mirror instead of HuggingFace
+    # (RuntimeConfig.from_env picks these up). NOTE: only the shared BASE is on the
+    # CDN — the per-model checkpoint is still fetched via hf_hub_download, so for a
+    # strict HF_HUB_OFFLINE=1 run point base_models.yaml:weights_local at a cached
+    # single-file (or run online for the checkpoint). Anima is the exception: its
+    # whole repo is on the CDN, so it runs fully offline from R2.
+    IMAGE_MODEL_CDN=https://.../image python validation/validate.py --engines anima
+
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
 from __future__ import annotations
@@ -82,10 +90,13 @@ def run_one(engine: str, entry: dict, args) -> dict:
     t0 = time.time()
     eng = None
     try:
-        eng = Engine(runtime=RuntimeConfig(
-            device=args.device,
-            enable_offload=bool(entry.get("offload", False)),
-        )).load()
+        # Build from the env contract so IMAGE_MODEL_CDN / IMAGE_MODEL_CACHE reach
+        # the engine (base components then load from the R2 mirror, not HF). The
+        # per-entry offload and the --device flag override on top.
+        cfg = RuntimeConfig.from_env()
+        cfg.device = args.device
+        cfg.enable_offload = bool(entry.get("offload", False))
+        eng = Engine(runtime=cfg).load()
 
         weights = resolve_weights(engine, entry, Path(args.cache_dir))
         eng.register_model(
