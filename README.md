@@ -1,148 +1,321 @@
 # imference-engine
 
-Unified Python inference engine for Diffusers-based image generation. Single
-codebase serves both the gen-image / Imference worker fleet (Runqy + GPU
-workers) and the upcoming Imference Desktop sidecar.
+**One Python API for state-of-the-art diffusion. Seven image models and Wan
+video behind a single `Engine`, offline-first, from a 6 GB laptop GPU to a
+multi-model cloud fleet.**
 
-## Status
+`imference-engine` is a unified, Diffusers-based inference engine. Register a
+checkpoint, call `generate()`, get PIL images back — the same three lines whether
+you're driving SDXL, FLUX, Qwen-Image or Anima. It handles the parts that are
+tedious to get right per model: transformer-only checkpoints with shared base
+components, VRAM-aware batching, multi-tier model residency (GPU + CPU LRU),
+offline weight resolution from a CDN mirror, weighted prompts, and img2img — all
+behind one small, transport-agnostic surface.
 
-Early extraction from `gen-image-worker/workers/sdxl-multimodel` and
-`zimage-multimodel`. The two workers shared ~80% of the code; this package
-unifies them behind a single `Engine` API and adds the abstraction needed for
-future desktop / MPS / quantization support.
+It ships as the **sidecar for [Imference Desktop](#sidecar-or-standalone)** and
+powers the Imference GPU worker fleet — but it's a plain `pip`-installable
+library with **no ties to either**, so you can embed it in your own worker, batch
+script, or app.
 
-Inference + backends are wired (SDXL, SD 1.5, Z-Image, FLUX.1, Chroma,
-Qwen-Image, Anima, plus a Wan video sub-package) — **all seven image backends
-validated end-to-end on diffusers 0.39** (see [`validation/`](validation/)). The
-multi-tier `ModelManager` (GPU LRU + optional CPU LRU) is in, img2img
-(`Engine.generate(source_image=...)`) is wired, and the catalog YAML loader +
-per-model defaults precedence chain (`Engine(catalog_path=...)`) are in (see
-[`docs/catalog-design.md`](docs/catalog-design.md)). Remaining gap: `LoRAManager`.
+### Why it's nice to use
 
-## Scope
+- **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
+  Qwen-Image · Anima, plus **Wan 2.2** text/image-to-video — each a first-class
+  backend, none needing bespoke glue in your code.
+- **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
+  zero bytes from HuggingFace — immune to a repo going gated or disappearing.
+  Ships with a staging tool ([`validation/stage_r2.py`](validation/stage_r2.py)).
+- **Fits the hardware.** `enable_offload` runs a 12–20 B DiT on consumer VRAM;
+  the multi-tier `ModelManager` turns 10–30 s model swaps into ~0.5 s promotions
+  on a cloud box with room to spare.
+- **Sane precedence.** Per-request → per-model → per-engine → global defaults, so
+  a catalog row carries a checkpoint's recipe (e.g. a 4-step Lightning) and
+  callers override only what they mean to.
+- **Transport-agnostic.** `generate()` returns frames, seeds and per-image
+  errors. What happens next — upload, webhook, hand to Electron — is yours.
+- **Validated.** All seven image backends render end-to-end on diffusers 0.39
+  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v confirmed on the same stack.
+  See [`validation/`](validation/).
 
-- **In:** SDXL, SD 1.5, Z-Image, FLUX.1, Chroma, Qwen-Image pipelines, LoRA
-  stacking, dynamic GPU batch sizing, CPU/GPU/disk LRU model management, weighted
-  prompt embeddings with BREAK keyword support.
-- **Out (intentionally):** Wan video, ComfyUI workflows, cloud-API wrappers
-  (Azure, Vertex, OpenAI). Those stay as their own one-shot workers — they
-  don't share an inference loop with diffusion models.
-- **Future:** MPS (Apple Silicon), CPU fallback, quantization
-  (bitsandbytes / quanto / gguf), Civitai download, user-data-dir conventions
-  for desktop sidecar.
-
-## Boundaries
-
-The engine performs **no network I/O on the result side**. `generate()` returns
-PIL images, seeds, and per-image errors. The caller decides what to do with
-them — upload to Azure, return inline, POST a webhook, hand to Electron, etc.
-This is the clean cut between *engine* (pure inference) and *transport*
-(workers, sidecar, etc.).
+---
 
 ## Install
 
 ```bash
+# everything (all image backends + dev tools)
 pip install -e ".[runtime,dev]"
-# minimal (catalog / batch-sizing logic only, no torch):
+
+# just the backend(s) you need — each has its own extra
+pip install -e ".[sdxl,dev]"
+pip install -e ".[flux,dev]"
+
+# Wan video (adds gguf / imageio)
+pip install -e ".[wan,dev]"
+
+# pure-Python pieces only (catalog loader, batch sizer — no torch)
 pip install -e ".[dev]"
 ```
 
-## Usage
+Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
+(and `runtime` = all seven), `wan`, `stage` (R2 staging, boto3), `dev`.
 
-### Desktop / single-user (defaults — single resident model)
+> **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
+> GitHub-only — install separately so its unconstrained torch pin can't clobber
+> your CUDA build; the engine falls back to raw prompts if absent:
+> ```bash
+> pip install --no-deps "sd-embed @ https://github.com/xhinker/sd_embed/archive/refs/heads/main.tar.gz"
+> ```
+
+On Windows, install a CUDA torch first: `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
+
+---
+
+## Quickstart — images
 
 ```python
 from imference_engine import Engine, RuntimeConfig
 
 engine = Engine(runtime=RuntimeConfig(device="auto")).load()
-engine.register_model("sdxl", backend="sdxl", weights_path="/path/to/sdxl.safetensors")
+engine.register_model("sdxl", backend="sdxl", weights_path="/models/sdxl.safetensors")
 
 result = engine.generate(
     model="sdxl",
-    prompt="masterpiece, best quality, ...",
-    negative_prompt="lowres, ...",
+    prompt="a red fox in a snowy forest, golden hour, 85mm",
+    negative_prompt="lowres, blurry",
     width=1024, height=1024,
-    num_steps=30, guidance_scale=7,
+    num_steps=28, guidance_scale=6.5,
     scheduler="EulerAncestralDiscreteScheduler",
-    batch=4,
-    seed=42,
+    batch=4, seed=42,
 )
-# result.images: list[PIL.Image | None]
-# result.seeds:  list[int]
-# result.errors: list[GenerationError]
+
+for img in result.images:      # list[PIL.Image | None]  (None where that seed errored)
+    ...                        # result.seeds -> list[int];  result.errors -> list[GenerationError]
 ```
 
-### Cloud worker / multi-model (GPU LRU + CPU warm cache)
+A **transformer-only** checkpoint (FLUX, Chroma, Z-Image, Qwen-Image) also needs
+a `base_model` — the diffusers-format repo that supplies the shared text
+encoder(s), VAE and scheduler the single-file omits:
+
+```python
+engine.register_model(
+    "flux-dev", backend="flux",
+    weights_path="/models/flux1-dev.safetensors",
+    base_model="black-forest-labs/FLUX.1-dev",   # CLIP-L + T5-XXL + VAE + scheduler
+)
+result = engine.generate(model="flux-dev", prompt="an astronaut riding a horse")
+```
+
+**img2img** is the same call with a `source_image` + `strength`:
+
+```python
+result = engine.generate(model="sdxl", prompt="...", source_image=pil_img, strength=0.6)
+```
+
+## Quickstart — Wan video
+
+```python
+from imference_engine.wan import WanEngine, WanRuntimeConfig
+
+engine = WanEngine(runtime=WanRuntimeConfig(device="auto", memory_profile="auto")).load()
+res = engine.generate_video(variant="wan22-t2v-lightning", prompt="a red fox trotting through snow")
+
+res.frames        # list[PIL.Image]  — caller encodes (export_to_video) + uploads
+res.fps, res.num_frames, res.seeds
+```
+
+Wan is a **separate engine** (`WanEngine`) — a GGUF-MoE video stack whose
+residency model differs fundamentally from images (the GPU never holds more than
+the active A14B expert). Built-in variants: `wan22-t2v-lightning`,
+`wan22-i2v-lightning`, `smoothmix-i2v`, `dasiwa-i2v`. New architectures (e.g. LTX)
+plug in as a `VideoBackend` with a new `arch` — no engine fork.
+
+---
+
+## Sidecar or standalone
+
+`imference-engine` is the **inference core of Imference Desktop** (the desktop
+app runs it as an in-process sidecar) — but it is a standalone library first. It
+does **no network I/O on the result side** and knows nothing about Runqy,
+FastAPI, webhooks or Electron: `generate()` returns PIL frames + metadata and the
+caller decides what to do with them. That clean cut is why the *same* engine
+serves three very different hosts unchanged:
+
+| Host | How it drives the engine |
+|---|---|
+| **Imference Desktop** (sidecar) | Builds `RuntimeConfig(...)` from app settings, single resident model, `enable_offload` on small GPUs. |
+| **GPU worker fleet** | `RuntimeConfig.from_env()` reads the `IMAGE_*` / `WAN_*` env contract, then layers cgroup-aware `max_*_models` on top. |
+| **Your code** | `pip install imference-engine`, construct an `Engine`, call `generate()`. |
+
+Every knob is settable **identically by an environment variable OR a constructor
+param**, each with a default — a launcher only populates the contract, so hosts
+are interchangeable and no engine logic leaks into them.
+
+---
+
+## The request payload
+
+### `Engine.generate(...) -> MediaResult`
+
+| param | type | default¹ | notes |
+|---|---|---|---|
+| `model` | `str` | — (required) | A registered model name. |
+| `prompt` | `str` | — (required) | Positive prompt. |
+| `negative_prompt` | `str?` | `None` | Honored by SDXL/SD1.5/Z-Image/Chroma/Qwen-Image/Anima; **ignored by FLUX** (guidance-distilled). |
+| `width`, `height` | `int?` | `1024` | 512 for SD 1.5. |
+| `num_steps` | `int?` | `28` | |
+| `guidance_scale` | `float?` | `6.0` | Per-engine sweet spots differ (see matrix). |
+| `clip_skip` | `int?` | `None` | **SDXL / SD 1.5 only**; ignored by the flow-matching DiTs. |
+| `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
+| `batch` | `int` | `1` | N independent images, one seed each. |
+| `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Anima excepted — t2i only). |
+| `strength` | `float?` | `0.75` | img2img denoise strength. |
+| `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
+| `loras` | `list[dict]?` | `None` | Reserved — not wired in V1 (logged + ignored). |
+
+¹ Unset (`None`) request fields fall through the **precedence chain** —
+`request > model defaults > engine defaults > GLOBAL_DEFAULTS` (finest non-None
+wins). `GLOBAL_DEFAULTS = num_steps 28 · guidance 6.0 · 1024×1024 · strength
+0.75`. So a per-model catalog default fills what the request omits, and a
+checkpoint's recipe lives with the checkpoint.
+
+### `WanEngine.generate_video(...) -> MediaResult`
+
+`variant` (required) · `prompt` (required) · `image` (required for i2v) ·
+`negative_prompt` · `width=832` · `height=480` · `num_frames=81` · `num_steps=4`
+· `guidance_scale=1.0` · `guidance_scale_2` (low-noise expert) · `fps=16`
+(metadata) · `seed`.
+
+### `MediaResult`
+
+`.images` / `.frames` (both alias `.media`) · `.seeds` · `.errors`
+(`list[GenerationError]`) · `.error` (first, or None) · `.ok` (no errors and ≥1
+frame). Video calls also carry `.fps` / `.num_frames` / `.width` / `.height` /
+`.variant`. `generate_video` never raises — failures come back as `errors`.
+
+---
+
+## Per-engine behavior
+
+Every backend is the single source of truth for its own recipe. Full env ↔ param
+↔ default tables and payload notes are in each backend's README (linked below);
+the complete cross-engine reference is in
+**[`docs/reference.md`](docs/reference.md)**.
+
+| backend | family | `negative_prompt` | guidance default | `scheduler` name | `backend_options` | img2img | `clip_skip` | dtype |
+|---|---|---|---|---|---|---|---|---|
+| `sdxl` | UNet (CLIP×2) | honored | 6.0 (global) | **honored** (Euler-A / DPM++) | — | ✅ | ✅ | fp16 |
+| `sd15` | UNet (CLIP) | honored | 7.0 | **honored** | — | ✅ | ✅ | fp16 |
+| `zimage` | flow DiT | honored | 1.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
+| `flux` | flow DiT (12B) | **ignored** (distilled) | 3.5 | ignored (flow) | `shift` | ✅ | — | bf16 |
+| `chroma` | flow DiT (8.9B) | honored (real CFG) | 2.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
+| `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
+| `anima` | modular DiT | honored (if set) | 6.0 (global) | ignored (block) | — | ❌ (t2i) | — | bf16 |
+
+Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
+`guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
+oversaturates); **Qwen-Image** maps `guidance_scale → true_cfg_scale`, negative
+default is a single space `" "`, and it wants ~40–50 steps (set per-model);
+**Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, no img2img);
+the four flow-matching DiTs ignore the `scheduler` name and take an explicit
+`shift` via `backend_options` only.
+
+Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
+· [Z-Image](imference_engine/zimage/README.md) ·
+[FLUX](imference_engine/flux/README.md) ·
+[Chroma](imference_engine/chroma/README.md) ·
+[Qwen-Image](imference_engine/qwenimage/README.md) ·
+[Anima](imference_engine/anima/README.md) ·
+[Wan video](imference_engine/wan/README.md).
+
+---
+
+## Configuration (env ↔ param)
+
+`RuntimeConfig.from_env()` / `WanRuntimeConfig.from_env()` build a config from the
+documented env contract (safe with no environment). The essentials — full tables
+in [`docs/reference.md`](docs/reference.md):
+
+**Image (`IMAGE_*`)** — `IMAGE_DEVICE` · `IMAGE_MODEL_CACHE` · `IMAGE_MODEL_CDN` ·
+`MAX_GPU_MODELS` · `MAX_CPU_MODELS` · `IMAGE_USE_TINY_VAE` (SDXL/SD1.5 only) ·
+`IMAGE_ENABLE_CPU_OFFLOAD`.
+
+**Video (`WAN_*`)** — `WAN_DEVICE` · `WAN_PROFILE` (GGUF quant / `auto`) ·
+`WAN_MAX_RESIDENT` · `WAN_MODEL_CACHE` · `WAN_MODEL_CDN` · `WAN_TEXT_ENCODER_QUANT`
+· `WAN_VAE_TILING` · `WAN_ENABLE_OFFLOAD`.
+
+**Global** — `HF_HUB_OFFLINE=1` (guardrail: any stray HF call fails loudly) ·
+`HF_HOME` (flat-tree fallback root) · `IMAGE_CDN_THREADS` / `WAN_CDN_THREADS` ·
+`BATCH_VRAM_RESERVE_MB` · `MAX_BATCH_SIZE`.
+
+> `auto` resolution is **host-side**: `from_env()` leaves `MAX_*_MODELS=auto` /
+> `WAN_PROFILE=auto` at engine defaults, and the worker overrides them with
+> cgroup-aware hardware detection. The engine never probes hardware itself.
+
+### Offline & the CDN mirror
+
+Set `IMAGE_MODEL_CDN` / `WAN_MODEL_CDN` to an R2/S3 mirror of the `<repo>/<file>`
+layout and shared base components resolve from the CDN instead of HuggingFace —
+with `HF_HUB_OFFLINE=1`, zero HF contact. Stage the bases onto R2 with
+[`validation/stage_r2.py`](validation/stage_r2.py) (pulls the exact base
+patterns, writes the manifest the reader expects, uploads idempotently).
+
+### Multi-model residency (worker path)
 
 ```python
 engine = Engine(runtime=RuntimeConfig(
-    device="auto",
-    max_gpu_models=2,    # up to 2 pipes concurrently in VRAM
-    max_cpu_models=8,    # up to 8 demoted-but-warm pipes in CPU RAM
+    device="auto", max_gpu_models=2, max_cpu_models=8,
 )).load()
-
-# Plug disk-cache lifecycle so .safetensors actively in use can't be
-# garbage-collected by a separate disk-pressure monitor.
-engine.set_lifecycle_hooks(
-    on_model_loaded=disk_cache.protect,
-    on_model_evicted=disk_cache.unprotect,
-)
-
-for model_meta in catalog.entries():
-    engine.register_model(model_meta.name, backend=model_meta.engine,
-                          weights_path=model_meta.path, base_model=model_meta.base)
-
-# Repeated switches between A/B/C are now ~0.5s swaps instead of 10-30s disk reads,
-# as long as they fit in (max_gpu + max_cpu) total residency.
-result = engine.generate(model="some-model", prompt="...", ...)
+engine.set_lifecycle_hooks(on_model_loaded=disk_cache.protect,
+                           on_model_evicted=disk_cache.unprotect)
 ```
 
-## Configuration
+`max_gpu_models` pipes stay resident in VRAM; `max_cpu_models` demoted-but-warm
+pipes stay in CPU RAM for ~0.5 s re-promotion. A **catalog** (`models.yml`) can
+register every model with its per-model defaults —
+`Engine(catalog_path="models.yml")` or `engine.load_catalog(...)`; see
+[`docs/catalog-design.md`](docs/catalog-design.md).
 
-Each engine is the **single source of truth** for its configuration: every knob
-is settable **identically by an environment variable OR a constructor param**,
-each with a default. A launcher (a worker's `start.sh`, the desktop sidecar)
-only populates this contract — no engine logic lives in the launcher, so the
-launcher is interchangeable.
+---
 
-- `RuntimeConfig.from_env()` / `WanRuntimeConfig.from_env()` build a config from
-  the documented env contract; both are safe to call with no environment.
-- `MAX_*_MODELS=auto` (image) / `WAN_PROFILE=auto` / `WAN_MAX_RESIDENT=auto`
-  deliberately stay at engine defaults — **hardware "auto" resolution is
-  worker-side** (`config/resource_detection.py`), layered on top via param
-  override. The engine never does hardware detection itself.
-
-Full env↔param↔default tables per engine:
-
-- **SDXL + SD 1.5 + shared image config:** [`pipelines/README.md`](imference_engine/pipelines/README.md)
-- **Z-Image:** [`zimage/README.md`](imference_engine/zimage/README.md)
-- **FLUX.1:** [`flux/README.md`](imference_engine/flux/README.md)
-- **Chroma:** [`chroma/README.md`](imference_engine/chroma/README.md)
-- **Qwen-Image:** [`qwenimage/README.md`](imference_engine/qwenimage/README.md)
-- **Anima (Modular Diffusers):** [`anima/README.md`](imference_engine/anima/README.md)
-- **Wan video:** [`wan/README.md`](imference_engine/wan/README.md)
-
-## Layout
+## Architecture
 
 ```
 imference_engine/
-  engine.py            # public Engine class
-  types.py             # GenerationResult, GenerationError, RuntimeConfig
-  pipelines/
-    base.py            # PipelineBackend ABC
-    sdxl.py            # (PR2) SDXL backend
-    zimage.py          # (PR2) Z-Image backend
-  managers/
-    batch.py           # BatchSizer (lifted, generalized)
-    model.py           # ModelManager — GPU + optional CPU LRU
-    lora.py            # (TBD) LoRAManager — dynamic stacking
-  catalog/
-    loader.py          # (PR2) YAML model registry
-    disk_cache.py      # (PR2) on-disk LRU for downloaded weights
-    remote_sync.py     # (PR2) hot-reload models.yml from HTTP
-  prompting/
-    weighted.py        # (PR2) sd_embed wrapper + BREAK keyword
-  runtime/
-    device.py          # cuda | mps | cpu detection
-    resources.py       # (PR2) RAM/disk/VRAM detection lifted from worker
+  engine.py            # Engine — public image entry point (register_model, generate)
+  __init__.py          # Engine, RuntimeConfig, MediaResult, GenerationError
+  core/                # shared trunk (unified image+video core)
+    result.py          #   MediaResult / GenerationError
+    config.py          #   BaseRuntimeConfig (device, cache, cdn, enable_offload)
+    engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
+    backend.py         #   Backend / PipelineBackend ABCs
+  pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
+  zimage/ flux/ chroma/ qwenimage/ anima/    # one package per image backend
+  video/               # video architecture layer
+    backend.py         #   VideoBackend ABC + VideoBuildContext
+    residency.py       #   generic ResidencyManager
+    backends/wan.py    #   WanBackend (arch="wan")
+  wan/                 # WanEngine, WanRuntimeConfig, presets (variants), loader
+  catalog/             # models.yml loader + GenerationDefaults precedence
+  managers/            # batch.py (BatchSizer) + model.py (ModelManager LRU)
+  prompting/           # weighted.py (sd-embed + BREAK)
+  runtime/             # device.py, offline.py (flat tree / CDN), download.py
 ```
+
+Design docs: [unified engine core](docs/unified-engine-core.md) ·
+[catalog loader](docs/catalog-design.md).
+
+## Validation
+
+[`validation/`](validation/) holds a GPU harness that loads each engine's base
+model, renders, and reports pass/fail — `python validation/validate.py`
+(`validate_wan.py` for video). All seven image backends pass end-to-end on
+diffusers 0.39; see [`validation/README.md`](validation/README.md).
+
+## Status & scope
+
+Wired and validated: the seven image backends, Wan 2.2 video, img2img,
+multi-tier residency, weighted prompts, the catalog loader + precedence chain,
+and offline/CDN resolution. **Not yet wired:** `LoRAManager` (image LoRA
+stacking — `loras=` is accepted but ignored), Qwen-Image-Edit, and quantized
+image builds. MPS (Apple Silicon) is untested.

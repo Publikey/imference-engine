@@ -24,7 +24,7 @@ hidden states) + the `AutoencoderKLQwenImage` VAE.
 | dtype | `bfloat16`. |
 | scheduler | Block-defined in the modular pipeline; the `scheduler` name arg is ignored. |
 | device / residency | `pipe.to(...)` is supported → the ModelManager's GPU/CPU moves work. |
-| offline flat-tree / CDN | NOT plumbed through the modular loader here (unlike the other backends). |
+| offline flat-tree / CDN | **Supported.** A repo-id `weights` is resolved through `local_repo_dir` (whole modular repo) before `ModularPipeline.from_pretrained`, so with `IMAGE_MODEL_CDN` set it loads from the R2 mirror — same contract as the other backends. A `weights` that is already a local dir is used verbatim. |
 
 ## Validation
 

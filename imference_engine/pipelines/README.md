@@ -91,6 +91,8 @@ engine.warm(specs)   # SDXL config+VAE, each Z-Image base_model — downloaded, 
 ## Per-request params (`Engine.generate`)
 
 `model`, `prompt`, `negative_prompt`, `width=1024`, `height=1024`,
-`num_steps=28`, `guidance_scale=6.0`, `clip_skip` (SDXL only), `scheduler`,
-`batch=1`, `seed`, `source_image` + `strength=0.75` (img2img),
-`backend_options` (e.g. `{"shift": 3.0}` for Z-Image).
+`num_steps=28`, `guidance_scale=6.0`, `clip_skip` (SDXL / SD 1.5 only),
+`scheduler` (SDXL / SD 1.5 only), `batch=1`, `seed`, `source_image` +
+`strength=0.75` (img2img), `backend_options` (e.g. `{"shift": 3.0}` for Z-Image).
+
+> Full cross-engine payload + env reference: [`../../docs/reference.md`](../../docs/reference.md).
