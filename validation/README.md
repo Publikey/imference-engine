@@ -77,9 +77,19 @@ python validation/validate_wan.py --frames 33                  # lighter/faster 
 
 Outputs `renders/wan_<variant>_seed42.mp4` + a sample frame PNG. Heavy: A14B
 experts are ~15 GB GGUF each (×2) + shared UMT5/VAE (~11.5 GB); `WAN_PROFILE=auto`
-picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB). **Status:
-Wan was validated on diffusers 0.38; re-validation on 0.39 is pending** (it moved
-with the blind 0.38→0.39 bump to keep one shared diffusers).
+picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB).
+
+**Status: re-validated end-to-end on diffusers 0.39** (RTX PRO 5000 Blackwell,
+torch 2.12) — t2v and i2v both render. Two fixes came out of it: the UMT5 input
+embedding is re-tied on load (transformers 5.1 left it zero-init → the encoder
+ignored the prompt), and the i2v default GGUF is now **bullerwins** — the
+QuantStack i2v GGUF renders mush on this stack (its `patch_embedding` dequantizes
+wrong; the same official model from bullerwins is clean). See
+[`../imference_engine/wan/README.md`](../imference_engine/wan/README.md) →
+*Built-in variants*. The harness surfaces engine INFO logs (CDN pulls, the UMT5
+re-tie, LoRA-applied, DIAG lines) by default; `-q` silences them. `--flow-shift` /
+`--guidance` / `--guidance2` / `--no-lora` / `--gguf-repo` / `--gguf-*-template`
+override a variant's recipe from the CLI for A/B testing.
 
 ## Stage base components onto R2 — `stage_r2.py`
 

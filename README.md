@@ -34,7 +34,7 @@ script, or app.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
 - **Validated.** All seven image backends render end-to-end on diffusers 0.39
-  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v confirmed on the same stack.
+  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same stack.
   See [`validation/`](validation/).
 
 ---

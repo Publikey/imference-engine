@@ -220,13 +220,25 @@ Behavioral highlights:
 | name | mode | Lightning | gguf_repo |
 |---|---|---|---|
 | `wan22-t2v-lightning` | t2v | LoRA (`lightx2v/Wan2.2-Lightning`, 4-step) | `QuantStack/Wan2.2-T2V-A14B-GGUF` |
-| `wan22-i2v-lightning` | i2v | LoRA, 4-step | `QuantStack/Wan2.2-I2V-A14B-GGUF` |
+| `wan22-i2v-lightning` | i2v | LoRA, 4-step | `bullerwins/Wan2.2-I2V-A14B-GGUF` † |
 | `smoothmix-i2v` | i2v | baked (no LoRA) | `Bedovyy/smoothMixWan22-I2V-GGUF` |
 | `dasiwa-i2v` | i2v | baked (no LoRA) | `Bedovyy/dasiwaWAN22I2V14B-GGUF` |
 
 All are `arch="wan"`, `flow_shift=3.0`. The two A14B experts split high-noise →
 `transformer`, low-noise → `transformer_2`. LoRAs are applied via `set_adapters`
 (never fused). "Steps" is per-request (`num_steps`, default 4), not a variant field.
+
+> **† Why i2v uses bullerwins, not QuantStack.** `QuantStack/Wan2.2-I2V-A14B-GGUF`
+> renders **moving-pixel mush** on the diffusers 0.39 / torch 2.12 stack — its
+> `patch_embedding` (the i2v image-conditioning input, 36 channels) dequantizes
+> wrong. Ruled out by elimination on GPU: not the engine refactor (i2v call is
+> byte-identical pre/post), not diffusers 0.39 (`transformer_wan.py`,
+> `pipeline_wan_i2v.py`, `gguf/utils.py` are byte-identical to the 0.38 that
+> worked), not the Lightning LoRA (`--no-lora` still mush), not settings. The
+> **same official Wan2.2-I2V-A14B model from bullerwins** (different quantizer,
+> flat lowercase filenames) renders clean on the identical stack. The t2v
+> QuantStack GGUF is fine (16-channel patch_embedding). If you serve i2v from a
+> CDN mirror, stage the bullerwins repo (the QuantStack i2v mirror is unusable).
 
 ### `WanVariant` fields
 
