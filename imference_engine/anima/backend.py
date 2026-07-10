@@ -28,6 +28,13 @@ torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
 NOTE: ``weights_path`` for Anima is a diffusers-format repo id or local directory
 (e.g. ``circlestone-labs/Anima-Base-v1.0-Diffusers``), NOT a single .safetensors.
 ``base_model`` is unused (no transformer/base split).
+
+Offline / CDN: a repo-id ``weights_path`` is resolved into the flat offline tree
+via ``local_repo_dir`` (the whole modular repo — DiT + Qwen3 encoder + text
+conditioner + VAE + index) BEFORE ``from_pretrained``, so with ``IMAGE_MODEL_CDN``
+set the model loads from the R2 mirror, never HuggingFace — same contract as the
+other image backends. A ``weights_path`` that is already a local directory is used
+as-is (no resolution).
 """
 from __future__ import annotations
 import logging
@@ -44,12 +51,18 @@ class AnimaBackend(PipelineBackend):
 
     engine: ClassVar[str] = "anima"
 
+    # Anima is a single self-contained modular repo (no transformer/base split):
+    # every component — the CosmosTransformer3D DiT, the Qwen3 encoder, the
+    # AnimaTextConditioner and the VAE — ships in the one repo, so we mirror the
+    # WHOLE repo (``["*"]`` matches every path). SENTINEL is the modular index file
+    # (not the classic ``model_index.json``) — the "already populated" marker for
+    # the strict-offline fast path.
+    BASE_PATTERNS: ClassVar[list] = ["*"]
+    SENTINEL: ClassVar[str] = "modular_model_index.json"
+
     def __init__(
         self, *, cache_dir: Optional[str] = None, cdn_base: Optional[str] = None
     ) -> None:
-        # cache_dir/cdn_base are accepted for signature parity with the other
-        # backends but the modular loader manages its own component fetch; the
-        # offline flat-tree wiring is not plumbed through ModularPipeline here.
         self._cache_dir = cache_dir
         self._cdn_base = cdn_base
 
@@ -66,14 +79,32 @@ class AnimaBackend(PipelineBackend):
     def load_pipeline(
         self, *, local_path: str, base_model: Optional[str] = None  # noqa: ARG002
     ) -> Any:
+        import os
+
         import torch
         from diffusers import ModularPipeline
 
         # local_path is a diffusers-format repo id or directory (NOT a .safetensors).
-        logger.info(f"Loading Anima modular pipeline from {local_path}")
-        pipe = ModularPipeline.from_pretrained(local_path)
+        # A repo id is resolved into the flat offline tree first (CDN when
+        # cdn_base is set, else HuggingFace), so the modular pipeline loads from
+        # the mirror — an existing local dir is used verbatim.
+        src = local_path
+        if not os.path.isdir(local_path):
+            from imference_engine.runtime.offline import local_repo_dir
+            src = local_repo_dir(
+                local_path, self.BASE_PATTERNS, self._cache_dir,
+                namespace="image", sentinel=self.SENTINEL, cdn_base=self._cdn_base)
+
+        logger.info(f"Loading Anima modular pipeline from {src}")
+        pipe = ModularPipeline.from_pretrained(src)
         pipe.load_components(torch_dtype=torch.bfloat16)
         return pipe
+
+    def prefetch_base(self, base_model: Optional[str] = None) -> None:  # noqa: ARG002
+        """No-op: Anima's model lives in ``weights_path`` (the repo id), not in
+        ``base_model``, so there is nothing to warm from ``base_model``. The repo
+        is resolved into the flat tree lazily at load (``local_repo_dir``)."""
+        return None
 
     # ------------------------------------------------------------------
     # Img2img (not supported)

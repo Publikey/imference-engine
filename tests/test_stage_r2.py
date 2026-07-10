@@ -48,7 +48,19 @@ def test_resolve_repo_mode_stages_whole_repo():
     assert patterns is None  # all files
 
 
-def test_anima_not_in_default_engines():
-    # anima isn't CDN-wired yet -> must not be staged by default.
-    assert "anima" not in stage_r2.DEFAULT_ENGINES
-    assert set(stage_r2.DEFAULT_ENGINES) == {"flux", "chroma", "sd15", "qwenimage"}
+def test_default_engines_are_all_cdn_wired():
+    # anima is now wired through local_repo_dir (see AnimaBackend.load_pipeline),
+    # so it's staged by default alongside the transformer-only backends.
+    assert set(stage_r2.DEFAULT_ENGINES) == {"flux", "chroma", "sd15", "qwenimage", "anima"}
+
+
+def test_anima_backend_is_cdn_wired():
+    # Guard the wiring the staging tool relies on: a repo-id weights_path must be
+    # resolved into the flat tree (local_repo_dir) before ModularPipeline load.
+    import inspect
+
+    from imference_engine.anima import AnimaBackend
+    src = inspect.getsource(AnimaBackend.load_pipeline)
+    assert "local_repo_dir" in src
+    assert AnimaBackend.BASE_PATTERNS == ["*"]  # whole modular repo
+    assert AnimaBackend.SENTINEL == "modular_model_index.json"

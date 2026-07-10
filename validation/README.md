@@ -96,7 +96,7 @@ pip install -e ".[runtime,stage]"          # stage = boto3
 hf auth login                              # once, for the gated FLUX base
 export R2_ACCOUNT_ID=...  R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=models
 
-python validation/stage_r2.py              # the 4 CDN-wired bases (flux, chroma, sd15, qwenimage)
+python validation/stage_r2.py              # all CDN-wired bases (flux, chroma, sd15, qwenimage, anima)
 python validation/stage_r2.py --rm         # delete each local dir after upload (disk-tight streaming)
 python validation/stage_r2.py --dry-run    # print the plan + resolved repos, touch nothing
 ```
@@ -106,10 +106,10 @@ Cloudflare, HF auth already set up for gated FLUX, and `--rm` streams one base a
 a time so the disk never holds them all. Uploads are resumable (an object already
 present with the same size is skipped).
 
-> **anima is excluded by default.** Its loader calls
-> `ModularPipeline.from_pretrained(repo)` directly and does not yet route through
-> `local_repo_dir`/`cdn_base`, so an uploaded anima base is not served from R2
-> until the backend is wired. Pass `--engines anima` to stage it anyway.
+> **anima** is the whole modular repo (DiT + Qwen3 encoder + text conditioner +
+> VAE), staged as one tree. Its loader resolves a repo-id `weights_path` through
+> `local_repo_dir` before `ModularPipeline.from_pretrained`, so with
+> `IMAGE_MODEL_CDN` set it loads from R2 like the others.
 
 ## When something fails
 

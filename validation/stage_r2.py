@@ -27,13 +27,8 @@ Repo staged per engine (from base_models.yaml + the backend, single source of tr
     chroma     lodestones/Chroma1-HD
     sd15       stable-diffusion-v1-5/stable-diffusion-v1-5   (config/tokenizer only, ~MB)
     qwenimage  Qwen/Qwen-Image
+    anima      circlestone-labs/Anima-Base-v1.0-Diffusers    (whole modular repo)
     (sdxl/zimage work too if you pass them — already mirrored in your setup)
-
-NOTE on anima: its loader calls ``ModularPipeline.from_pretrained(repo)`` directly
-and does NOT route through ``local_repo_dir``/``cdn_base``, so an uploaded anima
-base is NOT read from R2 until the backend is wired. It is therefore excluded from
-the default set; pass ``--engines anima`` to stage it anyway (no-op for serving
-until wired).
 
 Credentials (env): R2_ENDPOINT_URL (or R2_ACCOUNT_ID), R2_ACCESS_KEY_ID,
 R2_SECRET_ACCESS_KEY, R2_BUCKET.
@@ -43,7 +38,7 @@ Usage (on the remote instance, after ``pip install -e ".[runtime,stage]"``):
     export R2_ACCOUNT_ID=...          # or R2_ENDPOINT_URL=https://<acct>.r2.cloudflarestorage.com
     export R2_ACCESS_KEY_ID=...  R2_SECRET_ACCESS_KEY=...  R2_BUCKET=models
 
-    python validation/stage_r2.py                    # the 4 CDN-wired bases
+    python validation/stage_r2.py                    # all CDN-wired bases
     python validation/stage_r2.py --engines flux,chroma
     python validation/stage_r2.py --rm               # delete each local dir after upload
     python validation/stage_r2.py --dry-run          # print the plan + resolved repos, touch nothing
@@ -71,8 +66,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-# anima is intentionally absent — see the module docstring NOTE.
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
