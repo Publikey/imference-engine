@@ -19,6 +19,10 @@ Usage (GPU instance, after `pip install -e ".[wan,dev]"`):
     # lighter/faster smoke: fewer frames
     python validation/validate_wan.py --frames 33
 
+    # load the shared base + GGUF experts from an R2/CDN mirror instead of HF
+    # (WanRuntimeConfig.from_env picks up WAN_MODEL_CDN / WAN_MODEL_CACHE):
+    WAN_MODEL_CDN=https://.../wan22 python validation/validate_wan.py --variant wan22-i2v-lightning --image in.png
+
 Heavy: the A14B experts are ~15 GB GGUF each (×2 high/low) + the shared UMT5/VAE
 (~11.5 GB). `WAN_PROFILE=auto` picks the GGUF quant from your VRAM/RAM; offload
 keeps VRAM ≈ one expert (~17 GB). Exit code is non-zero on failure.
@@ -73,8 +77,13 @@ def main() -> int:
     print(f"=== wan: {args.variant} ===", flush=True)
     t0 = time.time()
     try:
-        engine = WanEngine(runtime=WanRuntimeConfig(
-            device=args.device, memory_profile=args.profile)).load()
+        # Build from the env contract so WAN_MODEL_CDN / WAN_MODEL_CACHE reach the
+        # engine (shared UMT5/VAE base + GGUF experts then load from the R2 mirror,
+        # not HuggingFace). --device / --profile override on top.
+        cfg = WanRuntimeConfig.from_env()
+        cfg.device = args.device
+        cfg.memory_profile = args.profile
+        engine = WanEngine(runtime=cfg).load()
 
         img = None
         if args.image:
