@@ -30,6 +30,7 @@ keeps VRAM ≈ one expert (~17 GB). Exit code is non-zero on failure.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 import traceback
@@ -62,7 +63,13 @@ def main() -> int:
     ap.add_argument("--fps", type=int, default=16)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--list", action="store_true", help="list builtin variants and exit (no torch)")
+    ap.add_argument("-q", "--quiet", action="store_true", help="suppress engine INFO logs")
     args = ap.parse_args()
+
+    # Surface engine INFO logs by default (CDN manifest, UMT5 re-tie, LoRA-applied,
+    # and the DIAG lines) — this is a debug harness, so the build story is the point.
+    if not args.quiet:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     if args.list:
         from imference_engine.wan.presets import BUILTIN_VARIANTS

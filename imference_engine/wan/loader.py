@@ -285,6 +285,8 @@ def build_pipeline(
     else:
         _apply_loras(pipe, variant.loras, cdn_base=cdn_base, cache_dir=cache_dir)
 
+    _log_build_diagnostics(pipe, shared, variant)
+
     if enable_offload:
         pipe.enable_model_cpu_offload(device=device)
     else:
@@ -293,3 +295,29 @@ def build_pipeline(
         pipe.vae.enable_tiling()
         pipe.vae.enable_slicing()
     return pipe
+
+
+def _log_build_diagnostics(pipe: Any, shared: SharedComponents, variant: Any) -> None:
+    """Best-effort INFO diagnostics to localize a bad render (all guarded — never
+    affects the pipeline). Answers the three recurring i2v/t2v questions in ONE
+    run: is the prompt encoder alive (embed tied to shared, non-zero norm — the
+    transformers 5.1 UMT5 regression), are the Lightning adapters actually active
+    (downloaded != applied), and which pipeline / MoE boundary is in effect."""
+    try:
+        te = shared.text_encoder
+        emb = te.encoder.embed_tokens.weight
+        shd = te.shared.weight
+        logger.info(
+            "DIAG text_encoder: embed_norm=%.1f shared_norm=%.1f tied=%s "
+            "(embed_norm≈0 => prompt ignored)",
+            float(emb.norm()), float(shd.norm()), emb.data_ptr() == shd.data_ptr())
+    except Exception as e:  # noqa: BLE001
+        logger.info("DIAG text_encoder: unavailable (%s)", e)
+    try:
+        active = pipe.get_active_adapters()
+    except Exception:  # noqa: BLE001
+        active = "n/a"
+    logger.info(
+        "DIAG pipeline=%s mode=%s boundary_ratio=%s active_adapters=%s baked=%s",
+        type(pipe).__name__, variant.mode, getattr(pipe, "boundary_ratio", None),
+        active, variant.lightning_baked)
