@@ -19,7 +19,7 @@ on the same diffusers 0.39 stack — no separate engine class.
 | `base_model` (per-model) | Community Chroma checkpoints are transformer-only; the shared **T5-XXL** encoder, its tokenizer, the VAE and scheduler come from a diffusers-format base repo passed at `register_model(..., base_model=...)`. **Single** text encoder — no CLIP. |
 | dtype | `bfloat16` (hard-coded). |
 | scheduler | `FlowMatchEulerDiscreteScheduler` (set at load). Per-request `scheduler` name ignored; explicit `shift` via `backend_options` overrides (advanced). |
-| guidance | **Real CFG** (Chroma is de-distilled): engine default `guidance_scale=4.0` is true classifier-free guidance, and **`negative_prompt` IS honored** — unlike guidance-distilled FLUX.1. |
+| guidance | **Real CFG** (Chroma is de-distilled): engine default `guidance_scale=2.0` (validated — higher, e.g. the community's ~4.0, oversaturates colours), true classifier-free guidance, and **`negative_prompt` IS honored** — unlike guidance-distilled FLUX.1. |
 | max sequence length | `512` (T5). |
 | generator | Device-aware (CUDA gen on CUDA, CPU gen on CPU/MPS). |
 
@@ -43,6 +43,6 @@ result = engine.generate(
     model="chroma-hd",
     prompt="a photo of an astronaut riding a horse",
     negative_prompt="lowres, blurry",     # honored (real CFG)
-    num_steps=28, guidance_scale=4.0,      # or omit — engine defaults
+    num_steps=28, guidance_scale=2.0,      # or omit — engine defaults
 )
 ```

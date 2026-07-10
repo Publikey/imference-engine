@@ -15,7 +15,7 @@ def test_engine_key():
 
 def test_engine_defaults_real_cfg():
     d = ChromaBackend().engine_defaults()
-    assert d.guidance_scale == 4.0
+    assert d.guidance_scale == 2.0   # validated: higher oversaturates
     assert d.num_steps == 28
     assert d.scheduler is None
 

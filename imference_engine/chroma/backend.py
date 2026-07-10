@@ -56,10 +56,11 @@ class ChromaBackend(PipelineBackend):
         self._cdn_base = cdn_base
 
     def engine_defaults(self) -> GenerationDefaults:
-        # De-distilled: real CFG. Community norm ~4.0 guidance, ~26-30 steps.
+        # De-distilled: real CFG. guidance_scale=2.0 validated on GPU as the sweet
+        # spot — higher (the community's ~4.0) oversaturates colours on this stack.
         # negative_prompt is honored (see encode_prompts). scheduler is flow
         # matching (name ignored).
-        return GenerationDefaults(guidance_scale=4.0, num_steps=28)
+        return GenerationDefaults(guidance_scale=2.0, num_steps=28)
 
     # ------------------------------------------------------------------
     # Loading

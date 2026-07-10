@@ -92,7 +92,7 @@ chroma:
   width: 1024
   height: 1024
   num_steps: 28
-  guidance_scale: 4.0
+  guidance_scale: 2.0   # validated: higher oversaturates
   seed: 42
 
 qwenimage:
