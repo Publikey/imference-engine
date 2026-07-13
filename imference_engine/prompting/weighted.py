@@ -24,22 +24,48 @@ def _release_offloaded_text_encoders(pipe, *names: str) -> None:
     hook re-materialises it on demand if it's ever called again (it isn't — the
     pipe runs from the returned ``prompt_embeds``, not the encoders).
 
-    Guarded by ``_hf_hook``: with no offload hook attached (full residency) this
-    is a no-op, so big-VRAM setups keep the encoders hot with zero overhead.
+    Only acts when offload is active (the pipe carries ``_all_hooks`` or an
+    encoder carries ``_hf_hook``); in full residency it's a logged no-op, so
+    big-VRAM setups keep the encoders hot with zero overhead. Emits one INFO line
+    with each encoder's device + the VRAM delta so the behaviour is verifiable
+    from the sidecar log.
     """
     import torch
 
-    moved = False
+    if not torch.cuda.is_available():
+        return
+
+    offload_active = bool(getattr(pipe, "_all_hooks", None)) or any(
+        hasattr(getattr(pipe, n, None), "_hf_hook") for n in names
+    )
+    before = torch.cuda.memory_allocated() / 1e6
+    report: list[str] = []
+    released: list[str] = []
     for name in names:
         enc = getattr(pipe, name, None)
-        if enc is not None and hasattr(enc, "_hf_hook"):
+        if enc is None:
+            continue
+        try:
+            dev = str(next(enc.parameters()).device)
+        except Exception:  # noqa: BLE001
+            dev = "?"
+        report.append(f"{name}(dev={dev},hook={hasattr(enc, '_hf_hook')})")
+        # Release encoders sitting on the GPU under offload — sd_embed put them
+        # there outside the hook chain, so nothing else will.
+        if offload_active and dev.startswith("cuda"):
             try:
                 enc.to("cpu")
-                moved = True
+                released.append(name)
             except Exception as e:  # noqa: BLE001
-                logger.debug("could not offload %s after weighted encode: %s", name, e)
-    if moved and torch.cuda.is_available():
+                logger.warning("offload-cleanup: %s release failed: %s", name, e)
+    if released:
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
+    after = torch.cuda.memory_allocated() / 1e6
+    logger.info(
+        "offload-cleanup: active=%s | %s | released=%s | VRAM %.0f -> %.0f MB",
+        offload_active, " ".join(report) or "no-encoders", released, before, after,
+    )
 
 
 def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> dict:
