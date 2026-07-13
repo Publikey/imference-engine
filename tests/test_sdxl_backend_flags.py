@@ -87,15 +87,15 @@ def test_engine_threads_cache_and_cdn_into_backends():
 
 
 def test_engine_runtime_config_propagates_cpu_offload():
-    """enable_cpu_offload flag flows from RuntimeConfig into the ModelManager
-    so _swap_pipe_to_gpu takes the accelerate path instead of pipe.to(device)."""
+    """enable_offload flag flows from RuntimeConfig into the ModelManager so
+    _swap_pipe_to_gpu takes the accelerate path instead of pipe.to(device)."""
     from imference_engine import Engine, RuntimeConfig
 
-    engine = Engine(runtime=RuntimeConfig(device="cpu", enable_cpu_offload=True)).load()
-    assert engine._models._enable_cpu_offload is True
+    engine = Engine(runtime=RuntimeConfig(device="cpu", enable_offload=True)).load()
+    assert engine._models._enable_offload is True
 
     engine2 = Engine(runtime=RuntimeConfig(device="cpu")).load()
-    assert engine2._models._enable_cpu_offload is False
+    assert engine2._models._enable_offload is False
 
 
 def test_cpu_offload_forces_max_cpu_models_zero():
@@ -105,8 +105,8 @@ def test_cpu_offload_forces_max_cpu_models_zero():
 
     engine = Engine(runtime=RuntimeConfig(
         device="cpu",
-        enable_cpu_offload=True,
+        enable_offload=True,
         max_cpu_models=4,  # user mis-set this; engine should silently zero it
     )).load()
     assert engine._models._max_cpu == 0
-    assert engine._models._enable_cpu_offload is True
+    assert engine._models._enable_offload is True

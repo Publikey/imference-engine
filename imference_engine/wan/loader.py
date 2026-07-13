@@ -80,6 +80,29 @@ def _quantize_text_encoder(te: Any, quant: Optional[str]) -> Any:
     return te
 
 
+def _tie_umt5_input_embedding(text_encoder: Any) -> None:
+    """Re-tie the UMT5 input embedding to ``shared`` after load.
+
+    UMT5/T5 tie the input embedding: the checkpoint stores only ``shared.weight``
+    (``encoder.embed_tokens`` is tied to it and NOT saved separately). transformers
+    5.1 does not re-tie ``UMT5EncoderModel`` on ``from_pretrained`` — it leaves
+    ``encoder.embed_tokens.weight`` zero-initialized, so the encoder emits garbage
+    and generation IGNORES the prompt (confirmed: embed norm 0.0 vs shared norm
+    262741.8). Point embed_tokens at ``shared`` explicitly. Guarded + idempotent:
+    a no-op when the loader already tied them, and best-effort (never raises)."""
+    try:
+        shared = getattr(text_encoder, "shared", None)
+        enc = getattr(text_encoder, "encoder", None)
+        embed = getattr(enc, "embed_tokens", None) if enc is not None else None
+        if shared is None or embed is None:
+            return
+        if embed.weight.data_ptr() != shared.weight.data_ptr():
+            embed.weight = shared.weight
+            logger.info("Re-tied UMT5 encoder.embed_tokens -> shared (transformers 5.1 load fix)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("UMT5 embedding re-tie skipped (%s)", e)
+
+
 def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
                            text_encoder_quant: str = "none",
                            cdn_base: Optional[str] = None) -> SharedComponents:
@@ -93,6 +116,7 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
     logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
         d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+    _tie_umt5_input_embedding(text_encoder)
     text_encoder = _quantize_text_encoder(text_encoder, text_encoder_quant)
     tokenizer = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(
@@ -261,6 +285,8 @@ def build_pipeline(
     else:
         _apply_loras(pipe, variant.loras, cdn_base=cdn_base, cache_dir=cache_dir)
 
+    _log_build_diagnostics(pipe, shared, variant)
+
     if enable_offload:
         pipe.enable_model_cpu_offload(device=device)
     else:
@@ -269,3 +295,44 @@ def build_pipeline(
         pipe.vae.enable_tiling()
         pipe.vae.enable_slicing()
     return pipe
+
+
+def _log_build_diagnostics(pipe: Any, shared: SharedComponents, variant: Any) -> None:
+    """Best-effort INFO diagnostics to localize a bad render (all guarded — never
+    affects the pipeline). Answers the three recurring i2v/t2v questions in ONE
+    run: is the prompt encoder alive (embed tied to shared, non-zero norm — the
+    transformers 5.1 UMT5 regression), are the Lightning adapters actually active
+    (downloaded != applied), and which pipeline / MoE boundary is in effect."""
+    try:
+        te = shared.text_encoder
+        emb = te.encoder.embed_tokens.weight
+        shd = te.shared.weight
+        logger.info(
+            "DIAG text_encoder: embed_norm=%.1f shared_norm=%.1f tied=%s "
+            "(embed_norm≈0 => prompt ignored)",
+            float(emb.norm()), float(shd.norm()), emb.data_ptr() == shd.data_ptr())
+    except Exception as e:  # noqa: BLE001
+        logger.info("DIAG text_encoder: unavailable (%s)", e)
+    try:
+        active = pipe.get_active_adapters()
+    except Exception:  # noqa: BLE001
+        active = "n/a"
+    logger.info(
+        "DIAG pipeline=%s mode=%s boundary_ratio=%s active_adapters=%s baked=%s",
+        type(pipe).__name__, variant.mode, getattr(pipe, "boundary_ratio", None),
+        active, variant.lightning_baked)
+    # i2v conditioning surface: does the transformer want a CLIP image encoder
+    # (image_dim set), and did we actually load one? If image_dim is set but
+    # image_encoder is None, the CLIP conditioning is silently missing -> shape
+    # survives (VAE first-frame concat) but detail/motion is mush.
+    if variant.mode == "i2v":
+        try:
+            tc = pipe.transformer.config
+            logger.info(
+                "DIAG i2v-cond: image_dim=%s in_channels=%s image_encoder=%s "
+                "image_processor=%s",
+                getattr(tc, "image_dim", "?"), getattr(tc, "in_channels", "?"),
+                type(getattr(pipe, "image_encoder", None)).__name__,
+                type(getattr(pipe, "image_processor", None)).__name__)
+        except Exception as e:  # noqa: BLE001
+            logger.info("DIAG i2v-cond: unavailable (%s)", e)

@@ -14,9 +14,15 @@ from typing import Optional
 BASE_T2V = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
 BASE_I2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
 
-# Official base GGUF repos (NOT distilled → need the Lightning LoRA)
+# Base GGUF repos for the two MoE experts (NOT distilled → need the Lightning LoRA).
+# T2V: QuantStack renders correctly. I2V: QuantStack's i2v GGUF renders MUSH on the
+# diffusers 0.39 / torch 2.12 stack (its patch_embedding conditioning tensor
+# dequantizes wrong — confirmed by elimination: same model from bullerwins, a
+# different quantizer, renders clean; diffusers Wan code is byte-identical to the
+# 0.38 that worked). So the i2v default is bullerwins. bullerwins uses a flat,
+# lowercase filename (no HighNoise/LowNoise subfolder).
 GGUF_T2V = "QuantStack/Wan2.2-T2V-A14B-GGUF"
-GGUF_I2V = "QuantStack/Wan2.2-I2V-A14B-GGUF"
+GGUF_I2V = "bullerwins/Wan2.2-I2V-A14B-GGUF"
 
 # Official 4-step Lightning distill LoRA
 _LIGHTNING_REPO = "lightx2v/Wan2.2-Lightning"
@@ -45,6 +51,7 @@ class WanVariant:
     mode: str                       # "t2v" | "i2v"
     base_repo: str                  # diffusers repo: config + shared text_encoder/vae
     gguf_repo: str                  # GGUF repo for the two experts
+    arch: str = "wan"               # video backend key — routes to a VideoBackend
     lightning_baked: bool = False   # True for merges (SmoothMix/DaSiWa) → no LoRA
     loras: list[WanLora] = field(default_factory=list)
     flow_shift: float = 3.0         # 3.0 ≈ 480p, 5.0 ≈ 720p
@@ -87,10 +94,11 @@ BUILTIN_VARIANTS: dict[str, WanVariant] = {
     ),
     "wan22-i2v-lightning": WanVariant(
         name="wan22-i2v-lightning", mode="i2v",
-        base_repo=BASE_I2V, gguf_repo=GGUF_I2V,
+        base_repo=BASE_I2V, gguf_repo=GGUF_I2V,  # bullerwins — see GGUF_I2V note
         loras=[_lightning_lora("i2v")], flow_shift=3.0,
-        gguf_high_template="HighNoise/Wan2.2-I2V-A14B-HighNoise-{quant}.gguf",
-        gguf_low_template="LowNoise/Wan2.2-I2V-A14B-LowNoise-{quant}.gguf",
+        # bullerwins flat naming; {quant} -> Q8_0 (validated) / Q6_K / Q5_K_M / Q4_K_M
+        gguf_high_template="wan2.2_i2v_high_noise_14B_{quant}.gguf",
+        gguf_low_template="wan2.2_i2v_low_noise_14B_{quant}.gguf",
     ),
     # Example Civitai merges with Lightning baked in (→ lightning_baked, no LoRA).
     "smoothmix-i2v": WanVariant(
@@ -108,3 +116,42 @@ BUILTIN_VARIANTS: dict[str, WanVariant] = {
         gguf_low_template="LowNoise/dasiwaWAN22I2V14B_midnightflirtLow-{quant}.gguf",
     ),
 }
+
+
+def variant_from_catalog(cfg) -> WanVariant:
+    """Build a ``WanVariant`` from a ``catalog.loader.VideoModelConfig`` (a
+    ``kind: video`` row with ``engine: wan``). The arch-specific fields live in
+    ``cfg.spec``; ``base_repo`` + ``gguf_repo`` are required, the rest optional.
+
+    Catalog row example::
+
+        - name: my-wan-t2v
+          kind: video
+          engine: wan
+          mode: t2v
+          base_repo: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+          gguf_repo: QuantStack/Wan2.2-T2V-A14B-GGUF
+          flow_shift: 3.0
+          gguf_high_template: HighNoise/...-{quant}.gguf
+          gguf_low_template: LowNoise/...-{quant}.gguf
+          loras:
+            - {repo: lightx2v/..., high_weight_name: ..., low_weight_name: ...}
+    """
+    from imference_engine.catalog.loader import CatalogError
+
+    s = cfg.spec
+    for req in ("base_repo", "gguf_repo"):
+        if not s.get(req):
+            raise CatalogError(f"video model {cfg.name!r} (wan): missing '{req}'")
+    loras = [WanLora(**lora) for lora in s.get("loras", [])]
+    return WanVariant(
+        name=cfg.name, mode=cfg.mode, arch=cfg.arch,
+        base_repo=s["base_repo"], gguf_repo=s["gguf_repo"],
+        lightning_baked=s.get("lightning_baked", False),
+        loras=loras,
+        flow_shift=s.get("flow_shift", 3.0),
+        gguf_high_name=s.get("gguf_high_name"),
+        gguf_low_name=s.get("gguf_low_name"),
+        gguf_high_template=s.get("gguf_high_template"),
+        gguf_low_template=s.get("gguf_low_template"),
+    )

@@ -22,8 +22,8 @@ launcher.
 | `IMAGE_MODEL_CDN` | `model_cdn` | `None` | Base URL of an R2/CDN mirror of the same `<repo>/<file>` layout. When set, base-components fetch from the CDN instead of HuggingFace. |
 | `MAX_GPU_MODELS` | `max_gpu_models` | `None` (=1) | Pipes concurrently resident in VRAM. `auto`/unset → `None`; a worker resolves `auto` → number and overrides. |
 | `MAX_CPU_MODELS` | `max_cpu_models` | `None` (=0) | Demoted-but-warm pipes kept in CPU RAM for fast GPU re-promotion. `auto`/unset → `None` (worker fills). |
-| `IMAGE_USE_TINY_VAE` | `use_tiny_vae` | `false` | SDXL only: swap the VAE for TAESDxl (~5 MB, ~10× faster decode, slight quality loss). No effect on Z-Image. |
-| `IMAGE_ENABLE_CPU_OFFLOAD` | `enable_cpu_offload` | `false` | `enable_model_cpu_offload()` — peak VRAM drops to the largest submodel; ~10–30 % slower. Forces `max_cpu_models=0`. |
+| `IMAGE_USE_TINY_VAE` | `use_tiny_vae` | `false` | SDXL → TAESDxl, SD 1.5 → TAESD (~5 MB, ~10× faster decode, slight quality loss). No effect on Z-Image / FLUX / Chroma. |
+| `IMAGE_ENABLE_CPU_OFFLOAD` | `enable_offload` | `false` | `enable_model_cpu_offload()` — peak VRAM drops to the largest submodel; ~10–30 % slower. Forces `max_cpu_models=0`. |
 
 > **`auto` resolution is worker-side, not engine-side.** `from_env()` maps
 > `MAX_*_MODELS=auto` (or unset) to `None` so the engine keeps a safe default;
@@ -91,6 +91,8 @@ engine.warm(specs)   # SDXL config+VAE, each Z-Image base_model — downloaded, 
 ## Per-request params (`Engine.generate`)
 
 `model`, `prompt`, `negative_prompt`, `width=1024`, `height=1024`,
-`num_steps=28`, `guidance_scale=6.0`, `clip_skip` (SDXL only), `scheduler`,
-`batch=1`, `seed`, `source_image` + `strength=0.75` (img2img),
-`backend_options` (e.g. `{"shift": 3.0}` for Z-Image).
+`num_steps=28`, `guidance_scale=6.0`, `clip_skip` (SDXL / SD 1.5 only),
+`scheduler` (SDXL / SD 1.5 only), `batch=1`, `seed`, `source_image` +
+`strength=0.75` (img2img), `backend_options` (e.g. `{"shift": 3.0}` for Z-Image).
+
+> Full cross-engine payload + env reference: [`../../docs/reference.md`](../../docs/reference.md).

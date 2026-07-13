@@ -13,21 +13,21 @@ from __future__ import annotations
 
 import logging
 import os
-import random
-from typing import TYPE_CHECKING, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, Union
 
-from imference_engine.runtime.device import resolve_device
+from imference_engine.core.engine_base import BaseEngine
+from imference_engine.core.result import GenerationError, MediaResult
+from imference_engine.video.backend import VideoBackend, VideoBuildContext
+from imference_engine.video.backends.wan import WanBackend
+from imference_engine.video.residency import ResidencyManager
 from imference_engine.wan.config import MemoryProfile, WanRuntimeConfig
-from imference_engine.wan.manager import ResidencyManager
 from imference_engine.wan.presets import BUILTIN_VARIANTS, WanVariant
-from imference_engine.wan.result import WanGenerationError, WanVideoResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
 
 logger = logging.getLogger(__name__)
-
-MAX_SEED = 2 ** 31 - 1
 
 # Profiles ordered by RAM/VRAM footprint (higher = heavier) for clamping.
 _RANK = {MemoryProfile.GGUF_Q4: 1, MemoryProfile.GGUF_Q5: 2,
@@ -67,25 +67,31 @@ def _total_ram_gb() -> float:
         return float("inf")
 
 
-class WanEngine:
-    def __init__(self, *, runtime: Optional[WanRuntimeConfig] = None) -> None:
-        self._runtime = runtime or WanRuntimeConfig()
-        self._device: Optional[str] = None
-        self._manager: Optional[ResidencyManager] = None
+class WanEngine(BaseEngine):
+    def __init__(
+        self,
+        *,
+        catalog_path: Optional[Union[str, Path]] = None,
+        runtime: Optional[WanRuntimeConfig] = None,
+    ) -> None:
+        super().__init__(runtime=runtime or WanRuntimeConfig())
+        self._catalog_path = Path(catalog_path) if catalog_path else None
         self._variants: dict[str, WanVariant] = dict(BUILTIN_VARIANTS)
-        self._loaded = False
+        # arch -> VideoBackend registry (a 2nd arch, e.g. LTX, registers here);
+        # arch -> ResidencyManager, built lazily on first use per arch.
+        self._backends: dict[str, VideoBackend] = {}
+        self._managers: dict[str, ResidencyManager] = {}
+        self._ctx: Optional[VideoBuildContext] = None
 
     # ------------------------------------------------------------------
-    def load(self) -> "WanEngine":
-        if self._loaded:
-            return self
-        dev = resolve_device(self._runtime.device)
-        self._device = dev.torch_str
-        logger.info("WanEngine device: %s", self._device)
-        if dev.kind != "cuda":
+    def _setup(self) -> None:
+        """Resolve the GGUF profile + build the backend build-context. Device
+        resolution / CUDA tuning already ran in ``BaseEngine.load()``. Residency
+        managers are built lazily per arch (first ``generate_video``)."""
+        if self._device.kind != "cuda":
             logger.warning(
                 "WanEngine on %s — Wan is validated on CUDA only; expect slowness/failure.",
-                self._device)
+                self._device.torch_str)
 
         profile = self._runtime.memory_profile
         # MemoryProfile subclasses str, so a concrete profile (e.g. the default
@@ -96,7 +102,7 @@ class WanEngine:
         elif isinstance(profile, str):
             if profile.lower() != "auto":
                 raise ValueError(f"memory_profile string must be 'auto', got {profile!r}")
-            profile = self._auto_profile(dev.kind == "cuda")
+            profile = self._auto_profile(self._device.kind == "cuda")
         if not profile.is_gguf:
             raise NotImplementedError(
                 f"memory_profile={profile} not wired yet; only GGUF profiles are "
@@ -104,18 +110,53 @@ class WanEngine:
 
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
-        self._manager = ResidencyManager(
+        self._ctx = VideoBuildContext(
             quant=profile.gguf_quant,
-            device=self._device,
+            device=self._device.torch_str,
             enable_offload=self._runtime.enable_offload,
             vae_tiling=self._runtime.vae_tiling,
-            max_resident=self._runtime.max_resident_variants or 1,
             cache_dir=cache_dir,
             cdn_base=self._runtime.model_cdn,
             text_encoder_quant=self._runtime.text_encoder_quant,
         )
-        self._loaded = True
+        self._backends = {WanBackend.engine: WanBackend()}
+        if self._catalog_path is not None:
+            self._register_catalog(self._catalog_path)
+
+    def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "WanEngine":
+        """Load ``kind: video`` rows from a (possibly shared) ``models.yml`` and
+        register them as variants. Rows add to / override the built-ins by name —
+        also the hot-reload entry point. ``path`` defaults to the constructor's
+        ``catalog_path`` (which ``load()`` loads automatically)."""
+        if not self._loaded:
+            raise RuntimeError("Call WanEngine.load() before load_catalog")
+        target = path if path is not None else self._catalog_path
+        if target is None:
+            raise ValueError("no catalog path given and WanEngine has no catalog_path")
+        self._register_catalog(target)
         return self
+
+    def _register_catalog(self, path) -> None:
+        """Parse video rows + register variants. No ``_loaded`` guard — usable
+        from ``_setup()``."""
+        from imference_engine.catalog.loader import load_video
+        from imference_engine.wan.presets import variant_from_catalog
+        configs = load_video(path, known_archs=set(self._backends))
+        for cfg in configs:
+            self.register_variant(variant_from_catalog(cfg))
+        logger.info("Loaded video catalog %s (%d variants)", path, len(configs))
+
+    def _manager_for(self, arch: str) -> ResidencyManager:
+        """Return (building on first use) the residency manager for ``arch``."""
+        if arch not in self._managers:
+            backend = self._backends.get(arch)
+            if backend is None:
+                raise KeyError(
+                    f"no video backend for arch {arch!r}; have {list(self._backends)}")
+            self._managers[arch] = ResidencyManager(
+                backend=backend, ctx=self._ctx,
+                max_resident=self._runtime.max_resident_variants or 1)
+        return self._managers[arch]
 
     @staticmethod
     def _auto_profile(is_cuda: bool) -> MemoryProfile:
@@ -156,9 +197,11 @@ class WanEngine:
         cdn = self._runtime.model_cdn
         # The shared UMT5/VAE base (heavy) + each distinct variant base_repo
         # (small configs for the GGUF transformer). Dedup so the shared base
-        # isn't pulled twice.
-        targets = [(self._manager._shared_base_repo, _SHARED_PATTERNS)]
-        seen = {self._manager._shared_base_repo}
+        # isn't pulled twice. NOTE: single-arch (Wan) shared base for now; a 2nd
+        # arch would warm its own shared base too.
+        shared_base = self._backends[WanBackend.engine].SHARED_BASE_REPO
+        targets = [(shared_base, _SHARED_PATTERNS)]
+        seen = {shared_base}
         for v in self._variants.values():
             if v.base_repo not in seen:
                 seen.add(v.base_repo)
@@ -187,7 +230,7 @@ class WanEngine:
         guidance_scale_2: Optional[float] = None,
         fps: int = 16,
         seed: Optional[int] = None,
-    ) -> WanVideoResult:
+    ) -> MediaResult:
         if not self._loaded:
             raise RuntimeError("Call WanEngine.load() before generate_video")
         if variant not in self._variants:
@@ -196,45 +239,45 @@ class WanEngine:
         if var.mode == "i2v" and image is None:
             raise ValueError(f"variant {variant!r} is i2v — an input image is required")
 
-        seed = seed if seed is not None else random.randint(0, MAX_SEED)
+        seed = self._make_seed(seed)
 
         try:
             import torch
-            pipe = self._manager.get_or_load(var)
+            backend = self._backends[var.arch]
+            pipe = self._manager_for(var.arch).get_or_load(var)
 
-            call = dict(
+            call = backend.build_call(
                 prompt=prompt,
-                negative_prompt=negative_prompt or "",
-                height=height,
+                negative_prompt=negative_prompt,
                 width=width,
+                height=height,
                 num_frames=num_frames,
-                num_inference_steps=num_steps,
+                num_steps=num_steps,
                 guidance_scale=guidance_scale,
-                guidance_scale_2=(guidance_scale_2 if guidance_scale_2 is not None
-                                  else guidance_scale),
+                guidance_scale_2=guidance_scale_2,
+                image=image if var.mode == "i2v" else None,
                 generator=torch.Generator("cpu").manual_seed(seed),
-                output_type="pil",
             )
-            if var.mode == "i2v":
-                call["image"] = image.convert("RGB").resize((width, height))
 
-            logger.info("generate_video variant=%s mode=%s %dx%d frames=%d steps=%d seed=%d",
-                        variant, var.mode, width, height, num_frames, num_steps, seed)
+            logger.info("generate_video variant=%s mode=%s arch=%s %dx%d frames=%d steps=%d seed=%d",
+                        variant, var.mode, var.arch, width, height, num_frames, num_steps, seed)
             frames = pipe(**call).frames[0]
             frames = _ensure_pil(frames)
-            return WanVideoResult(
-                frames=frames, fps=fps, seed=seed, variant=variant,
-                width=width, height=height, num_frames=num_frames)
+            return MediaResult(
+                kind="video", media=frames, seeds=[seed],
+                fps=fps, num_frames=num_frames, width=width, height=height,
+                variant=variant)
         except Exception as e:  # noqa: BLE001
             logger.error("generate_video failed: %s", e, exc_info=True)
-            return WanVideoResult(
-                frames=None, fps=fps, seed=seed, variant=variant,
-                width=width, height=height, num_frames=num_frames,
-                error=WanGenerationError(error=str(e), seed=seed))
+            return MediaResult(
+                kind="video", media=[], seeds=[seed],
+                errors=[GenerationError(error=str(e), seed=seed)],
+                fps=fps, num_frames=num_frames, width=width, height=height,
+                variant=variant)
 
     @property
     def resident(self) -> list[str]:
-        return self._manager.resident if self._manager else []
+        return [name for m in self._managers.values() for name in m.resident]
 
 
 def _ensure_pil(frames) -> list["Image"]:

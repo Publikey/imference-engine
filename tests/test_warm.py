@@ -59,7 +59,8 @@ def test_wan_warm_pulls_shared_and_variant_bases(monkeypatch):
         device="cpu", model_cdn="https://cdn.example/wan22")).load()
     eng.warm()
 
-    shared = eng._manager._shared_base_repo
+    from imference_engine.video import WanBackend
+    shared = WanBackend.SHARED_BASE_REPO
     assert shared in pulled
     assert pulled.count(shared) == 1            # shared base pulled exactly once
     # built-in variants include an i2v base distinct from the (t2v) shared base

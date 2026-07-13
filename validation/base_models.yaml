@@ -1,0 +1,125 @@
+# Base model per engine — the validation harness (validation/validate.py) uses
+# this to load each backend's canonical base model on a GPU instance, generate a
+# render, and report pass/fail. Edit freely: point `weights_local` at files you
+# already have, or fix a `filename` / `repo` that differs from your setup.
+#
+# Each top-level key IS the backend/engine name (matches Engine._backends).
+#
+# Fields per engine:
+#   mode         : single_file | repo
+#                    single_file -> download `filename` from `repo` (hf_hub_download)
+#                                   and register that .safetensors as weights_path
+#                    repo        -> pass `repo` (a diffusers-format repo id/dir)
+#                                   directly as weights_path (Anima / ModularPipeline)
+#   repo         : HuggingFace repo id
+#   filename     : single-file weight to download (single_file mode only)
+#   base_model   : shared-component repo for transformer-only checkpoints (or null)
+#   weights_local: OPTIONAL local path override — bypasses download entirely
+#   offload      : enable_model_cpu_offload (set true for the 8-20B models)
+#   prompt / negative_prompt / width / height / num_steps / guidance_scale / seed
+#   backend_options: engine-specific (e.g. Z-Image shift)
+#
+# STATUS: all 7 entries validated end-to-end on diffusers 0.39 (RTX PRO 5000
+# Blackwell, torch 2.12) — each renders from its base model. Gated repos
+# (FLUX.1-dev) need `hf auth login` + an HF_TOKEN with gated-repo read access.
+
+sdxl:
+  mode: single_file
+  repo: stabilityai/stable-diffusion-xl-base-1.0
+  filename: sd_xl_base_1.0.safetensors
+  base_model: null
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  negative_prompt: "lowres, blurry, deformed, watermark"
+  width: 1024
+  height: 1024
+  num_steps: 28
+  guidance_scale: 6.5
+  seed: 42
+
+sd15:
+  mode: single_file
+  repo: stable-diffusion-v1-5/stable-diffusion-v1-5
+  filename: v1-5-pruned-emaonly.safetensors
+  base_model: null
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus"
+  negative_prompt: "lowres, blurry, deformed, watermark"
+  width: 512
+  height: 512
+  num_steps: 25
+  guidance_scale: 7.0
+  seed: 42
+
+zimage:
+  mode: single_file
+  # Comfy-Org ships the transformer-only single file (split_files/diffusion_models);
+  # the base_model repo supplies the Qwen text_encoder + VAE + tokenizer.
+  repo: Comfy-Org/z_image_turbo
+  filename: split_files/diffusion_models/z_image_turbo_bf16.safetensors
+  base_model: Tongyi-MAI/Z-Image-Turbo
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus"
+  negative_prompt: "lowres, blurry"
+  width: 1024
+  height: 1024
+  num_steps: 8
+  guidance_scale: 1.0
+  backend_options: {shift: 3.0}
+  seed: 42
+
+flux:
+  mode: single_file
+  repo: black-forest-labs/FLUX.1-dev      # GATED — huggingface-cli login first
+  filename: flux1-dev.safetensors
+  base_model: black-forest-labs/FLUX.1-dev
+  offload: true
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 28
+  guidance_scale: 3.5
+  seed: 42
+
+chroma:
+  mode: single_file
+  repo: lodestones/Chroma1-HD
+  filename: Chroma1-HD.safetensors
+  base_model: lodestones/Chroma1-HD
+  offload: true
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus"
+  negative_prompt: "lowres, blurry, deformed"
+  width: 1024
+  height: 1024
+  num_steps: 28
+  guidance_scale: 2.0   # validated: higher oversaturates
+  seed: 42
+
+qwenimage:
+  mode: single_file
+  # Comfy-Org transformer-only single file (40.9 GB bf16); base_model supplies the
+  # Qwen2.5-VL text encoder + VAE + tokenizer. Heavy — offload + patience.
+  repo: Comfy-Org/Qwen-Image_ComfyUI
+  filename: split_files/diffusion_models/qwen_image_bf16.safetensors
+  base_model: Qwen/Qwen-Image
+  offload: true
+  prompt: 'a bookstore window with a sign that reads "Imference Engine"'
+  negative_prompt: " "
+  width: 1024
+  height: 1024
+  num_steps: 40
+  guidance_scale: 4.0
+  seed: 42
+
+anima:
+  mode: repo
+  repo: circlestone-labs/Anima-Base-v1.0-Diffusers
+  filename: null
+  base_model: null
+  offload: false
+  prompt: "masterpiece, best quality, 1girl, solo, city lights"
+  width: 1024
+  height: 1024
+  num_steps: 28
+  guidance_scale: 6.0
+  seed: 42

@@ -3,7 +3,7 @@
 Split out of ``pipelines/`` into its own ``imference_engine.zimage`` sub-package
 (parallel to ``imference_engine.wan``) so Z-Image is a self-contained unit. It
 still rides the generic ``Engine``/``ModelManager``/``RuntimeConfig`` machinery
-(same diffusers 0.38 stack as SDXL), so the split is a packaging boundary, not a
+(same diffusers 0.39 stack as SDXL), so the split is a packaging boundary, not a
 fork of the engine core. ``pipelines/zimage.py`` re-exports this class for
 backward compatibility.
 
@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar, Optional
 
+from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.pipelines.base import PipelineBackend
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,14 @@ class ZImageBackend(PipelineBackend):
         # Flat offline tree root + optional CDN mirror, threaded from RuntimeConfig.
         self._cache_dir = cache_dir
         self._cdn_base = cdn_base
+
+    def engine_defaults(self) -> GenerationDefaults:
+        # Z-Image is flow-matching: low guidance is the family norm. `shift` is
+        # deliberately NOT set here — it is a per-CHECKPOINT knob (turbo wants
+        # 3.0, a non-turbo finetune differs), so it belongs in a model's catalog
+        # defaults (backend_options.shift), not the engine layer. scheduler is
+        # ignored by this backend (apply_scheduler only honors shift).
+        return GenerationDefaults(guidance_scale=1.0)
 
     # ------------------------------------------------------------------
     # Loading

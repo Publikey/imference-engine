@@ -10,10 +10,10 @@ with the image side; does not touch the SDXL/Z-Image pipeline abstraction.
     engine = WanEngine(runtime=WanRuntimeConfig(max_resident_variants=4)).load()
     res = engine.generate_video(variant="wan22-t2v-lightning", prompt="a red fox...")
 """
+from imference_engine.core.result import GenerationError, MediaResult
 from imference_engine.wan.config import MemoryProfile, WanRuntimeConfig
 from imference_engine.wan.engine import WanEngine
 from imference_engine.wan.presets import WanLora, WanVariant
-from imference_engine.wan.result import WanGenerationError, WanVideoResult
 
 __all__ = [
     "WanEngine",
@@ -21,6 +21,6 @@ __all__ = [
     "MemoryProfile",
     "WanVariant",
     "WanLora",
-    "WanVideoResult",
-    "WanGenerationError",
+    "MediaResult",
+    "GenerationError",
 ]

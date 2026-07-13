@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 # re-run tell "fully pulled" from "partial pull killed mid-way" (the sentinel can't).
 _CDN_COMPLETE = ".cdn_complete"
 
+# Same idea for the HuggingFace snapshot path: written only after snapshot_download
+# returns. A killed pull (e.g. disk full) can leave the sentinel (model_index.json,
+# downloaded early) while big shards are missing — the sentinel alone would then
+# short-circuit to a BROKEN tree on the next load (crash at a missing shard).
+_HF_COMPLETE = ".hf_complete"
+
 
 def flat_root(cache_dir: Optional[str], *, namespace: str) -> str:
     """Root of the FLAT, symlink-free model tree (``<root>/<repo>/<file>``).
@@ -92,12 +98,25 @@ def local_repo_dir(
                 snapshot_download(repo, allow_patterns=patterns, local_dir=d)
                 open(os.path.join(d, _CDN_COMPLETE), "w").close()
         return d
-    # Pre-shipped / snapshot tree: the sentinel means "fully populated" — return
-    # without any network/snapshot call, so a pre-shipped tree works fully offline.
-    if os.path.exists(os.path.join(d, sentinel)):
+    # Fast path: our own completed pull left the marker -> fully populated, skip.
+    if os.path.exists(os.path.join(d, _HF_COMPLETE)):
         return d
+
+    sentinel_present = os.path.exists(os.path.join(d, sentinel))
+    # Offline: we can't (re)download, so trust a sentinel-bearing tree — this is
+    # the base-tarball / pre-shipped contract (a truncated offline tree can't be
+    # repaired without network anyway, so behaviour is unchanged there).
+    if sentinel_present and os.environ.get("HF_HUB_OFFLINE") in ("1", "true", "True"):
+        return d
+
+    # Online: run snapshot_download even when the sentinel is present. It is
+    # idempotent — it verifies each file and fills only the missing/incomplete
+    # ones, so a killed pull that left the sentinel + partial shards is REPAIRED
+    # here instead of loading broken. Write the completion marker only after it
+    # returns, so the fast path above is safe on the next load.
     from huggingface_hub import snapshot_download
     snapshot_download(repo, allow_patterns=patterns, local_dir=d)
+    open(os.path.join(d, _HF_COMPLETE), "w").close()
     return d
 
 

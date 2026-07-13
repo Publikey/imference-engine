@@ -48,7 +48,31 @@ back to lazy fetch — `warm()` never raises, so it's safe in a worker's `setup(
 
 `variant`, `prompt`, `image` (i2v), `negative_prompt`, `width=832`,
 `height=480`, `num_frames=81`, `num_steps=4`, `guidance_scale=1.0`,
-`guidance_scale_2`, `fps=16`, `seed`.
+`guidance_scale_2`, `fps=16`, `seed`. The i2v input image is resized preserving
+its aspect ratio within the `width*height` area budget (aligned to the Wan latent
+grid), not squashed to `width×height`.
+
+## Built-in variants & the i2v GGUF caveat
+
+| variant | mode | GGUF repo |
+|---|---|---|
+| `wan22-t2v-lightning` | t2v | `QuantStack/Wan2.2-T2V-A14B-GGUF` + Seko Lightning LoRA |
+| `wan22-i2v-lightning` | i2v | **`bullerwins/Wan2.2-I2V-A14B-GGUF`** + Seko Lightning LoRA |
+| `smoothmix-i2v`, `dasiwa-i2v` | i2v | Bedovyy merges, Lightning **baked** (no LoRA) |
+
+> ⚠️ **The i2v default is bullerwins, not QuantStack — on purpose.**
+> `QuantStack/Wan2.2-I2V-A14B-GGUF` renders **mush** on the diffusers 0.39 /
+> torch 2.12 stack (its `patch_embedding` conditioning tensor dequantizes wrong);
+> the **same official model from bullerwins** renders clean. Proven by
+> elimination on GPU — not the engine, not diffusers 0.39 (Wan code byte-identical
+> to 0.38), not the LoRA. QuantStack **t2v** is unaffected. Full write-up in
+> [`../../docs/reference.md`](../../docs/reference.md) → *Wan variants*.
+> **CDN note:** serving i2v offline requires mirroring the *bullerwins* repo to
+> `WAN_MODEL_CDN` (the QuantStack i2v mirror renders mush).
+
+Override the GGUF provider/templates per catalog row (`gguf_repo`,
+`gguf_high_template`, `gguf_low_template`) or, for a quick A/B on the harness,
+`validation/validate_wan.py --gguf-repo … --gguf-high-template … --gguf-low-template …`.
 
 ## Examples
 

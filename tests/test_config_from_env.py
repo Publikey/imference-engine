@@ -72,7 +72,7 @@ def test_image_from_env_defaults(monkeypatch):
     assert cfg.device == "auto"
     assert cfg.model_cache_dir is None and cfg.model_cdn is None
     assert cfg.max_gpu_models is None and cfg.max_cpu_models is None
-    assert cfg.use_tiny_vae is False and cfg.enable_cpu_offload is False
+    assert cfg.use_tiny_vae is False and cfg.enable_offload is False
 
 
 def test_image_from_env_populated(monkeypatch):
@@ -89,7 +89,7 @@ def test_image_from_env_populated(monkeypatch):
     assert cfg.model_cache_dir == "/workspace/image-tree"
     assert cfg.model_cdn == "https://cdn.example/"
     assert cfg.max_gpu_models == 2 and cfg.max_cpu_models == 6
-    assert cfg.use_tiny_vae is True and cfg.enable_cpu_offload is True
+    assert cfg.use_tiny_vae is True and cfg.enable_offload is True
 
 
 def test_image_from_env_auto_models_stay_none(monkeypatch):

@@ -5,18 +5,19 @@ Callers wrap it in whatever surface they need (worker task handler, sidecar
 HTTP server, in-process batch script).
 """
 from __future__ import annotations
-import gc
 import logging
 import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional, Union
 
+from imference_engine.catalog.defaults import GLOBAL_DEFAULTS, GenerationDefaults
+from imference_engine.core.config import BaseRuntimeConfig
+from imference_engine.core.engine_base import MAX_SEED, BaseEngine
+from imference_engine.core.result import GenerationError, MediaResult
 from imference_engine.managers.batch import BatchSizer
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
-from imference_engine.runtime.device import Device, resolve_device
-from imference_engine.types import GenerationError, GenerationResult
 
 if TYPE_CHECKING:
     from PIL.Image import Image
@@ -24,16 +25,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# numpy int32 max — keeps seeds in a range schedulers accept
-MAX_SEED = 2 ** 31 - 1
-
 
 @dataclass
-class RuntimeConfig:
-    """Runtime knobs. All optional — defaults adapt to the host."""
+class RuntimeConfig(BaseRuntimeConfig):
+    """Image-side runtime knobs. Inherits ``device`` / ``model_cache_dir`` /
+    ``model_cdn`` / ``enable_offload`` from ``BaseRuntimeConfig``; adds the
+    image-specific residency + VAE knobs below. All optional.
 
-    device: str = "auto"
-    """auto | cuda | cuda:N | mps | cpu"""
+    ``enable_offload`` (inherited): when True, ModelManager calls
+    ``pipe.enable_model_cpu_offload(device=...)`` instead of moving the whole pipe
+    to GPU — peak VRAM drops to the largest single submodel (~5 GB SDXL unet vs
+    ~7 GB), ~10-30% slower. Strongly recommended on ≤8 GB VRAM. Incompatible with
+    the CPU LRU tier (forces max_cpu_models=0)."""
 
     max_cpu_models: Optional[int] = None
     """Cap on CPU-resident pipes kept warm for fast GPU re-promotion. None
@@ -46,17 +49,6 @@ class RuntimeConfig:
     (every model switch evicts the previous one). Workers with big VRAM
     (e.g. 2x SDXL on a 24 GB A10) can bump this to amortize swap cost."""
 
-    model_cache_dir: Optional[Union[str, Path]] = None
-    """Root of the flat, symlink-free offline model tree (IMAGE_MODEL_CACHE). The
-    backends resolve shared base-components (SDXL config + tokenizers + fp16-fix
-    VAE; Z-Image base text_encoder/vae) into it, so a cold load is fully offline
-    under HF_HUB_OFFLINE=1 once the tree is populated (base tarball / prefetch)."""
-
-    model_cdn: Optional[str] = None
-    """Base URL of a CDN (R2) mirroring the same <repo>/<file> layout. When set,
-    on-demand base-components download from the CDN instead of HF. Mirror of
-    WanRuntimeConfig.model_cdn."""
-
     lora_cache_dir: Optional[Union[str, Path]] = None
 
     use_tiny_vae: bool = False
@@ -65,16 +57,6 @@ class RuntimeConfig:
     at the cost of slight quality loss. Recommended for previews / dev
     iteration; toggle off for final-quality renders. No effect on Z-Image
     (which uses a different VAE architecture without a TAESD equivalent)."""
-
-    enable_cpu_offload: bool = False
-    """When True, ModelManager calls `pipe.enable_model_cpu_offload(device=...)`
-    instead of moving the whole pipe to GPU. Diffusers/accelerate then
-    shuttles individual submodels (text_encoder, unet, vae) between CPU and
-    GPU as inference progresses — peak VRAM drops to the largest single
-    submodel (~5 GB for SDXL unet) instead of the sum (~7 GB).
-    Cost: ~10-30 % slower per gen due to per-forward CPU↔GPU transfers.
-    Strongly recommended on ≤8 GB VRAM where the model otherwise saturates.
-    Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
 
     @classmethod
     def from_env(cls) -> "RuntimeConfig":
@@ -100,16 +82,18 @@ class RuntimeConfig:
             max_gpu_models=env_int_or_none("MAX_GPU_MODELS"),
             max_cpu_models=env_int_or_none("MAX_CPU_MODELS"),
             use_tiny_vae=env_bool("IMAGE_USE_TINY_VAE", False),
-            enable_cpu_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+            # Env var name kept (IMAGE_ENABLE_CPU_OFFLOAD) — the field is the
+            # unified enable_offload. See BaseRuntimeConfig.
+            enable_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
         )
 
 
-class Engine:
-    """High-level diffusion inference engine.
+class Engine(BaseEngine):
+    """High-level diffusion inference engine (image side).
 
     Supports single-resident (desktop default) and multi-tier LRU (worker
-    via RuntimeConfig.max_gpu_models / max_cpu_models). LoRA, catalog YAML,
-    and img2img remain TBD.
+    via RuntimeConfig.max_gpu_models / max_cpu_models). Inherits the device /
+    load lifecycle from ``BaseEngine``.
 
     Lifecycle:
         engine = Engine(runtime=RuntimeConfig(...)).load()
@@ -126,15 +110,13 @@ class Engine:
         catalog_path: Optional[Union[str, Path]] = None,
         runtime: Optional[RuntimeConfig] = None,
     ) -> None:
+        super().__init__(runtime=runtime or RuntimeConfig())
         self._catalog_path = Path(catalog_path) if catalog_path else None
-        self._runtime = runtime or RuntimeConfig()
-        self._device: Optional[Device] = None
         self._backends: dict[str, PipelineBackend] = {}
         self._models: Optional[ModelManager] = None
         self._batch_sizer = BatchSizer()
-        self._loaded = False
         # Lifecycle hooks may be set before OR after load(); we wire them
-        # into the ModelManager at load() time, and set_lifecycle_hooks
+        # into the ModelManager at _setup() time, and set_lifecycle_hooks
         # reaches into the manager if it already exists.
         self._on_model_loaded: Optional["Callable[[str], None]"] = None
         self._on_model_evicted: Optional["Callable[[str], None]"] = None
@@ -143,14 +125,9 @@ class Engine:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def load(self) -> "Engine":
-        """Detect device, register default backends. Idempotent."""
-        if self._loaded:
-            return self
-
-        self._device = resolve_device(self._runtime.device)
-        logger.info(f"Engine device: {self._device.torch_str}")
-
+    def _setup(self) -> None:
+        """Build the image backends + ModelManager, load the catalog if given.
+        Device resolution / CUDA tuning already ran in ``BaseEngine.load()``."""
         # Loud warning when we'd silently fall back to CPU: fp16 pipelines on CPU
         # hang at ~0 steps/s in PyTorch since CPU has no native fp16. Most users
         # hit this when they pip-install torch without CUDA in their venv.
@@ -162,12 +139,13 @@ class Engine:
                 "pip install torch --index-url https://download.pytorch.org/whl/cu121"
             )
 
-        # Enable TF32 + flash SDPA when running on CUDA (free perf on Ampere+)
-        if self._device.kind == "cuda":
-            self._tune_cuda()
-
+        from imference_engine.anima.backend import AnimaBackend
+        from imference_engine.chroma.backend import ChromaBackend
+        from imference_engine.flux.backend import FluxBackend
+        from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
+        from imference_engine.qwenimage.backend import QwenImageBackend
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
         cdn_base = self._runtime.model_cdn
@@ -175,15 +153,26 @@ class Engine:
             SDXLBackend.engine: SDXLBackend(
                 use_tiny_vae=self._runtime.use_tiny_vae,
                 cache_dir=cache_dir, cdn_base=cdn_base),
+            SD15Backend.engine: SD15Backend(
+                use_tiny_vae=self._runtime.use_tiny_vae,
+                cache_dir=cache_dir, cdn_base=cdn_base),
             ZImageBackend.engine: ZImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            FluxBackend.engine: FluxBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            ChromaBackend.engine: ChromaBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            QwenImageBackend.engine: QwenImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
         max_gpu = self._runtime.max_gpu_models or 1
         max_cpu = self._runtime.max_cpu_models or 0
-        if self._runtime.enable_cpu_offload and max_cpu > 0:
+        if self._runtime.enable_offload and max_cpu > 0:
             logger.warning(
-                "enable_cpu_offload=True forces max_cpu_models=0 — the CPU LRU tier "
+                "enable_offload=True forces max_cpu_models=0 — the CPU LRU tier "
                 "would shadow accelerate's hook-based offloader and confuse residency."
             )
             max_cpu = 0
@@ -194,10 +183,14 @@ class Engine:
             max_cpu_models=max_cpu,
             on_loaded=self._on_model_loaded,
             on_evicted=self._on_model_evicted,
-            enable_cpu_offload=self._runtime.enable_cpu_offload,
+            # ModelManager keeps its internal param name (converged in Phase 6);
+            # the config surface is the unified enable_offload.
+            enable_offload=self._runtime.enable_offload,
         )
-        self._loaded = True
-        return self
+        # Catalog load via the internal helper (no _loaded guard — BaseEngine
+        # flips _loaded only after _setup returns).
+        if self._catalog_path is not None:
+            self._register_catalog(self._catalog_path)
 
     def set_lifecycle_hooks(
         self,
@@ -224,17 +217,6 @@ class Engine:
             self._models._on_evicted = on_model_evicted
         return self
 
-    @staticmethod
-    def _tune_cuda() -> None:
-        try:
-            import torch
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            torch.backends.cuda.enable_flash_sdp(True)
-            torch.backends.cuda.enable_mem_efficient_sdp(True)
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"CUDA tuning skipped: {e}")
-
     # ------------------------------------------------------------------
     # Catalog
     # ------------------------------------------------------------------
@@ -246,10 +228,16 @@ class Engine:
         backend: str,
         weights_path: Union[str, Path],
         base_model: Optional[str] = None,
+        defaults: Optional[GenerationDefaults] = None,
     ) -> None:
         """Register a model so generate(model=name, ...) can load it.
 
-        For V1 the catalog YAML is not wired up; call this directly per model.
+        ``defaults`` is layer 2 of the precedence chain (per-model sampler
+        settings, e.g. ``GenerationDefaults(num_steps=8,
+        backend_options={"shift": 3.0})`` for a Z-Image turbo checkpoint). When
+        omitted, the model carries no opinion and generate() resolves against
+        the engine defaults + request only. The catalog YAML loader populates
+        this from a ``models.yml``; until then callers register per model.
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before register_model")
@@ -259,8 +247,44 @@ class Engine:
                 backend=backend,
                 weights_path=str(weights_path),
                 base_model=base_model,
+                defaults=defaults or GenerationDefaults(),
             )
         )
+
+    def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "Engine":
+        """Load a ``models.yml`` catalog and register every entry.
+
+        Each row's ``engine`` is validated against the registered backends, and
+        its per-model ``defaults`` become layer 2 of the precedence chain. Rows
+        add to (and override, by name) whatever is already registered — so this
+        is also the hot-reload entry point (re-call with an updated file).
+
+        ``path`` defaults to the ``catalog_path`` passed to the constructor,
+        which ``load()`` already loads automatically; call this directly only to
+        load an additional / updated catalog.
+        """
+        if not self._loaded:
+            raise RuntimeError("Call Engine.load() before load_catalog")
+        target = path if path is not None else self._catalog_path
+        if target is None:
+            raise ValueError("no catalog path given and Engine has no catalog_path")
+        self._register_catalog(target)
+        return self
+
+    def _register_catalog(self, path: Union[str, Path]) -> None:
+        """Parse a catalog and register every row. No ``_loaded`` guard — usable
+        from ``_setup()`` (where the manager exists but load() hasn't returned)."""
+        from imference_engine.catalog.loader import load as load_catalog_file
+        configs = load_catalog_file(path, known_engines=set(self._backends))
+        for mc in configs:
+            self._models.register(RegisteredModel(
+                name=mc.name,
+                backend=mc.engine,
+                weights_path=mc.weights,
+                base_model=mc.base_model,
+                defaults=mc.defaults,
+            ))
+        logger.info("Loaded catalog %s (%d models)", path, len(configs))
 
     def warm(self, specs: "Iterable[tuple[str, Optional[str]]]" = ()) -> "Engine":
         """Pre-download base-components for the given (backend, base_model) pairs
@@ -303,25 +327,55 @@ class Engine:
         model: str,
         prompt: str,
         negative_prompt: Optional[str] = None,
-        width: int = 1024,
-        height: int = 1024,
-        num_steps: int = 28,
-        guidance_scale: float = 6.0,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        num_steps: Optional[int] = None,
+        guidance_scale: Optional[float] = None,
         clip_skip: Optional[int] = None,
         scheduler: Optional[str] = None,
         batch: int = 1,
         seed: Optional[int] = None,
         source_image: Optional["Image"] = None,
-        strength: float = 0.75,
+        strength: Optional[float] = None,
         loras: Optional[list[dict]] = None,
         backend_options: Optional[dict] = None,
-    ) -> GenerationResult:
+    ) -> MediaResult:
+        """Generate ``batch`` images for ``model``.
+
+        The sampling params (``num_steps``, ``guidance_scale``, ``width``,
+        ``height``, ``scheduler``, ``clip_skip``, ``negative_prompt``,
+        ``strength``, ``backend_options``) default to ``None`` = "not set at the
+        request layer". Each unset param is resolved through the precedence chain
+        ``request > model defaults > engine defaults > GLOBAL_DEFAULTS`` (finest
+        wins), so a per-model catalog default fills what the request omits. Pass
+        a value to override at the request layer.
+        """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before generate")
         if loras:
             logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
 
         pipe, backend = self._models.get_or_load(model)
+
+        # Resolve the effective sampling params through the precedence chain:
+        # request > model defaults > engine defaults > GLOBAL_DEFAULTS. A None
+        # request field does NOT shadow a lower layer (that is why the signature
+        # defaults are None, not concrete values).
+        request = GenerationDefaults(
+            num_steps=num_steps,
+            guidance_scale=guidance_scale,
+            width=width,
+            height=height,
+            scheduler=scheduler,
+            clip_skip=clip_skip,
+            negative_prompt=negative_prompt,
+            strength=strength,
+            backend_options=backend_options or {},
+        )
+        eff = backend.engine_defaults()                          # layer 1
+        eff = self._models.config_for(model).defaults.merged_over(eff)  # layer 2
+        eff = request.merged_over(eff)                           # layer 3
+        eff = eff.merged_over(GLOBAL_DEFAULTS)                   # bottom fallback
         # img2img: wrap the resident t2i pipe in the backend's img2img pipeline.
         # make_img2img reuses the SAME in-memory modules (vae/text_encoder/unet|
         # transformer/scheduler), so it's a cheap reference wrapper on the already-
@@ -332,8 +386,8 @@ class Engine:
         is_img2img = source_image is not None
         if is_img2img:
             pipe = backend.make_img2img(pipe)
-        backend.apply_scheduler(pipe, scheduler, **(backend_options or {}))
-        prompt_kwargs = backend.encode_prompts(pipe, prompt, negative_prompt)
+        backend.apply_scheduler(pipe, eff.scheduler, **eff.backend_options)
+        prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
         seeds = [
             (seed + i) if seed is not None else random.randint(0, MAX_SEED)
@@ -344,15 +398,15 @@ class Engine:
             pipe=pipe,
             backend=backend,
             prompt_kwargs=prompt_kwargs,
-            width=width,
-            height=height,
-            num_steps=num_steps,
-            guidance_scale=guidance_scale,
-            clip_skip=clip_skip,
+            width=eff.width,
+            height=eff.height,
+            num_steps=eff.num_steps,
+            guidance_scale=eff.guidance_scale,
+            clip_skip=eff.clip_skip,
             seeds=seeds,
             is_img2img=is_img2img,
             source_image=source_image,
-            strength=strength,
+            strength=eff.strength,
         )
 
     def _run_chunked(
@@ -370,7 +424,7 @@ class Engine:
         is_img2img: bool,
         source_image: Optional["Image"] = None,
         strength: float = 0.75,
-    ) -> GenerationResult:
+    ) -> MediaResult:
         batch_total = len(seeds)
         max_gpu_batch = self._batch_sizer.get_max_batch_size(backend.engine, is_img2img)
         needs_profiling = max_gpu_batch == 0
@@ -454,7 +508,7 @@ class Engine:
                     ))
                 idx += chunk_size
 
-        return GenerationResult(images=images, seeds=seeds, errors=errors)
+        return MediaResult(kind="image", media=images, seeds=seeds, errors=errors)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -469,12 +523,3 @@ class Engine:
         except Exception:  # noqa: BLE001
             pass
         return "out of memory" in str(exc).lower()
-
-    def _free_cache(self) -> None:
-        gc.collect()
-        try:
-            import torch
-            if self._device and self._device.kind == "cuda":
-                torch.cuda.empty_cache()
-        except ImportError:
-            pass

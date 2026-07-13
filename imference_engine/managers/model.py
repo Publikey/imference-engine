@@ -26,9 +26,10 @@ from __future__ import annotations
 import gc
 import logging
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.runtime.device import Device
 
@@ -37,11 +38,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RegisteredModel:
-    """Metadata for a model — what to pass to backend.load_pipeline."""
+    """Metadata for a model — what to pass to backend.load_pipeline, plus the
+    per-model generation defaults (layer 2 of the precedence chain)."""
     name: str
     backend: str
     weights_path: str
     base_model: Optional[str] = None
+    defaults: GenerationDefaults = field(default_factory=GenerationDefaults)
 
 
 class ModelManager:
@@ -69,7 +72,7 @@ class ModelManager:
         max_cpu_models: int = 0,
         on_loaded: Optional[Callable[[str], None]] = None,
         on_evicted: Optional[Callable[[str], None]] = None,
-        enable_cpu_offload: bool = False,
+        enable_offload: bool = False,
     ) -> None:
         self._backends = backends
         self._device = device
@@ -82,12 +85,12 @@ class ModelManager:
         self._max_cpu = max(0, max_cpu_models)
         self._on_loaded = on_loaded
         self._on_evicted = on_evicted
-        self._enable_cpu_offload = enable_cpu_offload
+        self._enable_offload = enable_offload
 
         logger.info(
             f"ModelManager configured: max_gpu_models={self._max_gpu}, "
             f"max_cpu_models={self._max_cpu}, "
-            f"enable_cpu_offload={self._enable_cpu_offload}"
+            f"enable_offload={self._enable_offload}"
         )
 
     # ------------------------------------------------------------------
@@ -102,6 +105,17 @@ class ModelManager:
             )
         self._registered[model.name] = model
         logger.info(f"Registered model {model.name!r} (backend={model.backend})")
+
+    def config_for(self, name: str) -> RegisteredModel:
+        """Return the registration metadata (incl. per-model defaults) for a
+        registered model. Raises KeyError if unknown — same contract as
+        get_or_load."""
+        if name not in self._registered:
+            raise KeyError(
+                f"Model {name!r} is not registered. "
+                f"Known: {list(self._registered)}"
+            )
+        return self._registered[name]
 
     def get_or_load(self, name: str) -> tuple[Any, PipelineBackend]:
         """Resolve a registered model to a (pipe, backend) tuple, with the
@@ -169,7 +183,7 @@ class ModelManager:
             evict_name = next(iter(self._gpu))  # oldest = LRU
             evict_pipe = self._gpu.pop(evict_name)
 
-            if self._enable_cpu_offload:
+            if self._enable_offload:
                 # Accelerate's hooks are attached to the pipe's submodules.
                 # Calling pipe.to("cpu") manually would corrupt the offloader's
                 # device-pinning state. Drop the pipe entirely — GC frees the
@@ -242,7 +256,7 @@ class ModelManager:
         from v1's swap_model_to_gpu — two retry attempts, then bail and
         purge the pipe entirely if VRAM is genuinely insufficient.
 
-        When `enable_cpu_offload=True`, takes the accelerate path instead:
+        When `enable_offload=True`, takes the accelerate path instead:
         diffusers' `pipe.enable_model_cpu_offload(device=...)` installs
         hooks that shuttle individual submodels (text_encoder, unet, vae)
         between CPU and GPU on demand. Peak VRAM drops to the largest
@@ -251,7 +265,7 @@ class ModelManager:
         device = self._device.torch_str
         self._free_device_cache()
 
-        if self._enable_cpu_offload:
+        if self._enable_offload:
             # Accelerate manages device placement per-submodel from here on —
             # we do NOT call pipe.to(device), the hook system would conflict.
             try:
