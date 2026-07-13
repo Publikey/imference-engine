@@ -43,6 +43,12 @@ Usage (on the remote instance, after ``pip install -e ".[runtime,stage]"``):
     python validation/stage_r2.py --prefix image --rm            # delete each local dir after upload
     python validation/stage_r2.py --prefix image --dry-run       # print the plan + resolved repos, touch nothing
 
+    # Wan GGUF mode — stage individual expert files to <prefix>/<repo>/<file> (no
+    # manifest; Wan reads GGUF as direct files). e.g. mirror bullerwins i2v Q8:
+    python validation/stage_r2.py --prefix wan22 --rm \
+        --wan-gguf bullerwins/Wan2.2-I2V-A14B-GGUF \
+        --files wan2.2_i2v_high_noise_14B_Q8_0.gguf,wan2.2_i2v_low_noise_14B_Q8_0.gguf
+
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
 from __future__ import annotations
@@ -186,6 +192,50 @@ def upload_dir(s3, bucket: str, prefix: str, repo: str, local_dir: str, files: l
     return uploaded
 
 
+def stage_wan_gguf(repo: str, files: list, args, s3) -> int:
+    """Stage individual Wan GGUF expert files to R2 under ``<prefix>/<repo>/<file>``.
+
+    Unlike the image base components (multi-file repos + a manifest), Wan reads GGUF
+    as DIRECT files (``<WAN_MODEL_CDN>/<repo>/<file>``, no manifest), so this just
+    downloads each named file from HF and uploads it idempotently (skips an object
+    already present with the same size). ``--rm`` frees each after upload.
+    Returns non-zero if any file failed.
+    """
+    from botocore.exceptions import ClientError
+    from huggingface_hub import hf_hub_download
+
+    from imference_engine.runtime.offline import flat_root
+
+    dest_root = os.path.join(flat_root(args.cache_dir, namespace="wan"), repo)
+    failed = 0
+    for fn in files:
+        key = object_key(args.prefix, repo, fn)
+        print(f"\n=== {fn} ===  -> key {key}", flush=True)
+        t0 = time.time()
+        try:
+            print(f"  downloading {repo}/{fn} ...", flush=True)
+            src = hf_hub_download(repo, fn, local_dir=dest_root)
+            size = os.path.getsize(src)
+            try:
+                skip = s3.head_object(Bucket=args.bucket, Key=key)["ContentLength"] == size
+            except ClientError:
+                skip = False
+            if skip:
+                print(f"  [SKIP] already on R2 ({size} bytes)", flush=True)
+            else:
+                s3.upload_file(src, args.bucket, key)  # multipart automatic
+                print(f"  [OK ] {round(time.time() - t0, 1)}s  uploaded {size} bytes", flush=True)
+            if args.rm:
+                os.remove(src)
+                print(f"  rm: freed {src}", flush=True)
+        except Exception as e:  # noqa: BLE001 — one file's failure must not stop the rest
+            print(f"  [FAIL] {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+            failed += 1
+    print("\n" + "=" * 60)
+    print(f"Wan GGUF: {len(files) - failed}/{len(files)} staged to {repo}")
+    return 1 if failed else 0
+
+
 def stage_one(engine: str, entry: dict, args, s3) -> dict:
     rec = {"engine": engine, "status": "fail", "seconds": None,
            "repo": None, "files": None, "uploaded": None, "error": None}
@@ -229,7 +279,28 @@ def main() -> int:
     ap.add_argument("--bucket", default=os.environ.get("R2_BUCKET", ""), help="R2 bucket (or env R2_BUCKET)")
     ap.add_argument("--rm", action="store_true", help="delete each local base dir after upload (disk-tight)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan + resolved repos, touch nothing")
+    ap.add_argument("--wan-gguf", default=None, metavar="REPO",
+                    help="Wan GGUF mode: upload --files of this repo to <prefix>/<repo>/<file> "
+                         "(direct files, no manifest), e.g. bullerwins/Wan2.2-I2V-A14B-GGUF")
+    ap.add_argument("--files", default="",
+                    help="comma list of .gguf filenames to stage (--wan-gguf mode)")
     args = ap.parse_args()
+
+    # Wan GGUF mode is a separate path (single files, no base_models.yaml, wan prefix).
+    if args.wan_gguf:
+        files = [f.strip() for f in args.files.split(",") if f.strip()]
+        if not files:
+            print("error: --wan-gguf needs --files (comma list of .gguf filenames)", file=sys.stderr)
+            return 2
+        print(f"Staging {len(files)} Wan GGUF file(s) from {args.wan_gguf}  (prefix {args.prefix!r})")
+        if args.dry_run:
+            for fn in files:
+                print(f"  {fn}  -> key {object_key(args.prefix, args.wan_gguf, fn)}")
+            return 0
+        if not args.bucket:
+            print("error: set --bucket or R2_BUCKET", file=sys.stderr)
+            return 2
+        return stage_wan_gguf(args.wan_gguf, files, args, r2_client())
 
     config = load_config(Path(args.config))
     selected = [e.strip() for e in args.engines.split(",") if e.strip()] or list(DEFAULT_ENGINES)

@@ -24,6 +24,15 @@ def test_object_key_layout():
     assert stage_r2.object_key("/models/", "a/b", "x.json") == "models/a/b/x.json"
 
 
+def test_wan_gguf_key_matches_cdn_layout():
+    # Wan reads GGUF at <WAN_MODEL_CDN>/<repo>/<file>; the staged key must match
+    # (prefix = the WAN_MODEL_CDN tail, e.g. "wan22").
+    key = stage_r2.object_key(
+        "wan22", "bullerwins/Wan2.2-I2V-A14B-GGUF",
+        "wan2.2_i2v_high_noise_14B_Q8_0.gguf")
+    assert key == "wan22/bullerwins/Wan2.2-I2V-A14B-GGUF/wan2.2_i2v_high_noise_14B_Q8_0.gguf"
+
+
 def test_resolve_transformer_base_uses_backend_patterns():
     from imference_engine.flux import FluxBackend
     repo, patterns = stage_r2.resolve_base(

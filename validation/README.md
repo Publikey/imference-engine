@@ -124,6 +124,17 @@ present with the same size is skipped).
 > `local_repo_dir` before `ModularPipeline.from_pretrained`, so with
 > `IMAGE_MODEL_CDN` set it loads from R2 like the others.
 
+**Wan GGUF (`--wan-gguf`).** Wan reads GGUF experts as *direct files*
+(`<WAN_MODEL_CDN>/<repo>/<file>`, no manifest), so a separate mode uploads named
+files to `<prefix>/<repo>/<file>` — e.g. mirror the bullerwins i2v experts (the
+QuantStack i2v mirror renders mush; see `wan/README.md`):
+
+```bash
+python validation/stage_r2.py --prefix wan22 --rm \
+  --wan-gguf bullerwins/Wan2.2-I2V-A14B-GGUF \
+  --files wan2.2_i2v_high_noise_14B_Q8_0.gguf,wan2.2_i2v_low_noise_14B_Q8_0.gguf
+```
+
 ## When something fails
 
 `report.json` records the `error` and full `traceback` per engine. For the newer
