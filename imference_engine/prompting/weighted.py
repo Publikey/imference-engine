@@ -51,9 +51,20 @@ def _release_offloaded_text_encoders(pipe, *names: str) -> None:
             dev = "?"
         report.append(f"{name}(dev={dev},hook={hasattr(enc, '_hf_hook')})")
         # Release encoders sitting on the GPU under offload — sd_embed put them
-        # there outside the hook chain, so nothing else will.
+        # there outside the hook chain, so nothing else will. A plain .to("cpu")
+        # does NOT free an accelerate-offloaded module (the CpuOffload hook keeps
+        # the weights pinned — measured: it freed only ~0.1 GB of SDXL's 1.4 GB
+        # text_encoder_2). Detach the hook FIRST so the move actually relocates
+        # the storage. The encoder isn't called again this generation (the pipe
+        # runs from prompt_embeds); on the next one sd_embed re-materialises it on
+        # the GPU and this cleanup runs again, so residency stays bounded.
         if offload_active and dev.startswith("cuda"):
             try:
+                try:
+                    from accelerate.hooks import remove_hook_from_module
+                    remove_hook_from_module(enc, recurse=True)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("offload-cleanup: hook detach for %s failed: %s", name, e)
                 enc.to("cpu")
                 released.append(name)
             except Exception as e:  # noqa: BLE001
