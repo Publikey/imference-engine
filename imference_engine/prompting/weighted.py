@@ -12,6 +12,36 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _release_offloaded_text_encoders(pipe, *names: str) -> None:
+    """Push hook-managed CLIP encoders back to CPU after a weighted encode.
+
+    sd_embed builds the embeddings by running the text encoders on the pipe's
+    execution device, but it moves them there OUTSIDE accelerate's offload hooks.
+    Under ``enable_model_cpu_offload`` that leaves the encoders pinned on the GPU
+    for the whole denoise loop (~1.85 GB for SDXL's two CLIP encoders) — enough to
+    tip a tight card (≤8 GB) into shared-memory spill and crawl. We move any
+    hook-managed encoder back to CPU to restore the offloaded state; the offload
+    hook re-materialises it on demand if it's ever called again (it isn't — the
+    pipe runs from the returned ``prompt_embeds``, not the encoders).
+
+    Guarded by ``_hf_hook``: with no offload hook attached (full residency) this
+    is a no-op, so big-VRAM setups keep the encoders hot with zero overhead.
+    """
+    import torch
+
+    moved = False
+    for name in names:
+        enc = getattr(pipe, name, None)
+        if enc is not None and hasattr(enc, "_hf_hook"):
+            try:
+                enc.to("cpu")
+                moved = True
+            except Exception as e:  # noqa: BLE001
+                logger.debug("could not offload %s after weighted encode: %s", name, e)
+    if moved and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> dict:
     """Encode prompts using sd_embed weighted embeddings, with BREAK support.
 
@@ -76,6 +106,10 @@ def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
                 neg_pooled,
             ) = get_weighted_text_embeddings_sdxl(pipe, prompt=prompt, neg_prompt=neg)
 
+    # sd_embed left both CLIP encoders on the GPU outside the offload hooks —
+    # release them so enable_model_cpu_offload's VRAM budget holds (see helper).
+    _release_offloaded_text_encoders(pipe, "text_encoder", "text_encoder_2")
+
     return {
         "prompt_embeds": prompt_embeds,
         "negative_prompt_embeds": neg_prompt_embeds,
@@ -106,6 +140,8 @@ def encode_sd15_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
         prompt_embeds, neg_prompt_embeds = get_weighted_text_embeddings_sd15(
             pipe, prompt=prompt, neg_prompt=neg
         )
+    # SD 1.5 has a single CLIP encoder; release it from the GPU too under offload.
+    _release_offloaded_text_encoders(pipe, "text_encoder")
     return {
         "prompt_embeds": prompt_embeds,
         "negative_prompt_embeds": neg_prompt_embeds,
