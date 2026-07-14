@@ -142,13 +142,19 @@ class AnimaBackend(PipelineBackend):
             local_path, base_dir, base_repo)
 
         # Build the DiT from the checkpoint, using the base repo's transformer
-        # config for the layout. The diffusers Cosmos converter strips a "net."
-        # prefix but NOT a ComfyUI-style "diffusion_model." one — normalize that
-        # first, then feed the state_dict to from_single_file (a supported input)
-        # so the official Cosmos key-rename still applies.
+        # config for the layout. Community / ComfyUI Anima checkpoints wrap the
+        # (already diffusers-format) DiT keys under a "model.diffusion_model." or
+        # "diffusion_model." prefix; the diffusers Cosmos converter only strips
+        # "net.", so a wrapped checkpoint matches nothing and every param stays on
+        # the meta device -> "Cannot copy out of meta tensor". Strip the wrapper
+        # prefix ourselves; the inner keys are already diffusers-format, so no
+        # further rename is needed. Then feed the dict to from_single_file (a
+        # supported input) — it no-ops the converter on an exact key match.
         sd = load_file(local_path)
-        if any(k.startswith("diffusion_model.") for k in sd):
-            sd = {k.removeprefix("diffusion_model."): v for k, v in sd.items()}
+        for _prefix in ("model.diffusion_model.", "diffusion_model."):
+            if any(k.startswith(_prefix) for k in sd):
+                sd = {k.removeprefix(_prefix): v for k, v in sd.items()}
+                break
         transformer = CosmosTransformer3DModel.from_single_file(
             sd,
             config=os.path.join(base_dir, "transformer"),
