@@ -18,11 +18,15 @@ torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
     ``.to("cpu")`` residency moves work; ``pipe(...).images`` returns images.
   - The modular ``__call__`` accepts num_inference_steps, height, width,
     generator, num_images_per_prompt, and negative_prompt (when set). It does
-    NOT take ``guidance_scale`` — guidance is a separate Guider block, so passing
-    it warns "Unexpected input ... will be ignored" (confirmed on GPU); this
-    backend therefore omits it and the request's guidance_scale is a no-op for
-    Anima. If a future diffusers changes the modular signature,
-    ``build_inference_kwargs`` / ``encode_prompts`` are the single place to adjust.
+    NOT take ``guidance_scale`` — guidance is a separate ``ClassifierFreeGuidance``
+    *guider* component, so passing it as a kwarg warns "Unexpected input ... will
+    be ignored". The request's guidance_scale is instead applied to the guider by
+    ``apply_guidance`` (``pipe.guider.guidance_scale = ...``) before the call; the
+    scheduler is flow-matching (``FlowMatchEulerDiscreteScheduler``) and honors a
+    ``shift`` via ``backend_options``; clip_skip is a genuine no-op (Qwen3 + T5
+    text stack, no CLIP). If a future diffusers changes the modular signature,
+    ``apply_guidance`` / ``apply_scheduler`` / ``build_inference_kwargs`` /
+    ``encode_prompts`` are the single place to adjust.
   - CPU-offload: ``enable_model_cpu_offload`` may not exist on a ModularPipeline;
     the ModelManager already falls back to ``.to(device)`` if it raises. img2img
     is unsupported (``make_img2img`` raises — no documented modular variant).
@@ -210,12 +214,61 @@ class AnimaBackend(PipelineBackend):
             kwargs["negative_prompt"] = negative_prompt
         return kwargs
 
+    def apply_guidance(self, pipe: Any, guidance_scale: float) -> None:
+        # Anima's modular pipeline holds a ``ClassifierFreeGuidance`` component
+        # named ``guider`` (code default guidance_scale=4.0). Guidance is NOT a
+        # ``pipe(...)`` kwarg — the scale is read off the guider object at denoise
+        # time (``pred_uncond + scale*(pred_cond - pred_uncond)``), and the guider
+        # also gates whether the unconditional/negative branch is encoded at all
+        # (``num_conditions > 1``). So we set it on the guider before the call.
+        # ``guidance_scale`` is a plain register_to_config attr (not a property), so
+        # direct assignment is runtime-effective immediately. A value of ~1.0
+        # disables CFG and skips the negative-prompt encode — a valid, faster path.
+        # Verified against diffusers 0.39 ``modular_pipelines/anima`` blocks +
+        # ``guiders/classifier_free_guidance.py``.
+        guider = getattr(pipe, "guider", None)
+        if guider is None:
+            logger.warning(
+                "Anima pipe exposes no guider; guidance_scale=%.2f not applied",
+                guidance_scale)
+            return
+        try:
+            guider.guidance_scale = float(guidance_scale)
+            logger.info(
+                "Anima guidance: ClassifierFreeGuidance guidance_scale=%.2f",
+                guidance_scale)
+        except Exception as e:  # extremely defensive — attr set shouldn't raise
+            logger.warning("Anima: failed to set guider.guidance_scale (%s)", e)
+
     def apply_scheduler(
         self, pipe: Any, scheduler: Optional[str], **kwargs: Any  # noqa: ARG002
     ) -> None:
-        # Scheduler is block-defined in the modular pipeline; no standard
-        # from_config swap. Leave the pipeline's configured scheduler.
-        return None
+        """Anima is flow-matching (``FlowMatchEulerDiscreteScheduler``, block-defined).
+
+        The ``scheduler`` NAME arg is ignored — DPM/Euler/Karras samplers don't map
+        onto flow matching (same stance as FLUX / Z-Image). The one meaningful knob
+        is ``shift``: pass it via ``backend_options`` to rebuild the flow-match
+        scheduler with a fixed shift::
+
+            engine.generate(..., backend_options={"shift": 3.0})
+
+        No ``shift`` → leave the pipeline's configured scheduler untouched (the
+        validated default path). Swap uses the documented modular API
+        (``update_components``); verified the component is
+        ``FlowMatchEulerDiscreteScheduler`` against diffusers 0.39
+        ``modular_pipelines/anima``.
+        """
+        shift = kwargs.get("shift")
+        if shift is None:
+            return  # leave the pipe's default flow-match scheduler
+        from diffusers import FlowMatchEulerDiscreteScheduler
+        pipe.update_components(
+            scheduler=FlowMatchEulerDiscreteScheduler.from_config(
+                pipe.scheduler.config, shift=float(shift),
+                use_dynamic_shifting=False,
+            )
+        )
+        logger.info("Anima scheduler: FlowMatchEuler fixed shift=%s", shift)
 
     def build_inference_kwargs(
         self,
@@ -223,19 +276,19 @@ class AnimaBackend(PipelineBackend):
         width: int,
         height: int,
         num_steps: int,
-        guidance_scale: float,  # noqa: ARG002 — ignored by Anima's modular __call__
-        clip_skip: Optional[int],  # noqa: ARG002 — Anima has no clip_skip
+        guidance_scale: float,  # noqa: ARG002 — applied via apply_guidance (guider), not here
+        clip_skip: Optional[int],  # noqa: ARG002 — Anima has no CLIP (Qwen3+T5) → no-op
         chunk_size: int,
         generator: Any,
         image: Any = None,  # noqa: ARG002 — img2img unsupported (make_img2img raises)
         strength: float = 0.75,  # noqa: ARG002
     ) -> dict:
-        # Anima's modular pipeline configures guidance via a separate Guider block,
-        # NOT a `guidance_scale` __call__ kwarg — passing it triggers a diffusers
-        # "Unexpected input 'guidance_scale' ... will be ignored" warning on every
-        # render (confirmed on GPU). So it's deliberately NOT forwarded here; the
-        # request's guidance_scale has no effect on Anima. t2i only — `image` /
-        # `strength` are ignored (make_img2img raises before this is reached).
+        # Guidance is NOT a `guidance_scale` __call__ kwarg for Anima (modular
+        # pipeline warns "Unexpected input ... will be ignored"). It is set on the
+        # ClassifierFreeGuidance *guider* component instead — see `apply_guidance`,
+        # which the Engine calls per request before pipe(...). clip_skip is a no-op
+        # (Anima uses a Qwen3 + T5 text stack, no CLIP layer to skip). t2i only —
+        # `image` / `strength` are ignored (make_img2img raises before this).
         return {
             "num_inference_steps": num_steps,
             "width": width,

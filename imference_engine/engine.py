@@ -387,6 +387,11 @@ class Engine(BaseEngine):
         if is_img2img:
             pipe = backend.make_img2img(pipe)
         backend.apply_scheduler(pipe, eff.scheduler, **eff.backend_options)
+        # Guidance is applied here (not via build_inference_kwargs) because modular
+        # pipelines (Anima) hold a Guider component whose scale must be set on the
+        # object BEFORE the call — it is not a pipe(...) kwarg. Standard pipelines
+        # keep the default no-op and pass guidance_scale in build_inference_kwargs.
+        backend.apply_guidance(pipe, eff.guidance_scale)
         prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
         seeds = [
