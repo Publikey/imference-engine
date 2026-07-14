@@ -3,6 +3,22 @@
 Wraps `sd_embed.get_weighted_text_embeddings_sdxl` to overcome the 77-token
 CLIP limit, plus A1111/ComfyUI-style BREAK keyword: split the prompt on BREAK,
 encode each chunk independently, concatenate along the sequence dimension.
+
+VRAM note — why the encoding runs under ``torch.no_grad()``:
+    sd_embed runs the CLIP text encoders with autograd ENABLED, and we call it
+    OUTSIDE ``pipe.__call__`` (which diffusers decorates ``@torch.no_grad()``, so
+    the pipeline's own ``encode_prompt`` never builds a graph). Without a no_grad
+    context here, the returned embeddings carry a ``.grad_fn`` that pins the
+    encoders' CUDA weight tensors (saved-for-backward) plus intermediate
+    activations — and since those embeddings are held for the entire denoise
+    loop, ~1.85 GB stays resident on the GPU the whole time. Under
+    ``enable_model_cpu_offload`` on an 8 GB card that tips peak VRAM past capacity
+    into WDDM shared-memory spill (measured: baseline 0 -> 1981 MB, ~50x slower).
+    It's a retained autograd graph, not stranded weights: moving an encoder to
+    CPU frees almost nothing because the graph still references the original cuda
+    tensors. Encoding never needs gradients, so a no_grad context drops the graph
+    entirely, lets the offload hooks reclaim the encoders normally, and keeps
+    both sd_embed weighting/BREAK and model_cpu_offload's speed.
 """
 from __future__ import annotations
 import logging
@@ -12,71 +28,16 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def _release_offloaded_text_encoders(pipe, *names: str) -> None:
-    """Push hook-managed CLIP encoders back to CPU after a weighted encode.
-
-    sd_embed builds the embeddings by running the text encoders on the pipe's
-    execution device, but it moves them there OUTSIDE accelerate's offload hooks.
-    Under ``enable_model_cpu_offload`` that leaves the encoders pinned on the GPU
-    for the whole denoise loop (~1.85 GB for SDXL's two CLIP encoders) — enough to
-    tip a tight card (≤8 GB) into shared-memory spill and crawl. We move any
-    hook-managed encoder back to CPU to restore the offloaded state; the offload
-    hook re-materialises it on demand if it's ever called again (it isn't — the
-    pipe runs from the returned ``prompt_embeds``, not the encoders).
-
-    Only acts when offload is active (the pipe carries ``_all_hooks`` or an
-    encoder carries ``_hf_hook``); in full residency it's a logged no-op, so
-    big-VRAM setups keep the encoders hot with zero overhead. Emits one INFO line
-    with each encoder's device + the VRAM delta so the behaviour is verifiable
-    from the sidecar log.
-    """
-    import torch
-
-    if not torch.cuda.is_available():
-        return
-
-    offload_active = bool(getattr(pipe, "_all_hooks", None)) or any(
-        hasattr(getattr(pipe, n, None), "_hf_hook") for n in names
-    )
-    before = torch.cuda.memory_allocated() / 1e6
-    report: list[str] = []
-    released: list[str] = []
-    for name in names:
-        enc = getattr(pipe, name, None)
-        if enc is None:
-            continue
-        try:
-            dev = str(next(enc.parameters()).device)
-        except Exception:  # noqa: BLE001
-            dev = "?"
-        report.append(f"{name}(dev={dev},hook={hasattr(enc, '_hf_hook')})")
-        # Release encoders sitting on the GPU under offload — sd_embed put them
-        # there outside the hook chain, so nothing else will. A plain .to("cpu")
-        # does NOT free an accelerate-offloaded module (the CpuOffload hook keeps
-        # the weights pinned — measured: it freed only ~0.1 GB of SDXL's 1.4 GB
-        # text_encoder_2). Detach the hook FIRST so the move actually relocates
-        # the storage. The encoder isn't called again this generation (the pipe
-        # runs from prompt_embeds); on the next one sd_embed re-materialises it on
-        # the GPU and this cleanup runs again, so residency stays bounded.
-        if offload_active and dev.startswith("cuda"):
-            try:
-                try:
-                    from accelerate.hooks import remove_hook_from_module
-                    remove_hook_from_module(enc, recurse=True)
-                except Exception as e:  # noqa: BLE001
-                    logger.debug("offload-cleanup: hook detach for %s failed: %s", name, e)
-                enc.to("cpu")
-                released.append(name)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("offload-cleanup: %s release failed: %s", name, e)
-    if released:
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
-    after = torch.cuda.memory_allocated() / 1e6
-    logger.info(
-        "offload-cleanup: active=%s | %s | released=%s | VRAM %.0f -> %.0f MB",
-        offload_active, " ".join(report) or "no-encoders", released, before, after,
-    )
+def _log_encode_vram(where: str) -> None:
+    """One-line INFO of current GPU allocation after a weighted encode, so the
+    sidecar log shows the baseline stayed low (no retained-graph residue)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logger.info("weighted-encode(%s): VRAM allocated %.0f MB",
+                        where, torch.cuda.memory_allocated() / 1e6)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> dict:
@@ -98,7 +59,10 @@ def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
     import torch
     neg = negative_prompt or ""
 
-    with warnings.catch_warnings():
+    # no_grad is load-bearing here — see the module docstring. Without it the
+    # returned embeds keep a grad graph that pins ~1.85 GB of encoder tensors on
+    # the GPU for the whole denoise loop and defeats enable_model_cpu_offload.
+    with torch.no_grad(), warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
 
         if "BREAK" in prompt:
@@ -143,9 +107,7 @@ def encode_sdxl_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
                 neg_pooled,
             ) = get_weighted_text_embeddings_sdxl(pipe, prompt=prompt, neg_prompt=neg)
 
-    # sd_embed left both CLIP encoders on the GPU outside the offload hooks —
-    # release them so enable_model_cpu_offload's VRAM budget holds (see helper).
-    _release_offloaded_text_encoders(pipe, "text_encoder", "text_encoder_2")
+    _log_encode_vram("sdxl")
 
     return {
         "prompt_embeds": prompt_embeds,
@@ -171,14 +133,16 @@ def encode_sd15_weighted(pipe, prompt: str, negative_prompt: Optional[str]) -> d
         logger.warning("sd_embed not installed; using raw prompt strings")
         return {"prompt": prompt, "negative_prompt": negative_prompt or ""}
 
+    import torch
     neg = negative_prompt or ""
-    with warnings.catch_warnings():
+    # no_grad for the same reason as SDXL — keep the encoder off the autograd graph
+    # so offload can reclaim it (see module docstring).
+    with torch.no_grad(), warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=".*Token indices sequence length.*")
         prompt_embeds, neg_prompt_embeds = get_weighted_text_embeddings_sd15(
             pipe, prompt=prompt, neg_prompt=neg
         )
-    # SD 1.5 has a single CLIP encoder; release it from the GPU too under offload.
-    _release_offloaded_text_encoders(pipe, "text_encoder")
+    _log_encode_vram("sd15")
     return {
         "prompt_embeds": prompt_embeds,
         "negative_prompt_embeds": neg_prompt_embeds,
