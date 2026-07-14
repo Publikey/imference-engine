@@ -82,6 +82,18 @@ class PipelineBackend(Backend):
         Z-Image: FlowMatchEulerDiscreteScheduler with `shift` (auto 3.0 for Turbo).
         """
 
+    def apply_guidance(self, pipe: Any, guidance_scale: float) -> None:
+        """Configure classifier-free guidance on the pipeline in place.
+
+        Default: no-op. Standard ``DiffusionPipeline`` backends take
+        ``guidance_scale`` as a ``pipe(...)`` kwarg (see ``build_inference_kwargs``),
+        so there is nothing to set here. Modular-Diffusers backends (Anima) instead
+        hold a ``ClassifierFreeGuidance`` *guider* component whose scale is read off
+        the object at denoise time — it is NOT a call kwarg — so those backends
+        override this to set the scale on the guider before the call.
+        """
+        return None
+
     @abstractmethod
     def build_inference_kwargs(
         self,
