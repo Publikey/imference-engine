@@ -5,6 +5,21 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Added
+
+- **AMD GPU (ROCm) support.** PyTorch's ROCm build masquerades as CUDA
+  (`torch.cuda.*` works, device strings stay `cuda:N`), so the engine now runs
+  on AMD GPUs with **zero config change** — install the ROCm torch wheel
+  (`--index-url https://download.pytorch.org/whl/rocm6.4` on Linux; Python 3.12
+  preview wheels from repo.radeon.com on Windows) and `device="auto"` resolves
+  to the GPU. New `runtime.device.is_rocm()` helper and `Device.backend`
+  property (`"rocm"` on a HIP build, else same as `kind`) for vendor-aware
+  logs/UI — `Device.kind` and `torch_str` are unchanged, so all existing
+  `kind == "cuda"` branches keep working. The CPU-fallback warning and install
+  docs now give the per-vendor torch index instead of assuming NVIDIA.
+
 ## [0.3.0] — 2026-07-13
 
 Big release: five new image backends, the unified image+video core, the catalog

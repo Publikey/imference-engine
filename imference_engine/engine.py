@@ -133,10 +133,12 @@ class Engine(BaseEngine):
         # hit this when they pip-install torch without CUDA in their venv.
         if self._device.kind == "cpu" and self._runtime.device == "auto":
             logger.warning(
-                "Engine resolved device=cpu (no CUDA/MPS detected). "
+                "Engine resolved device=cpu (no CUDA/ROCm/MPS detected). "
                 "fp16 pipelines will hang at 0%% on CPU. "
-                "If you have a GPU, install CUDA torch: "
-                "pip install torch --index-url https://download.pytorch.org/whl/cu121"
+                "If you have a GPU, install the matching torch build — NVIDIA: "
+                "pip install torch --index-url https://download.pytorch.org/whl/cu124 "
+                "· AMD (Linux): pip install torch --index-url "
+                "https://download.pytorch.org/whl/rocm6.4"
             )
 
         from imference_engine.anima.backend import AnimaBackend
