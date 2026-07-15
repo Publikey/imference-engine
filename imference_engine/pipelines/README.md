@@ -51,7 +51,8 @@ Listed so the desktop side knows what to expect — these are intentionally not
 exposed:
 
 - **dtype:** SDXL loads `float16` (Z-Image `bfloat16`).
-- **attention:** flash + memory-efficient SDPA enabled on CUDA.
+- **attention:** flash + memory-efficient SDPA enabled on CUDA (and on AMD
+  ROCm builds, where the same toggles drive the HIP SDPA path).
 - **memory format:** `channels_last` applied to the SDXL UNet (non-fatal if it fails).
 - **scheduler default:** `EulerAncestralDiscreteScheduler` (override per request via `scheduler=`).
 

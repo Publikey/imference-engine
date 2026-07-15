@@ -66,7 +66,16 @@ Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `an
 > pip install --no-deps "sd-embed @ https://github.com/xhinker/sd_embed/archive/refs/heads/main.tar.gz"
 > ```
 
-On Windows, install a CUDA torch first: `pip install torch --index-url https://download.pytorch.org/whl/cu124`.
+Install the GPU torch build matching your hardware **first** (the extras only
+pin `torch>=2.6`, so pip would otherwise pull the CPU wheel):
+
+- **NVIDIA (Windows/Linux):** `pip install torch --index-url https://download.pytorch.org/whl/cu124`
+- **AMD ROCm (Linux):** `pip install torch --index-url https://download.pytorch.org/whl/rocm6.4` —
+  the device presents as `cuda`, no engine config change needed.
+- **AMD ROCm (Windows, preview):** AMD publishes Python 3.12 wheels on
+  [repo.radeon.com](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html)
+  (Radeon RX 7000/9000 + select Ryzen AI only).
+- **Apple Silicon (macOS):** plain `pip install torch` (MPS is in the default wheel).
 
 ---
 

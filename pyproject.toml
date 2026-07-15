@@ -20,8 +20,13 @@ dependencies = [
 
 [project.optional-dependencies]
 # Real inference. Install with: pip install -e ".[runtime,dev]"
-# Note: install CUDA-enabled torch separately first on Windows:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# Note: install the GPU-enabled torch separately first (extras only pin
+# torch>=2.6, so pip would otherwise pull the CPU wheel):
+#   NVIDIA:      pip install torch --index-url https://download.pytorch.org/whl/cu124
+#   AMD (Linux): pip install torch --index-url https://download.pytorch.org/whl/rocm6.4
+#   AMD (Windows, preview): Python 3.12 wheels from repo.radeon.com
+# ROCm torch presents the GPU as "cuda" (torch.version.hip set), so the engine
+# runs on AMD without configuration changes — see imference_engine/runtime/device.py.
 #
 # sd-embed (weighted prompt embeddings + BREAK keyword) is GitHub-only and
 # its setup.py declares unconstrained torch + torchvision deps that would
@@ -173,7 +178,8 @@ dev = ["pytest>=8", "pytest-mock", "ruff"]
 # re-validate it on 0.39 like the image engines. Kept a SEPARATE extra only for
 # the extra gguf/imageio video deps. Install: pip install "imference-engine[wan]".
 # torch>=2.6 is required (the FA3 custom op breaks the import on torch 2.4);
-# install the CUDA build from your base image.
+# install the CUDA (cu124) or ROCm (rocm6.4) build from your base image — the
+# op registration is torch-version-gated, not vendor-gated.
 wan = [
     "torch>=2.6",
     "diffusers==0.39.0",
