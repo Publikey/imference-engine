@@ -7,6 +7,11 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-07-17
+
+Bugfix + hardware release: Anima loads on strict-offline workers again, and the
+engine runs on AMD GPUs. No API changes — a drop-in upgrade from 0.3.1.
+
 ### Added
 
 - **AMD GPU (ROCm) support.** PyTorch's ROCm build masquerades as CUDA
@@ -19,6 +24,28 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   logs/UI — `Device.kind` and `torch_str` are unchanged, so all existing
   `kind == "cuda"` branches keep working. The CPU-fallback warning and install
   docs now give the per-vendor torch index instead of assuming NVIDIA.
+
+### Fixed
+
+- **Anima components failed to load offline.** Loading any Anima model on a
+  worker with `HF_HUB_OFFLINE=1` left the scheduler, text conditioner, Qwen3 text
+  encoder and VAE unset; generation then failed with `'NoneType' object has no
+  attribute 'dtype'` from inside the text-encoder block. `modular_model_index.json`
+  records each component's source as the **hub repo id**, not a path, so resolving
+  the base repo into the offline tree and calling `ModularPipeline.from_pretrained`
+  on the local dir was not enough — the component specs still pointed at
+  huggingface.co. They are now repointed at the mirrored tree before loading (only
+  where the component's subfolder actually exists there, so a component sourced
+  from a different repo is left alone and warned about instead of mis-pointed).
+  Affects both load paths: single-file DiT + base repo, and the whole modular repo.
+  The DiT itself always loaded — the single-file path was never at fault.
+- **Anima load failures are no longer silent.** `load_components()` catches
+  per-component failures and only *warns*, so a failed load left the attribute
+  `None` and surfaced much later as an `AttributeError` in an unrelated denoise
+  block. A component that ends up `None` now raises a `RuntimeError` naming it, at
+  load time. Note that the offline fast path in `local_repo_dir` trusts any tree
+  carrying `modular_model_index.json` without verifying it, so a partially staged
+  mirror surfaces here: complete the mirror rather than disabling offline mode.
 
 ## [0.3.0] — 2026-07-13
 
