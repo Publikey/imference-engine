@@ -45,7 +45,9 @@ via ``local_repo_dir`` (the whole modular repo — DiT + Qwen3 encoder + text
 conditioner + VAE + index) BEFORE ``from_pretrained``, so with ``IMAGE_MODEL_CDN``
 set the model loads from the R2 mirror, never HuggingFace — same contract as the
 other image backends. A ``weights_path`` that is already a local directory is used
-as-is (no resolution).
+as-is (no resolution). Resolving the tree is NOT sufficient on its own: the modular
+index names each component by hub repo id, so ``_load_components`` repoints the
+component specs at the local tree before loading — see its docstring.
 """
 from __future__ import annotations
 import logging
@@ -98,7 +100,6 @@ class AnimaBackend(PipelineBackend):
     ) -> Any:
         import os
 
-        import torch
         from diffusers import ModularPipeline
 
         from imference_engine.runtime.offline import local_repo_dir
@@ -122,8 +123,58 @@ class AnimaBackend(PipelineBackend):
 
         logger.info(f"Loading Anima modular pipeline from {src}")
         pipe = ModularPipeline.from_pretrained(src)
-        pipe.load_components(torch_dtype=torch.bfloat16)
+        self._load_components(pipe, src)
         return pipe
+
+    def _load_components(self, pipe: Any, local_dir: str) -> None:
+        """Load the modular components off the mirrored tree, strictly.
+
+        Two things ``pipe.load_components(torch_dtype=...)`` won't do on its own:
+
+        1. ``modular_model_index.json`` records each component's source as the HUB
+           REPO ID, so a pipe built from a local dir still holds specs pointing at
+           huggingface.co — under ``HF_HUB_OFFLINE=1`` every component load then
+           fails. Repoint each spec at ``local_dir`` (only where the component's
+           subfolder really exists there, so a component sourced from some other
+           repo isn't silently mis-pointed).
+        2. ``load_components`` catches per-component failures and only *warns*, so
+           a failed load leaves the attribute None and the crash surfaces much
+           later as ``'NoneType' object has no attribute 'dtype'`` inside a
+           denoise block. Raise here instead, while the cause is still in hand.
+        """
+        import os
+
+        import torch
+
+        names, paths = [], {}
+        for name in pipe.null_component_names:
+            spec = pipe.get_component_spec(name)
+            src = getattr(spec, "pretrained_model_name_or_path", None)
+            if not src or spec.default_creation_method != "from_pretrained":
+                continue  # nothing to load — load_components skips these too
+            names.append(name)
+            if os.path.isdir(src):
+                continue  # already a local path
+            subfolder = getattr(spec, "subfolder", "") or ""
+            if os.path.isdir(os.path.join(local_dir, subfolder)):
+                paths[name] = local_dir
+            else:
+                logger.warning(
+                    "Anima component %r is sourced from %r, which is not mirrored "
+                    "under %s; leaving its spec untouched (needs network)",
+                    name, src, local_dir)
+
+        pipe.load_components(names=names, pretrained_model_name_or_path=paths,
+                             torch_dtype=torch.bfloat16)
+
+        missing = [n for n in names if getattr(pipe, n, None) is None]
+        if missing:
+            raise RuntimeError(
+                f"Anima components failed to load from {local_dir}: "
+                f"{', '.join(missing)}. See the warnings above for each component's "
+                f"traceback — offline, this usually means the base repo tree is "
+                f"incomplete (expected subfolders: {', '.join(missing)})."
+            )
 
     def _load_single_file(self, local_path: str, base_model: Optional[str]) -> Any:
         """Load the DiT from a single .safetensors + the rest of the modular
@@ -171,7 +222,7 @@ class AnimaBackend(PipelineBackend):
         # never instantiated).
         pipe = ModularPipeline.from_pretrained(base_dir)
         pipe.update_components(transformer=transformer)
-        pipe.load_components(torch_dtype=torch.bfloat16)
+        self._load_components(pipe, base_dir)
         return pipe
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:
