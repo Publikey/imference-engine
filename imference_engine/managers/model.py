@@ -144,6 +144,13 @@ class ModelManager:
             return self._gpu[name], backend
 
         # Cold load from disk → CPU first, then promote to GPU.
+        # Make room BEFORE loading: a cold load transiently costs a full pipe
+        # of host RAM, so the GPU-LRU eviction (and any CPU-tier drop it
+        # cascades into) must run first — otherwise the transient holds
+        # evictee + new pipe at once and small-RAM pods OOM. Same invariant as
+        # VideoResidency.get_or_load and the pre-engine workers. Trade-off:
+        # if load_pipeline raises, a slot was evicted for nothing.
+        self._ensure_gpu_slot()
         logger.info(f"Loading {name!r} from {meta.weights_path}")
         pipe = backend.load_pipeline(
             local_path=meta.weights_path,
@@ -183,41 +190,47 @@ class ModelManager:
             evict_name = next(iter(self._gpu))  # oldest = LRU
             evict_pipe = self._gpu.pop(evict_name)
 
-            if self._enable_offload:
-                # Accelerate's hooks are attached to the pipe's submodules.
-                # Calling pipe.to("cpu") manually would corrupt the offloader's
-                # device-pinning state. Drop the pipe entirely — GC frees the
-                # hook-attached state along with the submodules. (Engine.load()
-                # forces max_cpu_models=0 in this mode so the CPU tier branch
-                # below is unreachable anyway.)
-                logger.info(f"GPU LRU eviction (cpu_offload): {evict_name!r} → drop")
-                self._drop_pipe(evict_name, evict_pipe)
+            if self._enable_offload or self._max_cpu == 0:
+                # The pipe is going away entirely — do NOT round-trip it
+                # through pipe.to("cpu"), which would materialize a full pipe
+                # of host RAM just to free it a line later. Dropping the last
+                # reference frees the CUDA blocks via refcounting, and
+                # _drop_pipe's empty_cache returns them to the driver.
+                # (Under enable_offload this is also correctness, not just
+                # RAM: accelerate's hooks are attached to the submodules and
+                # a manual .to("cpu") would corrupt the offloader's
+                # device-pinning state.)
+                reason = "cpu_offload" if self._enable_offload else "no CPU tier"
+                logger.info(f"GPU LRU eviction ({reason}): {evict_name!r} → drop")
+                del evict_pipe  # last ref — release BEFORE _drop_pipe's gc pass
+                self._drop_pipe(evict_name)
                 continue
 
             logger.info(f"GPU LRU eviction: {evict_name!r} → CPU")
             self._swap_pipe_to_cpu(evict_pipe, evict_name)
 
-            if self._max_cpu == 0:
-                # CPU tier disabled — drop the pipe immediately.
-                self._drop_pipe(evict_name, evict_pipe)
-            else:
-                # Park on CPU; may evict another CPU resident in turn.
-                self._cpu[evict_name] = evict_pipe
-                self._cpu.move_to_end(evict_name)
-                self._enforce_cpu_cap()
+            # Park on CPU; may evict another CPU resident in turn.
+            self._cpu[evict_name] = evict_pipe
+            self._cpu.move_to_end(evict_name)
+            del evict_pipe  # the dict holds it now; don't shadow the cap pass
+            self._enforce_cpu_cap()
 
     def _enforce_cpu_cap(self) -> None:
         """If the CPU tier is over capacity, drop oldest non-GPU residents."""
         while len(self._cpu) > self._max_cpu:
             # Oldest first. Models concurrently on GPU shouldn't be in _cpu
             # (we _gpu.pop() before _cpu insertion), so any entry is fair game.
+            # Pop without binding: a local ref would survive _drop_pipe's
+            # gc.collect() and delay the actual free.
             evict_name = next(iter(self._cpu))
-            evict_pipe = self._cpu.pop(evict_name)
-            self._drop_pipe(evict_name, evict_pipe)
+            self._cpu.pop(evict_name)
+            self._drop_pipe(evict_name)
 
-    def _drop_pipe(self, name: str, _pipe: Any) -> None:
-        """Release a pipe entirely. Fires on_evicted so the caller can
-        unprotect disk cache / log eviction metrics / etc."""
+    def _drop_pipe(self, name: str) -> None:
+        """Finalize the release of a pipe whose last reference is ALREADY gone
+        (callers must pop/del it first, or the gc pass below can't free it).
+        Fires on_evicted so the caller can unprotect disk cache / log
+        eviction metrics / etc."""
         logger.info(f"Dropping {name!r} from memory")
         # No explicit unload — Python GC handles it when refs go away.
         # The caller's hook is the signal to free downstream resources.

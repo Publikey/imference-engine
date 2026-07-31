@@ -49,12 +49,17 @@ class FakeBackend(PipelineBackend):
 
     engine = "fake"
 
-    def __init__(self):
+    def __init__(self, events: list[str] | None = None):
         self.load_calls: dict[str, int] = {}
+        # Optional shared event log — lets tests assert ordering between
+        # evictions (via on_evicted) and disk reads.
+        self.events = events
 
     def load_pipeline(self, *, local_path, base_model=None):
         name = local_path  # tests pass the model name as weights_path
         self.load_calls[name] = self.load_calls.get(name, 0) + 1
+        if self.events is not None:
+            self.events.append(f"load:{name}")
         return FakePipe(name)
 
     # The rest of the ABC isn't exercised here.
@@ -260,6 +265,84 @@ def test_hooks_swallow_exceptions(device, backends):
     # Should NOT raise — exception is logged and swallowed.
     pipe, _ = mgr.get_or_load("A")
     assert pipe is not None
+
+
+# ---------------------------------------------------------------------------
+# Transient-memory invariants (the small-RAM-pod OOM fixes).
+# ---------------------------------------------------------------------------
+
+
+def test_eviction_happens_before_disk_read(device):
+    """Cold load at capacity must free the slot BEFORE load_pipeline runs,
+    so the transient never holds evictee + new pipe at once (a Z-Image pipe
+    is ~20 GB of host RAM — holding two OOMs a 46 GB pod)."""
+    events: list[str] = []
+    backends = {"fake": FakeBackend(events=events)}
+    mgr = ModelManager(
+        backends, device,
+        max_gpu_models=1,
+        max_cpu_models=0,
+        on_evicted=lambda name: events.append(f"evict:{name}"),
+    )
+    _register(mgr, "A")
+    _register(mgr, "B")
+
+    mgr.get_or_load("A")
+    mgr.get_or_load("B")
+
+    assert events == ["load:A", "evict:A", "load:B"]
+
+
+def test_eviction_happens_before_disk_read_with_cpu_tier(device):
+    """Same ordering with a CPU tier: the cascade (GPU→CPU demote + CPU-cap
+    drop) completes before the new pipe is materialized."""
+    events: list[str] = []
+    backends = {"fake": FakeBackend(events=events)}
+    mgr = ModelManager(
+        backends, device,
+        max_gpu_models=1,
+        max_cpu_models=1,
+        on_evicted=lambda name: events.append(f"evict:{name}"),
+    )
+    _register(mgr, "A")
+    _register(mgr, "B")
+    _register(mgr, "C")
+
+    mgr.get_or_load("A")
+    mgr.get_or_load("B")  # A → CPU (no drop yet)
+    mgr.get_or_load("C")  # B → CPU, A dropped — BEFORE C's disk read
+
+    assert events == ["load:A", "load:B", "evict:A", "load:C"]
+
+
+def test_dropped_pipe_skips_cpu_roundtrip(device, backends):
+    """A pipe evicted straight to the void (max_cpu=0) must NOT transit
+    through pipe.to('cpu') — that would materialize a full pipe of host RAM
+    just to free it."""
+    mgr = ModelManager(backends, device, max_gpu_models=1, max_cpu_models=0)
+    _register(mgr, "A")
+    _register(mgr, "B")
+
+    pipe_a, _ = mgr.get_or_load("A")
+    assert pipe_a.transitions == ["cpu", "cuda:0"]  # initial load + promote
+
+    mgr.get_or_load("B")  # A dropped
+    # No trailing "cpu": the drop released the reference without a demote.
+    assert pipe_a.transitions == ["cpu", "cuda:0"]
+
+
+def test_demoted_pipe_still_moves_to_cpu(device, backends):
+    """Counterpart: a pipe parked on the CPU tier DOES go through .to('cpu')
+    — that transit is the tier's purpose (warm re-promotion)."""
+    mgr = ModelManager(backends, device, max_gpu_models=1, max_cpu_models=1)
+    _register(mgr, "A")
+    _register(mgr, "B")
+
+    pipe_a, _ = mgr.get_or_load("A")
+    mgr.get_or_load("B")  # A demoted to CPU tier
+
+    assert pipe_a.transitions == ["cpu", "cuda:0", "cpu"]
+    assert mgr.cpu_resident() == ["A"]
 
 
 # ---------------------------------------------------------------------------
