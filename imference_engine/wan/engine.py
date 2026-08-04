@@ -138,13 +138,18 @@ class WanEngine(BaseEngine):
 
     def _register_catalog(self, path) -> None:
         """Parse video rows + register variants. No ``_loaded`` guard — usable
-        from ``_setup()``."""
+        from ``_setup()``. Rows are validated against every KNOWN video arch (a
+        typo'd arch still fails loudly) but only this engine's archs register —
+        a shared models.yml may also carry e.g. minimax_h3 rows for the H3
+        engine."""
         from imference_engine.catalog.loader import load_video
+        from imference_engine.video import KNOWN_VIDEO_ARCHS
         from imference_engine.wan.presets import variant_from_catalog
-        configs = load_video(path, known_archs=set(self._backends))
+        configs = [c for c in load_video(path, known_archs=KNOWN_VIDEO_ARCHS)
+                   if c.arch in self._backends]
         for cfg in configs:
             self.register_variant(variant_from_catalog(cfg))
-        logger.info("Loaded video catalog %s (%d variants)", path, len(configs))
+        logger.info("Loaded video catalog %s (%d wan variants)", path, len(configs))
 
     def _manager_for(self, arch: str) -> ResidencyManager:
         """Return (building on first use) the residency manager for ``arch``."""

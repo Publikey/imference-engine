@@ -27,6 +27,16 @@ class VideoBuildContext:
     cache_dir: Optional[str] = None
     cdn_base: Optional[str] = None
     text_encoder_quant: str = "none"
+    # Optional arch-specific knobs (defaulted so existing backends are untouched).
+    offload_mode: Optional[str] = None
+    """Offload granularity for backends that distinguish more than on/off
+    (MiniMax-H3: "block" | "leaf" | "none"). None -> the backend's default;
+    ``enable_offload`` stays the coarse on/off signal for backends that only
+    know that much (Wan)."""
+    attention_backend: Optional[str] = None
+    """Transformer attention backend override (diffusers
+    ``set_attention_backend`` name, e.g. "_flash_3_hub" on Hopper). None -> keep
+    the default SDPA path."""
 
 
 class VideoBackend(Backend):

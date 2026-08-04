@@ -20,7 +20,8 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima, plus **Wan 2.2** text/image-to-video — each a first-class
+  Qwen-Image · Anima, plus **Wan 2.2** text/image-to-video and **MiniMax-H3**
+  joint video+audio (pending upstream release — see below) — each a first-class
   backend, none needing bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
   zero bytes from HuggingFace — immune to a repo going gated or disappearing.
@@ -57,7 +58,8 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-(and `runtime` = all seven), `wan`, `stage` (R2 staging, boto3), `dev`.
+(and `runtime` = all seven), `wan`, `minimax-h3` (dedicated venv — needs an
+unreleased diffusers, see its README), `stage` (R2 staging, boto3), `dev`.
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
@@ -135,8 +137,32 @@ res.fps, res.num_frames, res.seeds
 Wan is a **separate engine** (`WanEngine`) — a GGUF-MoE video stack whose
 residency model differs fundamentally from images (the GPU never holds more than
 the active A14B expert). Built-in variants: `wan22-t2v-lightning`,
-`wan22-i2v-lightning`, `smoothmix-i2v`, `dasiwa-i2v`. New architectures (e.g. LTX)
+`wan22-i2v-lightning`, `smoothmix-i2v`, `dasiwa-i2v`. New architectures
 plug in as a `VideoBackend` with a new `arch` — no engine fork.
+
+## Quickstart — MiniMax-H3 video + audio
+
+> ⚠️ Requires a diffusers build with the unreleased
+> [PR #14355](https://github.com/huggingface/diffusers/pull/14355) — dedicated
+> venv until it ships in a release; **not yet validated e2e**. See
+> [`imference_engine/minimax_h3/README.md`](imference_engine/minimax_h3/README.md).
+
+```python
+from imference_engine.minimax_h3 import MiniMaxH3Engine, MiniMaxH3RuntimeConfig
+
+engine = MiniMaxH3Engine(runtime=MiniMaxH3RuntimeConfig(device="auto")).load()
+res = engine.generate_video(prompt="a red fox trotting through snow", width=960, height=544)
+
+res.frames                    # list[PIL.Image] — fixed 24 fps
+res.audio, res.sample_rate    # (2, n) float32 stereo waveform + Hz — generated JOINTLY
+```
+
+MiniMax-H3 (33B DiT + Qwen3-VL-32B conditioner, Modular Diffusers) generates the
+soundtrack **with** the video in one denoising loop. One variant serves t2v and
+i2v (`image=` / `last_image=` keyframes). Guidance-distilled: no negative prompt,
+no guidance scale. int8 (torchao) by default — 24 GB VRAM / 64 GB RAM class with
+block-streamed offload; `validation/stage_h3_int8.py` stages a pre-quantized
+mirror so cold loads skip the ~90 GB bf16 download.
 
 ---
 
@@ -195,12 +221,22 @@ checkpoint's recipe lives with the checkpoint.
 · `guidance_scale=1.0` · `guidance_scale_2` (low-noise expert) · `fps=16`
 (metadata) · `seed`.
 
+### `MiniMaxH3Engine.generate_video(...) -> MediaResult`
+
+`prompt` (required) · `variant="minimax-h3"` · `image` / `last_image` (keyframes
+→ i2v; both optional) · `width` / `height` (omit both for the model's native
+768-short-edge canvas; multiples of 32) · `num_frames=124` (snaps to `17n+5`,
+5–15 s) · `num_steps` (variant default 50) · `seed`. Fixed 24 fps; no negative
+prompt / guidance (distilled).
+
 ### `MediaResult`
 
 `.images` / `.frames` (both alias `.media`) · `.seeds` · `.errors`
 (`list[GenerationError]`) · `.error` (first, or None) · `.ok` (no errors and ≥1
 frame). Video calls also carry `.fps` / `.num_frames` / `.width` / `.height` /
-`.variant`. `generate_video` never raises — failures come back as `errors`.
+`.variant`; MiniMax-H3 additionally fills `.audio` (`(2, n)` float32 stereo
+waveform) + `.sample_rate`. `generate_video` never raises — failures come back
+as `errors`.
 
 ---
 
@@ -236,7 +272,8 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [Chroma](imference_engine/chroma/README.md) ·
 [Qwen-Image](imference_engine/qwenimage/README.md) ·
 [Anima](imference_engine/anima/README.md) ·
-[Wan video](imference_engine/wan/README.md).
+[Wan video](imference_engine/wan/README.md) ·
+[MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
 ---
 
@@ -253,6 +290,10 @@ in [`docs/reference.md`](docs/reference.md):
 **Video (`WAN_*`)** — `WAN_DEVICE` · `WAN_PROFILE` (GGUF quant / `auto`) ·
 `WAN_MAX_RESIDENT` · `WAN_MODEL_CACHE` · `WAN_MODEL_CDN` · `WAN_TEXT_ENCODER_QUANT`
 · `WAN_VAE_TILING` · `WAN_ENABLE_OFFLOAD`.
+
+**Video (`H3_*`, MiniMax-H3)** — `H3_DEVICE` · `H3_PROFILE` (`int8`/`bf16`/`auto`)
+· `H3_OFFLOAD_MODE` (`block`/`leaf`/`none`/`auto`) · `H3_MAX_RESIDENT` ·
+`H3_MODEL_CACHE` · `H3_MODEL_CDN` · `H3_VAE_TILING` · `H3_ATTENTION_BACKEND`.
 
 **Global** — `HF_HUB_OFFLINE=1` (guardrail: any stray HF call fails loudly) ·
 `HF_HOME` (flat-tree fallback root) · `IMAGE_CDN_THREADS` / `WAN_CDN_THREADS` ·
@@ -305,7 +346,9 @@ imference_engine/
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager
     backends/wan.py    #   WanBackend (arch="wan")
+    backends/minimax_h3.py  # MiniMaxH3Backend (arch="minimax_h3")
   wan/                 # WanEngine, WanRuntimeConfig, presets (variants), loader
+  minimax_h3/          # MiniMaxH3Engine, config, presets, loader (video+audio)
   catalog/             # models.yml loader + GenerationDefaults precedence
   managers/            # batch.py (BatchSizer) + model.py (ModelManager LRU)
   prompting/           # weighted.py (sd-embed + BREAK)
@@ -326,6 +369,9 @@ diffusers 0.39; see [`validation/README.md`](validation/README.md).
 
 Wired and validated: the seven image backends, Wan 2.2 video, img2img,
 multi-tier residency, weighted prompts, the catalog loader + precedence chain,
-and offline/CDN resolution. **Not yet wired:** `LoRAManager` (image LoRA
-stacking — `loras=` is accepted but ignored), Qwen-Image-Edit, and quantized
-image builds. MPS (Apple Silicon) is untested.
+and offline/CDN resolution. **Wired, pending upstream to validate:** MiniMax-H3
+video+audio (needs the unreleased diffusers PR #14355 — structural tests pass,
+e2e blocked on a diffusers release; see its README). **Not yet wired:**
+`LoRAManager` (image LoRA stacking — `loras=` is accepted but ignored),
+Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va` /
+convrot-int4 loading. MPS (Apple Silicon) is untested.

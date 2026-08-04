@@ -7,6 +7,40 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ## [Unreleased]
 
+### Added
+
+- **MiniMax-H3 video backend** (`imference_engine.minimax_h3`) — joint
+  **video + audio** generation (33B DiT + Qwen3-VL-32B conditioner, Modular
+  Diffusers). New `MiniMaxH3Engine` / `MiniMaxH3RuntimeConfig` (`H3_*` env
+  contract), `MiniMaxH3Backend` as the second `VideoBackend` arch
+  (`minimax_h3`), one builtin variant `minimax-h3` serving **both** t2v and
+  i2v (`image`/`last_image` keyframes route the task — one resident pipeline
+  covers both). Quant profiles `int8` (torchao weight-only v2, on-the-fly or
+  from a pre-quantized mirror staged with the new
+  `validation/stage_h3_int8.py`) and `bf16`; offload modes `block` (24–32 GB
+  VRAM) / `leaf` (12–16 GB) / `none`. Engine-side mirrors of the model's
+  constraints (`17n+5` frames, 5–15 s @ 24 fps, mod-32 canvas) fail fast
+  before any weights load. New `[minimax-h3]` extra and
+  `validation/validate_h3.py` GPU harness.
+  ⚠️ **Requires unreleased diffusers** (PR #14355) — cannot coexist with the
+  repo-wide `diffusers==0.39.0` pin, so it runs in a dedicated venv until the
+  PR ships in a release; structurally tested, e2e validation pending upstream.
+  See `imference_engine/minimax_h3/README.md`.
+- **`MediaResult.audio` / `MediaResult.sample_rate`** — new optional fields
+  carrying a generated soundtrack (`(channels, n)` float32 numpy waveform +
+  Hz). `None` for images and video-only backends (Wan); non-breaking.
+- **`VideoBuildContext.offload_mode` / `.attention_backend`** — optional
+  arch-specific knobs (defaulted; existing backends unaffected).
+
+### Changed
+
+- **Shared video catalogs across engines.** Video rows are now validated
+  against every *known* video arch (`imference_engine.video.KNOWN_VIDEO_ARCHS`)
+  and each engine registers only its own — one `models.yml` can carry `wan`
+  and `minimax_h3` rows without either engine rejecting the other's (a typo'd
+  arch still fails loudly). Previously `WanEngine` raised `CatalogError` on any
+  non-wan video row.
+
 ## [0.3.2] — 2026-07-17
 
 Bugfix + hardware release: Anima loads on strict-offline workers again, and the
