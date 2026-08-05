@@ -371,7 +371,10 @@ Wired and validated: the seven image backends, Wan 2.2 video, img2img,
 multi-tier residency, weighted prompts, the catalog loader + precedence chain,
 and offline/CDN resolution. **Wired, pending upstream to validate:** MiniMax-H3
 video+audio (needs the unreleased diffusers PR #14355 — structural tests pass,
-e2e blocked on a diffusers release; see its README). **Not yet wired:**
-`LoRAManager` (image LoRA stacking — `loras=` is accepted but ignored),
-Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va` /
-convrot-int4 loading. MPS (Apple Silicon) is untested.
+e2e blocked on a diffusers release; see its README), including the offline
+converter for ComfyUI/civitai int8-ConvRot single-files
+(`validation/stage_h3_from_comfy.py` — ~67 GB downloaded instead of ~124 GB).
+**Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
+but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
+/ int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is
+untested.

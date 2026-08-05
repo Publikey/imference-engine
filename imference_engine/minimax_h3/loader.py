@@ -72,6 +72,12 @@ _TEXT_ENCODER_SKIP = [
     "model.language_model.norm", "lm_head",
 ]
 
+# Components the modular index declares but this engine NEVER loads: the
+# Ref2VA partition is deliberately out of scope (presets.py), and its subfolder
+# is never mirrored — left in ``load_components``' hands it would stream the
+# ~66 GB bf16 partition straight from the Hub spec.
+_EXCLUDED_COMPONENTS = ("transformer_ref",)
+
 _INSTALL_HINT = (
     "MiniMax-H3 requires a diffusers build that includes PR #14355 (not in any "
     "release yet). Install it in a dedicated environment with:\n"
@@ -184,7 +190,9 @@ def _quantize_large_components(pipe: Any, local_dir: str) -> None:
         local_dir, subfolder="transformer", dtype=torch.bfloat16,
         quantization_config=TorchAoConfig(
             Int8WeightOnlyConfig(version=2), modules_to_not_convert=_TRANSFORMER_SKIP),
-        low_cpu_mem_usage=False,  # upstream: required for the int8-v2 load path
+        # NOTE: low_cpu_mem_usage must stay at its default (True) — the current
+        # PR #14355 head REJECTS low_cpu_mem_usage=False with quantization
+        # (earlier drafts of the PR docs said the opposite).
     )
     text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
         local_dir, subfolder="text_encoder", dtype=torch.bfloat16,
@@ -207,6 +215,9 @@ def _load_components(pipe: Any, local_dir: str) -> None:
 
     names, paths = [], {}
     for name in pipe.null_component_names:
+        if name in _EXCLUDED_COMPONENTS:
+            logger.info("MiniMax-H3 component %r is out of scope — not loaded", name)
+            continue
         spec = pipe.get_component_spec(name)
         src = getattr(spec, "pretrained_model_name_or_path", None)
         if not src or spec.default_creation_method != "from_pretrained":

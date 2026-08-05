@@ -110,9 +110,13 @@ def main() -> int:
         stem = outdir / f"h3_{'i2v' if (image or last_image) else 't2v'}_{args.seed}"
         res.frames[len(res.frames) // 2].save(f"{stem}_frame.png")
         try:
+            import torch
             from diffusers.utils.export_utils import encode_video
+            # MediaResult carries a portable numpy waveform; encode_video
+            # torch.clip()s its audio, so hand it a tensor.
             encode_video(res.frames, fps=res.fps, output_path=f"{stem}.mp4",
-                         audio=res.audio, audio_sample_rate=res.sample_rate)
+                         audio=torch.from_numpy(res.audio),
+                         audio_sample_rate=res.sample_rate)
             print(f"wrote {stem}.mp4 (with soundtrack) + {stem}_frame.png")
         except Exception as e:  # noqa: BLE001 — mux is not what we validate
             print(f"note: mp4 mux failed ({e}); frames + audio still validated")

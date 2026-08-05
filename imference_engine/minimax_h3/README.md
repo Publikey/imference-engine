@@ -1,13 +1,14 @@
 # MiniMax-H3 backend configuration
 
-> ⚠️ **Built against unreleased upstream — NOT yet validated e2e.** MiniMax-H3's
-> diffusers integration is [PR #14355](https://github.com/huggingface/diffusers/pull/14355)
-> (branch `minimax-h3`), released in **no** diffusers version. This backend was
-> written against that branch's blocks/doc and its structural tests pass, but the
-> end-to-end GPU validation (`validation/validate_h3.py`) can only run once the
-> PR is installable next to a supported stack. Until then the `[minimax-h3]`
-> extra **cannot coexist** with the repo-wide `diffusers==0.39.0` pin — run it in
-> a dedicated venv/process:
+> ⚠️ **Built against unreleased upstream.** MiniMax-H3's diffusers integration
+> is [PR #14355](https://github.com/huggingface/diffusers/pull/14355) (branch
+> `minimax-h3`), released in **no** diffusers version. **Validated e2e
+> 2026-08-05** on the PR head (`0.40.0.dev0`, torch 2.12/cu126, RTX 6000 Ada
+> 48 GB): t2va renders + soundtrack from a ComfyUI-sourced int8 tree
+> (`stage_h3_from_comfy.py`) pass `validation/validate_h3.py` — ~14.9 s/step
+> at 960×544×124f under `block` offload, ~21 GB VRAM. The PR head is a moving
+> target until release; the `[minimax-h3]` extra still **cannot coexist** with
+> the repo-wide `diffusers==0.39.0` pin — run it in a dedicated venv/process:
 >
 > ```bash
 > python -m venv .venv-h3 && . .venv-h3/bin/activate
@@ -87,10 +88,12 @@ res.sample_rate   # Hz
 # i2v: start keyframe (canvas follows its aspect when width/height omitted)
 res = engine.generate_video(prompt="the fox leaps over a fallen log", image=pil_img)
 
-# mux (caller-side, e.g. with diffusers' util)
+# mux (caller-side, e.g. with diffusers' util — needs `pip install av`;
+# encode_video wants a torch waveform, MediaResult carries portable numpy)
+import torch
 from diffusers.utils.export_utils import encode_video
 encode_video(res.frames, fps=res.fps, output_path="fox.mp4",
-             audio=res.audio, audio_sample_rate=res.sample_rate)
+             audio=torch.from_numpy(res.audio), audio_sample_rate=res.sample_rate)
 ```
 
 ## Catalog
@@ -113,7 +116,45 @@ pre-quantized mirror or pin a step recipe:
 Target hardware **24 GB VRAM / 64 GB RAM** → `int8` + `block` offload. Weights
 come from a **pre-quantized R2 mirror**: run `validation/stage_h3_int8.py` once
 on a big-RAM box (quantizes sequentially on CPU, serializes, uploads, ~50 GB),
-then point a catalog row at the mirror repo id with `H3_MODEL_CDN` set. The
-Civitai/ComfyUI "convrot" single-file quants (int4/nvfp4) are **not** loadable
-by diffusers (no `from_single_file` in the PR) — a convrot→diffusers converter
-is a possible V2 if 12 GB cards become a target.
+then point a catalog row at the mirror repo id with `H3_MODEL_CDN` set.
+
+## ComfyUI/civitai single-file checkpoints
+
+The community stack (Comfy-Org/MiniMax-H3 on the Hub, mirrored on civitai as
+"Minimax H3 INT8/INT4 ConvRot") ships H3 as four single `.safetensors` files —
+**~67 GB at int8 versus ~124 GB for the official bf16 repo**, and desktop users
+running ComfyUI often have them on disk already. Diffusers cannot load them
+directly (no `from_single_file` in the PR, and ConvRot/NVFP4 are ComfyUI
+formats), so the engine keeps consuming modular trees and
+[`validation/stage_h3_from_comfy.py`](../../validation/stage_h3_from_comfy.py)
+converts the stack **offline, once** (streaming, bounded RAM):
+
+```bash
+python validation/stage_h3_from_comfy.py \
+    --transformer  minimax_h3_fl2va_int8_convrot.safetensors  \  # ~34 GB
+    --text-encoder qwen3vl_32b_minimax_h3_int8_convrot.safetensors \  # ~27 GB
+    --video-vae    minimax_h3_video_vae_fp16.safetensors \
+    --audio-vae    minimax_h3_audio_vae_fp32.safetensors \
+    --profile int8            # torchao-requantized tree (~35 GB); or bf16 (~125 GB)
+```
+
+ConvRot int8 dequantizes exactly (deterministic block-Hadamard, see
+`minimax_h3/comfy_convert.py`); the config skeleton (tokenizer, schedulers,
+latents stats) is pulled from the official repo (a few MB). Caveats the script
+enforces or documents:
+
+- **"Pruned" DiT files are refused** — they swap the timestep embedder + full
+  AdaLN for a low-rank `adaln_t_table`, an architecture the diffusers model
+  cannot represent. Use the non-pruned `int8_convrot` file (~34 GB).
+- int4 / nvfp4 files need ComfyUI kernels — int8 (or bf16) sources only.
+- The Comfy Qwen3-VL keeps only the 50 decoder layers H3 reads. A stack of
+  *exactly* 50 layers cannot serve `hidden_states[50]` through transformers
+  (the last entry is post-norm, and the upstream encoder rejects it), so the
+  staged checkpoint carries **one dummy 51st layer** (ones-norms, ~1e-6-noise
+  projections): `hidden_states[50]` is then the dummy layer's input — the raw
+  layer-49 output H3 conditions on — and everything downstream of the dummy
+  layer (final norm, lm_head) is never read. Config: 51 layers, tied
+  embeddings.
+- `--profile int8` quantizes a second time on top of ConvRot's ~0.5-2 %/layer
+  error — no visible degradation in validation renders, but judge quality on
+  your own content before promoting a mirror built this way.

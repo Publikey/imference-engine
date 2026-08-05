@@ -36,8 +36,12 @@ def test_resolve_falls_back_to_cpu_without_torch(monkeypatch):
             raise ImportError("simulated missing torch")
         return original_import(name, *args, **kwargs)
 
-    # Pop any cached torch import so the patched __import__ gets the call
-    sys.modules.pop("torch", None)
+    # Drop any cached torch import so the patched __import__ gets the call.
+    # monkeypatch.delitem restores the real module afterwards — a bare
+    # sys.modules.pop would leave torch un-reimportable for the rest of the
+    # session on boxes where it IS installed (re-importing torch after a pop
+    # raises RuntimeError), failing every later torch-using test.
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     assert resolve_device("auto") == Device(kind="cpu")
@@ -75,7 +79,8 @@ def test_backend_without_torch(monkeypatch):
             raise ImportError("simulated missing torch")
         return original_import(name, *args, **kwargs)
 
-    sys.modules.pop("torch", None)
+    # delitem, not pop: restore the real module afterwards (see above).
+    monkeypatch.delitem(sys.modules, "torch", raising=False)
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     assert not is_rocm()

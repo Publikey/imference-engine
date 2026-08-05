@@ -103,7 +103,6 @@ def quantize_tree(src_dir: str, out_dir: str) -> None:
         src_dir, subfolder="transformer", dtype=torch.bfloat16,
         quantization_config=TorchAoConfig(
             Int8WeightOnlyConfig(version=2), modules_to_not_convert=_TRANSFORMER_SKIP),
-        low_cpu_mem_usage=False,
     )
     _save_quantized(transformer, os.path.join(out_dir, "transformer"))
     del transformer

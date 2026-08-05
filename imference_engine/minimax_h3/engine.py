@@ -1,9 +1,9 @@
 """MiniMaxH3Engine — public entry point for MiniMax-H3 joint video+audio.
 
 Transport-agnostic, like ``WanEngine``: returns PIL frames + a raw stereo
-waveform + metadata; the caller muxes (e.g. diffusers'
-``encode_video(frames, fps=24, audio=res.audio, audio_sample_rate=res.sample_rate)``)
-and uploads. Single-threaded and stateful; concurrent callers must serialize.
+waveform + metadata; the caller muxes (e.g. diffusers' ``encode_video(frames,
+fps=24, audio=torch.from_numpy(res.audio), audio_sample_rate=res.sample_rate)``
+— it clips the waveform with torch ops, so tensor in) and uploads. Single-threaded and stateful; concurrent callers must serialize.
 
     engine = MiniMaxH3Engine(runtime=MiniMaxH3RuntimeConfig(...)).load()
     res = engine.generate_video(prompt="a red fox trotting through snow")

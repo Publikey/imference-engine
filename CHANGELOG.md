@@ -24,8 +24,22 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   `validation/validate_h3.py` GPU harness.
   ⚠️ **Requires unreleased diffusers** (PR #14355) — cannot coexist with the
   repo-wide `diffusers==0.39.0` pin, so it runs in a dedicated venv until the
-  PR ships in a release; structurally tested, e2e validation pending upstream.
+  PR ships in a release. **Validated e2e 2026-08-05** on the PR head
+  (t2va render + soundtrack from a ComfyUI-sourced int8 tree; ~14.9 s/step at
+  960×544×124f, ~21 GB VRAM under `block` offload, RTX 6000 Ada).
   See `imference_engine/minimax_h3/README.md`.
+- **ComfyUI/civitai MiniMax-H3 checkpoint support** (offline conversion) — new
+  `imference_engine/minimax_h3/comfy_convert.py` (pure-torch: exact ConvRot
+  int8 dequantization via the deterministic block-Hadamard, original-layout →
+  diffusers key mapping vendored from the PR's convert script, audio-VAE
+  weight-norm resynthesis) and `validation/stage_h3_from_comfy.py`, which
+  builds a loader-ready modular tree from the four Comfy-Org/civitai
+  single-files (**~67 GB downloaded instead of ~124 GB**; `--profile int8`
+  emits a ~35 GB torchao-requantized tree, `bf16` a full-fidelity one). The
+  engine itself is unchanged — it keeps consuming modular trees. "Pruned" DiT
+  repackages (low-rank `adaln_t_table` architecture) and int4/nvfp4 files are
+  detected and refused with an explanation. Covered by GPU-free unit tests
+  (`tests/test_h3_comfy_convert.py`).
 - **`MediaResult.audio` / `MediaResult.sample_rate`** — new optional fields
   carrying a generated soundtrack (`(channels, n)` float32 numpy waveform +
   Hz). `None` for images and video-only backends (Wan); non-breaking.
@@ -40,6 +54,24 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   and `minimax_h3` rows without either engine rejecting the other's (a typo'd
   arch still fails loudly). Previously `WanEngine` raised `CatalogError` on any
   non-wan video row.
+
+### Fixed
+
+- **MiniMax-H3 loader: `transformer_ref` no longer streamed from the Hub.**
+  `_load_components` passed every null component to `load_components`,
+  including the out-of-scope Ref2VA partition whose spec points at the hub
+  repo — a cold load would silently start downloading its ~66 GB. Now
+  explicitly excluded.
+- **MiniMax-H3 int8 load path follows current PR #14355 semantics.** The PR
+  head *rejects* `low_cpu_mem_usage=False` with a quantization config (earlier
+  drafts required it); the loader and `stage_h3_int8.py` now leave it at its
+  default.
+- **Test-suite hygiene on torch-installed boxes.** Two `tests/test_device.py`
+  cases popped `torch` out of `sys.modules` without restoring it; torch cannot
+  be re-imported in the same process, so on machines where it *is* installed
+  every later torch-using test failed (40+ failures). Now uses
+  `monkeypatch.delitem`, which restores. Also normalized a Windows
+  path-separator assertion in `tests/test_offline_snapshot.py`.
 
 ## [0.3.2] — 2026-07-17
 
