@@ -147,6 +147,11 @@ enforces or documents:
   AdaLN for a low-rank `adaln_t_table`, an architecture the diffusers model
   cannot represent. Use the non-pruned `int8_convrot` file (~34 GB).
 - int4 / nvfp4 files need ComfyUI kernels — int8 (or bf16) sources only.
+  A torchao-int4 staging profile (the would-be ~64 GB-RAM desktop tier; the
+  quant barely moves VRAM under offload, it moves host RAM) is **blocked as of
+  torchao 0.18**: `Int4WeightOnlyConfig` v1 is defunct and v2 requires `mslk`,
+  an unreleased Meta kernel library. Re-check when torchao ships int4-v2
+  without it.
 - The Comfy Qwen3-VL keeps only the 50 decoder layers H3 reads. A stack of
   *exactly* 50 layers cannot serve `hidden_states[50]` through transformers
   (the last entry is post-norm, and the upstream encoder rejects it), so the
