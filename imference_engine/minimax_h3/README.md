@@ -51,7 +51,7 @@ routes by which inputs the request carries, so there is a single builtin variant
 | scheduler | Two `MiniMaxH3Scheduler`s from the repo, untouched. No `shift` knob in V1. |
 | Frames / duration | Fixed **24 fps**; `num_frames` snaps up to the next `17n+5`; the **aligned** duration must stay in 5–15 s (aligned counts 124…345). Checked engine-side before any weight loads. |
 | Canvas | `width`/`height` omitted → the model's native 768-short-edge canvas from the keyframe's (or 16:9) aspect. When set: multiples of 32. **960×544 is ~2.3× faster per step** than the native 1344×768. |
-| steps | `num_inference_steps` counts sigma grid points *including the terminal 0* (one model eval less). Default 50 — un-validated placeholder, refine via catalog `num_steps` once measured. |
+| steps | `num_inference_steps` counts sigma grid points *including the terminal 0* (one model eval less). Default 50. **Measured** (960×544×124f, int8, RTX 6000 Ada): 30 steps is frame-quality-equivalent to 50 at ~65 % of the cost; 20 still renders well with slightly softer micro-texture (~46 %). Pin `num_steps: 30` in a catalog row for the fast recipe. |
 | Audio | Always generated. `MediaResult.audio` = `(2, n)` float32 numpy stereo waveform, `MediaResult.sample_rate` in Hz. Muxing is the caller's: `encode_video(res.frames, fps=24, audio=res.audio, audio_sample_rate=res.sample_rate)`. |
 | Seed | One CPU generator, three draws (keyframe noise → video noise → audio noise) — same seed = same video **and** soundtrack. |
 | offline / CDN | Same contract as every backend: `H3_MODEL_CDN` + flat tree (`namespace="video"`, sentinel `modular_model_index.json`). |
@@ -156,5 +156,8 @@ enforces or documents:
   layer (final norm, lm_head) is never read. Config: 51 layers, tied
   embeddings.
 - `--profile int8` quantizes a second time on top of ConvRot's ~0.5-2 %/layer
-  error — no visible degradation in validation renders, but judge quality on
-  your own content before promoting a mirror built this way.
+  error. **A/B-validated** (same seed, 50 steps, 960×544): the int8 and bf16
+  trees render visually identical frames, and int8 is even marginally faster
+  (14.85 vs 15.79 s/step — block-offload streaming overlaps compute either
+  way) at half the host RAM (~75 vs ~103 GB) and disk (63 vs 117 GB). int8 is
+  the production profile; bf16 is the fidelity/archival reference.

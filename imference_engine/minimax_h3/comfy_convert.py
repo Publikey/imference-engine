@@ -465,7 +465,9 @@ def convert_text_encoder_file(
 # Video VAE key conversion (Comfy file keeps the raw per-head interleave)
 # ---------------------------------------------------------------------------
 
-VIDEO_VAE_DROPPED_KEYS = ("decoder.mask_token",)
+# mask_token: training-only buffer the port does not carry. latents_mean/std:
+# config-carried stats (vae/config.json) the Comfy file also stores as tensors.
+VIDEO_VAE_DROPPED_KEYS = ("decoder.mask_token", "latents_mean", "latents_std")
 
 
 def _rename_video_vae_key(source_key: str) -> str:

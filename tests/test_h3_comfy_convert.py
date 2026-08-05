@@ -335,6 +335,8 @@ def test_video_vae_renames_and_transforms():
         assert [k for k, _ in out] == [expected], src
 
     assert cc.convert_video_vae_key("decoder.mask_token", t, heads, head_dim) == []
+    assert cc.convert_video_vae_key("latents_mean", t, heads, head_dim) == []
+    assert cc.convert_video_vae_key("latents_std", t, heads, head_dim) == []
 
 
 def test_video_vae_qkv_deinterleaves_then_splits():

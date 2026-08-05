@@ -17,10 +17,12 @@ from dataclasses import dataclass
 # only the FL2VA half is ever fetched — see loader._H3_PATTERNS).
 OFFICIAL_REPO = "MiniMaxAI/MiniMax-H3"
 
-# H3 is guidance-distilled but NOT step-distilled; there is no documented step
-# recipe yet, so we start at the flow-matching de-facto standard. NOTE: H3
-# counts sigma grid points terminal-zero included, so this runs num_steps - 1
-# model evaluations. Refine per-variant (catalog) once validated numbers exist.
+# H3 is guidance-distilled but NOT step-distilled; 50 is the flow-matching
+# de-facto standard and stays the safe default. Validated 2026-08-05 (960x544,
+# int8): 30 steps is frame-quality-equivalent at ~65 % of the cost, 20 slightly
+# softer — pin `num_steps` per catalog row to opt into the faster recipes.
+# NOTE: H3 counts sigma grid points terminal-zero included, so this runs
+# num_steps - 1 model evaluations.
 DEFAULT_NUM_STEPS = 50
 
 
