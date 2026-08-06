@@ -75,7 +75,9 @@ def test_offline_trusts_sentinel_without_download(tmp_path, monkeypatch):
 
     out = local_repo_dir(REPO, ["*"], str(cache), namespace="image")
     assert calls == []  # trusted, not downloaded
-    assert out == str(d)
+    # normpath: local_repo_dir joins the repo id with its "/" separator, which
+    # on Windows compares unequal to the pathlib-built expectation.
+    assert os.path.normpath(out) == str(d)
 
 
 def test_marker_beats_offline_check(tmp_path, monkeypatch):

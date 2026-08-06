@@ -38,6 +38,13 @@ class MediaResult:
     for ``kind="video"`` it's the frames of the single clip (empty on failure).
     ``seeds`` is N seeds (image) or ``[seed]`` (video). ``fps`` / ``num_frames`` /
     ``width`` / ``height`` / ``variant`` are video metadata (None for image).
+
+    ``audio`` / ``sample_rate`` carry the soundtrack for backends that generate
+    one jointly with the video (MiniMax-H3); both stay None for images, for
+    video-only backends (Wan) and on failure. Same engine/transport split as the
+    frames: the engine returns the raw waveform, the caller muxes — e.g.
+    ``diffusers.utils.export_utils.encode_video(frames, fps=..., audio=result.audio,
+    audio_sample_rate=result.sample_rate)``.
     """
 
     kind: str  # "image" | "video"
@@ -50,6 +57,12 @@ class MediaResult:
     width: Optional[int] = None
     height: Optional[int] = None
     variant: Optional[str] = None
+    # Joint-audio metadata (None unless the backend generates sound — MiniMax-H3).
+    audio: Optional[object] = None
+    """Generated soundtrack as a float waveform of shape ``(channels, num_samples)``
+    (numpy array; stereo for MiniMax-H3), or None."""
+    sample_rate: Optional[int] = None
+    """Sample rate of ``audio`` in Hz, or None."""
 
     # Modality-appropriate aliases — both point at ``media``.
     @property

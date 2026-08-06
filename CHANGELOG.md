@@ -7,6 +7,72 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ## [Unreleased]
 
+### Added
+
+- **MiniMax-H3 video backend** (`imference_engine.minimax_h3`) — joint
+  **video + audio** generation (33B DiT + Qwen3-VL-32B conditioner, Modular
+  Diffusers). New `MiniMaxH3Engine` / `MiniMaxH3RuntimeConfig` (`H3_*` env
+  contract), `MiniMaxH3Backend` as the second `VideoBackend` arch
+  (`minimax_h3`), one builtin variant `minimax-h3` serving **both** t2v and
+  i2v (`image`/`last_image` keyframes route the task — one resident pipeline
+  covers both). Quant profiles `int8` (torchao weight-only v2, on-the-fly or
+  from a pre-quantized mirror staged with the new
+  `validation/stage_h3_int8.py`) and `bf16`; offload modes `block` (24–32 GB
+  VRAM) / `leaf` (12–16 GB) / `none`. Engine-side mirrors of the model's
+  constraints (`17n+5` frames, 5–15 s @ 24 fps, mod-32 canvas) fail fast
+  before any weights load. New `[minimax-h3]` extra and
+  `validation/validate_h3.py` GPU harness.
+  ⚠️ **Requires unreleased diffusers** (PR #14355) — cannot coexist with the
+  repo-wide `diffusers==0.39.0` pin, so it runs in a dedicated venv until the
+  PR ships in a release. **Validated e2e 2026-08-05** on the PR head
+  (t2va render + soundtrack from a ComfyUI-sourced int8 tree; ~14.9 s/step at
+  960×544×124f, ~21 GB VRAM under `block` offload, RTX 6000 Ada).
+  See `imference_engine/minimax_h3/README.md`.
+- **ComfyUI/civitai MiniMax-H3 checkpoint support** (offline conversion) — new
+  `imference_engine/minimax_h3/comfy_convert.py` (pure-torch: exact ConvRot
+  int8 dequantization via the deterministic block-Hadamard, original-layout →
+  diffusers key mapping vendored from the PR's convert script, audio-VAE
+  weight-norm resynthesis) and `validation/stage_h3_from_comfy.py`, which
+  builds a loader-ready modular tree from the four Comfy-Org/civitai
+  single-files (**~67 GB downloaded instead of ~124 GB**; `--profile int8`
+  emits a ~35 GB torchao-requantized tree, `bf16` a full-fidelity one). The
+  engine itself is unchanged — it keeps consuming modular trees. "Pruned" DiT
+  repackages (low-rank `adaln_t_table` architecture) and int4/nvfp4 files are
+  detected and refused with an explanation. Covered by GPU-free unit tests
+  (`tests/test_h3_comfy_convert.py`).
+- **`MediaResult.audio` / `MediaResult.sample_rate`** — new optional fields
+  carrying a generated soundtrack (`(channels, n)` float32 numpy waveform +
+  Hz). `None` for images and video-only backends (Wan); non-breaking.
+- **`VideoBuildContext.offload_mode` / `.attention_backend`** — optional
+  arch-specific knobs (defaulted; existing backends unaffected).
+
+### Changed
+
+- **Shared video catalogs across engines.** Video rows are now validated
+  against every *known* video arch (`imference_engine.video.KNOWN_VIDEO_ARCHS`)
+  and each engine registers only its own — one `models.yml` can carry `wan`
+  and `minimax_h3` rows without either engine rejecting the other's (a typo'd
+  arch still fails loudly). Previously `WanEngine` raised `CatalogError` on any
+  non-wan video row.
+
+### Fixed
+
+- **MiniMax-H3 loader: `transformer_ref` no longer streamed from the Hub.**
+  `_load_components` passed every null component to `load_components`,
+  including the out-of-scope Ref2VA partition whose spec points at the hub
+  repo — a cold load would silently start downloading its ~66 GB. Now
+  explicitly excluded.
+- **MiniMax-H3 int8 load path follows current PR #14355 semantics.** The PR
+  head *rejects* `low_cpu_mem_usage=False` with a quantization config (earlier
+  drafts required it); the loader and `stage_h3_int8.py` now leave it at its
+  default.
+- **Test-suite hygiene on torch-installed boxes.** Two `tests/test_device.py`
+  cases popped `torch` out of `sys.modules` without restoring it; torch cannot
+  be re-imported in the same process, so on machines where it *is* installed
+  every later torch-using test failed (40+ failures). Now uses
+  `monkeypatch.delitem`, which restores. Also normalized a Windows
+  path-separator assertion in `tests/test_offline_snapshot.py`.
+
 ## [0.3.2] — 2026-07-17
 
 Bugfix + hardware release: Anima loads on strict-offline workers again, and the

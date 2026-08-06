@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imference-engine"
-version = "0.3.2"
+version = "0.3.4"
 description = "Unified Diffusers-based inference engine: SDXL, SD 1.5, Z-Image, FLUX, Chroma, Qwen-Image, Anima, and Wan video behind one API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -195,6 +195,26 @@ wan = [
     "huggingface_hub>=0.24",
     "imageio>=2.34",
     "imageio-ffmpeg>=0.5",
+    "requests>=2.31",
+]
+
+# MiniMax-H3 joint video+audio stack (33B DiT + Qwen3-VL-32B conditioner,
+# torchao int8). diffusers is DELIBERATELY ABSENT from this extra: H3 needs
+# diffusers PR #14355, which no release carries yet — it CANNOT satisfy the
+# repo-wide ==0.39.0 pin, so until the PR ships in a release this extra must
+# live in a DEDICATED venv/process with:
+#   pip install git+https://github.com/huggingface/diffusers.git@refs/pull/14355/head
+# When the PR is released: pin that diffusers here, re-validate, and (if the
+# release also passes the image suite) fold it into the repo-wide pin.
+minimax-h3 = [
+    "torch>=2.6",
+    "transformers>=5.1",
+    "accelerate>=1.12",
+    "torchao>=0.10",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
 
