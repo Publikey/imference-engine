@@ -43,6 +43,10 @@ dependencies = [
 # flux, chroma, qwenimage, anima) are VALIDATED end-to-end on 0.39 (RTX PRO 5000
 # Blackwell, torch 2.12) via validation/. Wan was validated on 0.38 and still
 # wants a re-check on 0.39.
+# diffusers 0.40.0 is OUT (it ships H3's PR #14355 — [minimax-h3] below already
+# pins it). Fold the repo-wide pin up to 0.40.0 only after the image suite
+# re-validates on it (0.40 changes mixed-rank LoRA scaling, drops Flax, and
+# deprecates torch_dtype -> dtype — re-check the LoRA hooks in particular).
 #
 # Per-backend extras: each image backend has its own named runtime, mirroring
 # [wan]. NOTE: [sdxl] and [zimage] are byte-for-byte IDENTICAL — Z-Image rides
@@ -199,15 +203,19 @@ wan = [
 ]
 
 # MiniMax-H3 joint video+audio stack (33B DiT + Qwen3-VL-32B conditioner,
-# torchao int8). diffusers is DELIBERATELY ABSENT from this extra: H3 needs
-# diffusers PR #14355, which no release carries yet — it CANNOT satisfy the
-# repo-wide ==0.39.0 pin, so until the PR ships in a release this extra must
-# live in a DEDICATED venv/process with:
-#   pip install git+https://github.com/huggingface/diffusers.git@refs/pull/14355/head
-# When the PR is released: pin that diffusers here, re-validate, and (if the
-# release also passes the image suite) fold it into the repo-wide pin.
+# torchao int8). H3's diffusers integration (PR #14355) SHIPPED in diffusers
+# 0.40.0, so the extra now pins that release (previously diffusers was
+# deliberately absent and installed from the PR head in a dedicated venv).
+# 0.40.0 still cannot satisfy the repo-wide ==0.39.0 pin, so H3 KEEPS its
+# dedicated venv/process until the image suite re-validates on 0.40 and the
+# repo-wide pin is folded up to match (see the note above [sdxl]). H3 was
+# validated e2e on the PR head that became 0.40.0 (2026-08-05); re-run
+# validation/validate_h3.py on this release pin before shipping. Released
+# 0.40.0 dropped the PR head's torch.nn.functional.ScalingType import, so
+# torch>=2.6 is honest again (prod stays on the validated 2.11+/cu128 combo).
 minimax-h3 = [
     "torch>=2.6",
+    "diffusers==0.40.0",
     "transformers>=5.1",
     "accelerate>=1.12",
     "torchao>=0.10",

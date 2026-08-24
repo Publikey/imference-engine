@@ -3,12 +3,13 @@
 validate.py / validate_wan.py).
 
 Loads the builtin variant, renders a short clip + its soundtrack, muxes an mp4,
-exports a sample frame, and reports pass/fail. NOT yet run end-to-end: MiniMax-H3
-needs the unreleased diffusers PR #14355 (see imference_engine/minimax_h3/README.md)
-— this harness is what will validate the backend the day that lands.
+exports a sample frame, and reports pass/fail. Passed e2e 2026-08-05 on the
+PR #14355 head that became diffusers 0.40.0 (see
+imference_engine/minimax_h3/README.md) — re-run once on the released 0.40.0
+pin to confirm the backend on it.
 
-Usage (GPU instance, dedicated venv: `pip install -e ".[minimax-h3,dev]"` + the
-PR diffusers build):
+Usage (GPU instance, dedicated venv: `pip install -e ".[minimax-h3,dev]"` —
+pins diffusers==0.40.0):
 
     # text-to-video+audio (small fast canvas; native canvas ~2.3x slower/step)
     python validation/validate_h3.py

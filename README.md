@@ -58,8 +58,9 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-(and `runtime` = all seven), `wan`, `minimax-h3` (dedicated venv — needs an
-unreleased diffusers, see its README), `stage` (R2 staging, boto3), `dev`.
+(and `runtime` = all seven), `wan`, `minimax-h3` (dedicated venv — pins
+diffusers 0.40.0 while the rest of the repo is on 0.39.0, see its README),
+`stage` (R2 staging, boto3), `dev`.
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
@@ -142,9 +143,10 @@ plug in as a `VideoBackend` with a new `arch` — no engine fork.
 
 ## Quickstart — MiniMax-H3 video + audio
 
-> ⚠️ Requires a diffusers build with the unreleased
-> [PR #14355](https://github.com/huggingface/diffusers/pull/14355) — dedicated
-> venv until it ships in a release; **not yet validated e2e**. See
+> ⚠️ Requires diffusers ≥ 0.40.0 ([PR #14355](https://github.com/huggingface/diffusers/pull/14355)
+> shipped in 0.40.0; the `[minimax-h3]` extra pins it) — dedicated venv until
+> the repo-wide 0.39 pin folds up to 0.40. Validated e2e on the PR head that
+> became 0.40.0. See
 > [`imference_engine/minimax_h3/README.md`](imference_engine/minimax_h3/README.md).
 
 ```python
@@ -369,10 +371,11 @@ diffusers 0.39; see [`validation/README.md`](validation/README.md).
 
 Wired and validated: the seven image backends, Wan 2.2 video, img2img,
 multi-tier residency, weighted prompts, the catalog loader + precedence chain,
-and offline/CDN resolution. **Wired, pending upstream to validate:** MiniMax-H3
-video+audio (needs the unreleased diffusers PR #14355 — structural tests pass,
-e2e blocked on a diffusers release; see its README), including the offline
-converter for ComfyUI/civitai int8-ConvRot single-files
+and offline/CDN resolution. **Wired, validated on the pre-release head:**
+MiniMax-H3 video+audio (its diffusers integration, PR #14355, shipped in
+diffusers 0.40.0 — validated e2e 2026-08-05 on the PR head that became that
+release; re-run `validate_h3.py` on the 0.40.0 pin; see its README), including
+the offline converter for ComfyUI/civitai int8-ConvRot single-files
 (`validation/stage_h3_from_comfy.py` — ~67 GB downloaded instead of ~124 GB).
 **Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
 but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`

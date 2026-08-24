@@ -48,6 +48,19 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Changed
 
+- **MiniMax-H3 now rides a *released* diffusers: `[minimax-h3]` pins
+  `diffusers==0.40.0`.** PR #14355 shipped in diffusers 0.40.0 (2026-08), so
+  the extra now carries the pin instead of documenting a
+  `pip install git+...@refs/pull/14355/head` side-install, and the loader's
+  guard message points at the release. Supersedes the "requires unreleased
+  diffusers" warning on the H3 entry below. Two things did **not** change:
+  H3 still needs its dedicated venv (the repo-wide pin stays `0.39.0` until
+  the image suite is re-validated on 0.40 and folded up — 0.40 changes
+  mixed-rank LoRA scaling and deprecates `torch_dtype`), and prod stays on
+  the validated torch 2.11+/cu128 combo even though released 0.40.0 dropped
+  the PR head's `torch.nn.functional.ScalingType` import (the source of the
+  old torch>=2.10 floor). H3 was validated e2e on the PR head that became
+  0.40.0; re-run `validation/validate_h3.py` on the release pin.
 - **Shared video catalogs across engines.** Video rows are now validated
   against every *known* video arch (`imference_engine.video.KNOWN_VIDEO_ARCHS`)
   and each engine registers only its own — one `models.yml` can carry `wan`

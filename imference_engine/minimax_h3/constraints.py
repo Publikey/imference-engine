@@ -1,6 +1,6 @@
 """MiniMax-H3 generation constraints — pure-Python mirrors of the upstream checks.
 
-The modular pipeline (diffusers PR #14355) enforces these itself, but only once
+The modular pipeline (diffusers >= 0.40.0) enforces these itself, but only once
 the ~90 GB of components are loaded and the call is in flight. The engine mirrors
 the *checks* here so a bad request fails fast with a clear message, and so
 ``MediaResult.num_frames`` reports the frame count actually generated (the

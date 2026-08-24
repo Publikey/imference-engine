@@ -38,8 +38,9 @@ Then point a variant at the result:
       mode: t2v
       repo: imference/MiniMax-H3-comfy-int8     # = --mirror-repo
 
-Requires the [minimax-h3] extra + the PR #14355 diffusers build (see
-imference_engine/minimax_h3/README.md); ``--profile int8`` also needs torchao.
+Requires the [minimax-h3] extra (pins diffusers==0.40.0, the release carrying
+PR #14355 — see imference_engine/minimax_h3/README.md); ``--profile int8`` also
+needs torchao.
 """
 from __future__ import annotations
 

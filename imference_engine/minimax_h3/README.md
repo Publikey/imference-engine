@@ -1,23 +1,24 @@
 # MiniMax-H3 backend configuration
 
-> ⚠️ **Built against unreleased upstream.** MiniMax-H3's diffusers integration
-> is [PR #14355](https://github.com/huggingface/diffusers/pull/14355) (branch
-> `minimax-h3`), released in **no** diffusers version. **Validated e2e
-> 2026-08-05** on the PR head (`0.40.0.dev0`, torch 2.12/cu126, RTX 6000 Ada
-> 48 GB): t2va renders + soundtrack from a ComfyUI-sourced int8 tree
+> ⚠️ **Needs diffusers ≥ 0.40.0, in a dedicated venv for now.** MiniMax-H3's
+> diffusers integration ([PR #14355](https://github.com/huggingface/diffusers/pull/14355),
+> branch `minimax-h3`) **shipped in diffusers 0.40.0** — the `[minimax-h3]`
+> extra pins that release. **Validated e2e 2026-08-05** on the PR head that
+> became 0.40.0 (`0.40.0.dev0`, torch 2.12/cu126, RTX 6000 Ada 48 GB): t2va
+> renders + soundtrack from a ComfyUI-sourced int8 tree
 > (`stage_h3_from_comfy.py`) pass `validation/validate_h3.py` — ~14.9 s/step
-> at 960×544×124f under `block` offload, ~21 GB VRAM. The PR head is a moving
-> target until release; the `[minimax-h3]` extra still **cannot coexist** with
-> the repo-wide `diffusers==0.39.0` pin — run it in a dedicated venv/process:
+> at 960×544×124f under `block` offload, ~21 GB VRAM. Re-run
+> `validation/validate_h3.py` once on the release pin to confirm. The extra
+> still **cannot coexist** with the repo-wide `diffusers==0.39.0` pin — run it
+> in a dedicated venv/process until that pin folds up to 0.40:
 >
 > ```bash
 > python -m venv .venv-h3 && . .venv-h3/bin/activate
-> pip install -e ".[minimax-h3,dev]"
-> pip install git+https://github.com/huggingface/diffusers.git@refs/pull/14355/head
+> pip install -e ".[minimax-h3,dev]"   # pins diffusers==0.40.0
 > ```
 >
-> The day the PR ships in a release: pin it in the extra, run
-> `validation/validate_h3.py`, and fold the pin into the repo-wide one.
+> Remaining step from the release plan: re-validate the image suite on 0.40.0
+> and fold the repo-wide pin up to match (then the dedicated venv goes away).
 
 MiniMax-H3 (MiniMaxAI, Aug 2026) generates video **and its soundtrack jointly**
 — one 33B transformer denoises a single packed sequence holding text, keyframe,

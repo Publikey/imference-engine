@@ -28,8 +28,8 @@ Then point a variant at the mirror repo id and set H3_MODEL_CDN:
 
     H3_MODEL_CDN=https://cdn.example/video python -c "..."
 
-Requires the [minimax-h3] extra + the PR #14355 diffusers build (see
-imference_engine/minimax_h3/README.md) + [stage] for the upload.
+Requires the [minimax-h3] extra (pins diffusers==0.40.0, the release carrying
+PR #14355 — see imference_engine/minimax_h3/README.md) + [stage] for the upload.
 """
 from __future__ import annotations
 
