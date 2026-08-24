@@ -14,7 +14,7 @@ hidden states) + the ``AutoencoderKLQwenImage`` VAE.
 VALIDATED end-to-end (text-to-image) on diffusers 0.39 — RTX PRO 5000 Blackwell,
 torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
   - Loaded via ``ModularPipeline.from_pretrained(repo)`` then
-    ``pipe.load_components(torch_dtype=torch.bfloat16)``; ``pipe.to(device)`` /
+    ``pipe.load_components(dtype=torch.bfloat16)``; ``pipe.to(device)`` /
     ``.to("cpu")`` residency moves work; ``pipe(...).images`` returns images.
   - The modular ``__call__`` accepts num_inference_steps, height, width,
     generator, num_images_per_prompt, and negative_prompt (when set). It does
@@ -129,7 +129,7 @@ class AnimaBackend(PipelineBackend):
     def _load_components(self, pipe: Any, local_dir: str) -> None:
         """Load the modular components off the mirrored tree, strictly.
 
-        Two things ``pipe.load_components(torch_dtype=...)`` won't do on its own:
+        Two things ``pipe.load_components(dtype=...)`` won't do on its own:
 
         1. ``modular_model_index.json`` records each component's source as the HUB
            REPO ID, so a pipe built from a local dir still holds specs pointing at
@@ -165,7 +165,7 @@ class AnimaBackend(PipelineBackend):
                     name, src, local_dir)
 
         pipe.load_components(names=names, pretrained_model_name_or_path=paths,
-                             torch_dtype=torch.bfloat16)
+                             dtype=torch.bfloat16)
 
         missing = [n for n in names if getattr(pipe, n, None) is None]
         if missing:
@@ -214,7 +214,7 @@ class AnimaBackend(PipelineBackend):
             sd,
             config=os.path.join(base_dir, "transformer"),
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
         # Base modular pipeline; inject our DiT, then load the remaining components

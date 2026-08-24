@@ -1,24 +1,16 @@
 # MiniMax-H3 backend configuration
 
-> ⚠️ **Needs diffusers ≥ 0.40.0, in a dedicated venv for now.** MiniMax-H3's
+> **Needs diffusers ≥ 0.40.0 — now the repo-wide pin.** MiniMax-H3's
 > diffusers integration ([PR #14355](https://github.com/huggingface/diffusers/pull/14355),
-> branch `minimax-h3`) **shipped in diffusers 0.40.0** — the `[minimax-h3]`
-> extra pins that release. **Validated e2e 2026-08-05** on the PR head that
-> became 0.40.0 (`0.40.0.dev0`, torch 2.12/cu126, RTX 6000 Ada 48 GB): t2va
-> renders + soundtrack from a ComfyUI-sourced int8 tree
+> branch `minimax-h3`) **shipped in diffusers 0.40.0**, and the whole repo now
+> pins that release — H3 shares the venv with every other backend
+> (`pip install -e ".[minimax-h3,dev]"`); the pre-release dedicated-venv /
+> PR-head-install era is over. **Validated e2e 2026-08-05** on the PR head
+> that became 0.40.0 (`0.40.0.dev0`, torch 2.12/cu126, RTX 6000 Ada 48 GB):
+> t2va renders + soundtrack from a ComfyUI-sourced int8 tree
 > (`stage_h3_from_comfy.py`) pass `validation/validate_h3.py` — ~14.9 s/step
 > at 960×544×124f under `block` offload, ~21 GB VRAM. Re-run
-> `validation/validate_h3.py` once on the release pin to confirm. The extra
-> still **cannot coexist** with the repo-wide `diffusers==0.39.0` pin — run it
-> in a dedicated venv/process until that pin folds up to 0.40:
->
-> ```bash
-> python -m venv .venv-h3 && . .venv-h3/bin/activate
-> pip install -e ".[minimax-h3,dev]"   # pins diffusers==0.40.0
-> ```
->
-> Remaining step from the release plan: re-validate the image suite on 0.40.0
-> and fold the repo-wide pin up to match (then the dedicated venv goes away).
+> `validation/validate_h3.py` once on the release pin to confirm.
 
 MiniMax-H3 (MiniMaxAI, Aug 2026) generates video **and its soundtrack jointly**
 — one 33B transformer denoises a single packed sequence holding text, keyframe,

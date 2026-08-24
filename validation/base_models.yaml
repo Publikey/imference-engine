@@ -19,7 +19,8 @@
 #   prompt / negative_prompt / width / height / num_steps / guidance_scale / seed
 #   backend_options: engine-specific (e.g. Z-Image shift)
 #
-# STATUS: all 7 entries validated end-to-end on diffusers 0.39 (RTX PRO 5000
+# STATUS: all 7 entries validated end-to-end on diffusers 0.39 (pins now on
+# 0.40.0 — re-run validate.py before releasing) (RTX PRO 5000
 # Blackwell, torch 2.12) — each renders from its base model. Gated repos
 # (FLUX.1-dev) need `hf auth login` + an HF_TOKEN with gated-repo read access.
 

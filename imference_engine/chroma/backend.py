@@ -12,7 +12,7 @@ matter to this backend:
   passes the negative prompt through, like Z-Image.
 
 Apache-2.0 and a large "uncensored" community-finetune following make it a cheap,
-high-value addition once FLUX is in: same diffusers 0.39 stack, same offline
+high-value addition once FLUX is in: same diffusers 0.40 stack, same offline
 base-component machinery, same heavy-transformer offload path.
 
 Offline: base components (T5-XXL + VAE + tokenizer + scheduler) resolve into the
@@ -78,7 +78,7 @@ class ChromaBackend(PipelineBackend):
         logger.info(f"Loading Chroma pipeline from {local_path}")
         return ChromaPipeline.from_single_file(
             local_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def _load_with_base_model(self, local_path: str, base_repo: str) -> Any:
@@ -101,13 +101,13 @@ class ChromaBackend(PipelineBackend):
             local_path,
             config=os.path.join(base_dir, "transformer"),
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         return ChromaPipeline.from_pretrained(
             base_dir,
             transformer=transformer,
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:

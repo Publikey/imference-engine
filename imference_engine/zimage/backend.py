@@ -3,7 +3,7 @@
 Split out of ``pipelines/`` into its own ``imference_engine.zimage`` sub-package
 (parallel to ``imference_engine.wan``) so Z-Image is a self-contained unit. It
 still rides the generic ``Engine``/``ModelManager``/``RuntimeConfig`` machinery
-(same diffusers 0.39 stack as SDXL), so the split is a packaging boundary, not a
+(same diffusers 0.40 stack as SDXL), so the split is a packaging boundary, not a
 fork of the engine core. ``pipelines/zimage.py`` re-exports this class for
 backward compatibility.
 
@@ -84,7 +84,7 @@ class ZImageBackend(PipelineBackend):
         logger.info(f"Loading Z-Image pipeline from {local_path}")
         return ZImagePipeline.from_single_file(
             local_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def _load_with_base_model(self, local_path: str, base_repo: str) -> Any:
@@ -104,11 +104,11 @@ class ZImageBackend(PipelineBackend):
             base_dir, subfolder="tokenizer", local_files_only=True
         )
         text_encoder = AutoModel.from_pretrained(
-            base_dir, subfolder="text_encoder", torch_dtype=torch.bfloat16,
+            base_dir, subfolder="text_encoder", dtype=torch.bfloat16,
             local_files_only=True,
         )
         vae = AutoencoderKL.from_pretrained(
-            base_dir, subfolder="vae", torch_dtype=torch.bfloat16,
+            base_dir, subfolder="vae", dtype=torch.bfloat16,
             local_files_only=True,
         )
 
@@ -125,7 +125,7 @@ class ZImageBackend(PipelineBackend):
             text_encoder=text_encoder,
             tokenizer=tokenizer,
             vae=vae,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     @staticmethod

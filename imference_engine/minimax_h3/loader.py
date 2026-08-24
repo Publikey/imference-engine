@@ -1,9 +1,10 @@
 """MiniMax-H3 pipeline builder — modular load, int8 quant, group offload.
 
 UPSTREAM STATUS: MiniMax-H3 shipped in diffusers 0.40.0 (PR #14355); the
-``[minimax-h3]`` extra pins that release. This loader still guards every entry
-point with ``require_h3_support()`` so an older install (e.g. a venv on the
-repo-wide 0.39.0 pin) fails with an actionable message instead of a deep
+``[minimax-h3]`` extra pins that release — the same repo-wide pin every other
+extra uses, so H3 no longer needs a dedicated venv. This loader still guards
+every entry point with ``require_h3_support()`` so a stale install (an old venv
+on diffusers <= 0.39) fails with an actionable message instead of a deep
 AttributeError.
 
 Load path (mirrors the upstream loading recipes, consumer-card variant):
@@ -79,9 +80,8 @@ _EXCLUDED_COMPONENTS = ("transformer_ref",)
 
 _INSTALL_HINT = (
     "MiniMax-H3 requires diffusers >= 0.40.0 (its integration, PR #14355, "
-    "shipped in the 0.40.0 release). This venv's diffusers is older — likely "
-    "the repo-wide 0.39.0 pin. Install the H3 stack in its dedicated "
-    "environment with:\n"
+    "shipped in the 0.40.0 release). This venv's diffusers is older — a stale "
+    "install predating the repo-wide 0.40.0 pin. Reinstall with:\n"
     "  pip install \"imference-engine[minimax-h3]\"   # pins diffusers==0.40.0"
 )
 
@@ -235,7 +235,7 @@ def _load_components(pipe: Any, local_dir: str) -> None:
                 name, src, local_dir)
 
     pipe.load_components(names=names, pretrained_model_name_or_path=paths,
-                         torch_dtype=torch.bfloat16)
+                         dtype=torch.bfloat16)
 
     missing = [n for n in names if getattr(pipe, n, None) is None]
     if missing:

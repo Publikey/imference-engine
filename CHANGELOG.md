@@ -5,7 +5,22 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased]
+## [Unreleased] — targets v0.4.0
+
+### ⚠️ Breaking
+
+- **diffusers pinned 0.39.0 → 0.40.0 across EVERY extra** (the 7 image
+  backends, `[wan]`, and `[minimax-h3]` — one diffusers repo-wide again).
+  0.40.0 ships H3's PR #14355, which is what unblocks the fold. Consumer
+  impact: mixed-rank LoRAs without alpha keys now load at their intended
+  scale (upstream fix — previously arbitrary and key-order-dependent), and
+  Flax/`Flax*` classes are gone from diffusers (unused here). ⚠️ GPU
+  re-validation on 0.40 (validate.py, validate_wan.py, validate_h3.py) is
+  **pending** — run it before tagging v0.4.0. Last green: all 7 image
+  backends + Wan on 0.39, H3 on the PR head that became 0.40.0.
+- **Version 0.4.0** (dependency-combo change per RELEASING.md). Also re-syncs
+  `imference_engine.__version__`, which had drifted to "0.3.1" while
+  pyproject said "0.3.4".
 
 ### Added
 
@@ -48,19 +63,20 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Changed
 
-- **MiniMax-H3 now rides a *released* diffusers: `[minimax-h3]` pins
-  `diffusers==0.40.0`.** PR #14355 shipped in diffusers 0.40.0 (2026-08), so
-  the extra now carries the pin instead of documenting a
-  `pip install git+...@refs/pull/14355/head` side-install, and the loader's
-  guard message points at the release. Supersedes the "requires unreleased
-  diffusers" warning on the H3 entry below. Two things did **not** change:
-  H3 still needs its dedicated venv (the repo-wide pin stays `0.39.0` until
-  the image suite is re-validated on 0.40 and folded up — 0.40 changes
-  mixed-rank LoRA scaling and deprecates `torch_dtype`), and prod stays on
-  the validated torch 2.11+/cu128 combo even though released 0.40.0 dropped
-  the PR head's `torch.nn.functional.ScalingType` import (the source of the
-  old torch>=2.10 floor). H3 was validated e2e on the PR head that became
-  0.40.0; re-run `validation/validate_h3.py` on the release pin.
+- **MiniMax-H3's dedicated-venv era is over.** PR #14355 shipped in diffusers
+  0.40.0 (2026-08), so `[minimax-h3]` pins `diffusers==0.40.0` — the same
+  repo-wide pin as every other extra — instead of documenting a
+  `pip install git+...@refs/pull/14355/head` side-install; the loader's guard
+  message now points at a stale-venv reinstall. Supersedes the "requires
+  unreleased diffusers" warning on the H3 entry below. Prod stays on the
+  validated torch 2.11+/cu128 combo even though released 0.40.0 dropped the
+  PR head's `torch.nn.functional.ScalingType` import (the source of the old
+  torch>=2.10 floor).
+- **`torch_dtype=` → `dtype=` across all backends** (sdxl, sd15, zimage,
+  flux, chroma, qwenimage, anima, wan; H3 already used `dtype`). diffusers
+  0.40 deprecates `torch_dtype` (removal slated for v1.0) and transformers 5
+  prefers `dtype` — both accept it today, so this is warning-hygiene, not a
+  behavior change.
 - **Shared video catalogs across engines.** Video rows are now validated
   against every *known* video arch (`imference_engine.video.KNOWN_VIDEO_ARCHS`)
   and each engine registers only its own — one `models.yml` can carry `wan`

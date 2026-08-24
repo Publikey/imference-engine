@@ -4,7 +4,7 @@ Its own sub-package parallel to ``imference_engine.zimage`` / ``.wan``: FLUX is 
 12B rectified-flow transformer with the largest community-finetune ecosystem
 after SDXL, so it earns a self-contained unit. It still rides the generic
 ``Engine`` / ``ModelManager`` / ``RuntimeConfig`` machinery and the same diffusers
-0.39 stack as SDXL / Z-Image — the split is a packaging boundary, not an engine
+0.40 stack as SDXL / Z-Image — the split is a packaging boundary, not an engine
 fork.
 
 FLUX checkpoints come in two flavors, mirroring Z-Image:
@@ -100,7 +100,7 @@ class FluxBackend(PipelineBackend):
         logger.info(f"Loading FLUX pipeline from {local_path}")
         return FluxPipeline.from_single_file(
             local_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def _load_with_base_model(self, local_path: str, base_repo: str) -> Any:
@@ -125,7 +125,7 @@ class FluxBackend(PipelineBackend):
             local_path,
             config=os.path.join(base_dir, "transformer"),
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
         # Everything else (CLIP-L, T5-XXL, VAE, both tokenizers, scheduler) from the
@@ -134,7 +134,7 @@ class FluxBackend(PipelineBackend):
             base_dir,
             transformer=transformer,
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:

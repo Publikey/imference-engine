@@ -94,7 +94,7 @@ class SD15Backend(PipelineBackend):
             local_path,
             config=cfg_dir,
             local_files_only=True,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             use_safetensors=True,
             # SD 1.5 config ships a safety_checker + feature_extractor we don't
             # want to load or gate generation on. safety_checker=None disables the
@@ -117,7 +117,7 @@ class SD15Backend(PipelineBackend):
                 self.TINY_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
                 namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderTiny.from_pretrained(
-                vae_dir, torch_dtype=torch.float16, local_files_only=True
+                vae_dir, dtype=torch.float16, local_files_only=True
             )
 
         try:

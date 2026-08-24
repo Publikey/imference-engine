@@ -115,12 +115,12 @@ def load_shared_components(base_repo: str, *, cache_dir: Optional[str] = None,
     d = _local_repo_dir(base_repo, _SHARED_PATTERNS, cache_dir, cdn_base=cdn_base)
     logger.info("Loading shared components (text_encoder + vae) from %s", d)
     text_encoder = UMT5EncoderModel.from_pretrained(
-        d, subfolder="text_encoder", torch_dtype=torch.bfloat16)
+        d, subfolder="text_encoder", dtype=torch.bfloat16)
     _tie_umt5_input_embedding(text_encoder)
     text_encoder = _quantize_text_encoder(text_encoder, text_encoder_quant)
     tokenizer = AutoTokenizer.from_pretrained(d, subfolder="tokenizer")
     vae = AutoencoderKLWan.from_pretrained(
-        d, subfolder="vae", torch_dtype=torch.float32)
+        d, subfolder="vae", dtype=torch.float32)
     return SharedComponents(base_repo, text_encoder, tokenizer, vae)
 
 
@@ -186,7 +186,7 @@ def _load_gguf_transformer(path: str, base_repo: str, subfolder: str) -> Any:
         return WanTransformer3DModel.from_single_file(
             path,
             quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             config=base_repo,
             subfolder=subfolder,
         )
@@ -275,7 +275,7 @@ def build_pipeline(
         vae=shared.vae,
         text_encoder=shared.text_encoder,
         tokenizer=shared.tokenizer,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     pipe.scheduler = UniPCMultistepScheduler.from_config(
         pipe.scheduler.config, flow_shift=variant.flow_shift)

@@ -48,10 +48,12 @@ Each top-level key is a backend name. Edit it to match your setup:
 - **`base_model`** — shared-component repo for transformer-only checkpoints
   (FLUX/Chroma/Qwen/Z-Image). Downloaded from HF on first use.
 
-## Status — all 7 validated
+## Status — all 7 validated on 0.39; 0.40 re-run pending
 
 Every engine below has been validated end-to-end (base model → rendered image) on
-**diffusers 0.39** (RTX PRO 5000 Blackwell, torch 2.12).
+**diffusers 0.39** (RTX PRO 5000 Blackwell, torch 2.12). The pins have since
+moved to **diffusers 0.40.0** (the H3-unlocking fold — see `pyproject.toml`);
+re-run `validate.py` on 0.40 before tagging a release from it.
 
 | Engine | Base model | Notes |
 |---|---|---|
@@ -80,7 +82,8 @@ experts are ~15 GB GGUF each (×2) + shared UMT5/VAE (~11.5 GB); `WAN_PROFILE=au
 picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB).
 
 **Status: re-validated end-to-end on diffusers 0.39** (RTX PRO 5000 Blackwell,
-torch 2.12) — t2v and i2v both render. Two fixes came out of it: the UMT5 input
+torch 2.12) — t2v and i2v both render. (Pins have since moved to 0.40.0 —
+re-run `validate_wan.py` on it, like the image suite.) Two fixes came out of it: the UMT5 input
 embedding is re-tied on load (transformers 5.1 left it zero-init → the encoder
 ignored the prompt), and the i2v default GGUF is now **bullerwins** — the
 QuantStack i2v GGUF renders mush on this stack (its `patch_embedding` dequantizes

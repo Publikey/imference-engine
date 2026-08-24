@@ -7,7 +7,7 @@ env↔param↔default table lives in
 
 Qwen-Image (Alibaba) is a 20B MMDiT whose standout is native, reliable text
 rendering (multi-line, paragraph, CJK). It rides the generic engine machinery on
-the same diffusers 0.39 stack — no separate engine class.
+the same diffusers 0.40 stack — no separate engine class.
 
 ## Qwen-Image specifics
 

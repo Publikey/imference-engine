@@ -35,8 +35,9 @@ script, or app.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
 - **Validated.** All seven image backends render end-to-end on diffusers 0.39
-  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same stack.
-  See [`validation/`](validation/).
+  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same
+  stack. Pins are now on diffusers 0.40.0 (the MiniMax-H3-unlocking fold) —
+  re-run the suites on it before releasing. See [`validation/`](validation/).
 
 ---
 
@@ -58,9 +59,8 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-(and `runtime` = all seven), `wan`, `minimax-h3` (dedicated venv — pins
-diffusers 0.40.0 while the rest of the repo is on 0.39.0, see its README),
-`stage` (R2 staging, boto3), `dev`.
+(and `runtime` = all seven), `wan`, `minimax-h3`, `stage` (R2 staging, boto3),
+`dev`. Every extra shares the one repo-wide `diffusers==0.40.0` pin.
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
@@ -143,10 +143,9 @@ plug in as a `VideoBackend` with a new `arch` — no engine fork.
 
 ## Quickstart — MiniMax-H3 video + audio
 
-> ⚠️ Requires diffusers ≥ 0.40.0 ([PR #14355](https://github.com/huggingface/diffusers/pull/14355)
-> shipped in 0.40.0; the `[minimax-h3]` extra pins it) — dedicated venv until
-> the repo-wide 0.39 pin folds up to 0.40. Validated e2e on the PR head that
-> became 0.40.0. See
+> Requires diffusers ≥ 0.40.0 ([PR #14355](https://github.com/huggingface/diffusers/pull/14355)
+> shipped in 0.40.0 — now the repo-wide pin, so H3 shares the venv with every
+> other backend). Validated e2e on the PR head that became 0.40.0. See
 > [`imference_engine/minimax_h3/README.md`](imference_engine/minimax_h3/README.md).
 
 ```python
@@ -365,7 +364,8 @@ Design docs: [unified engine core](docs/unified-engine-core.md) ·
 [`validation/`](validation/) holds a GPU harness that loads each engine's base
 model, renders, and reports pass/fail — `python validation/validate.py`
 (`validate_wan.py` for video). All seven image backends pass end-to-end on
-diffusers 0.39; see [`validation/README.md`](validation/README.md).
+diffusers 0.39; the pins now sit on 0.40.0, so re-run the suites before
+tagging. See [`validation/README.md`](validation/README.md).
 
 ## Status & scope
 

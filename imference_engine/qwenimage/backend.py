@@ -3,7 +3,7 @@
 Own sub-package parallel to ``imference_engine.flux`` / ``.chroma``. Qwen-Image is
 a 20B multimodal DiT whose standout is native, reliable text rendering
 (multi-line, paragraph, CJK). It rides the generic Engine / ModelManager /
-RuntimeConfig machinery on the same diffusers 0.39 stack.
+RuntimeConfig machinery on the same diffusers 0.40 stack.
 
 Two backend-relevant specifics:
 
@@ -79,7 +79,7 @@ class QwenImageBackend(PipelineBackend):
         logger.info(f"Loading Qwen-Image pipeline from {local_path}")
         return QwenImagePipeline.from_single_file(
             local_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def _load_with_base_model(self, local_path: str, base_repo: str) -> Any:
@@ -102,13 +102,13 @@ class QwenImageBackend(PipelineBackend):
             local_path,
             config=os.path.join(base_dir, "transformer"),
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
         return QwenImagePipeline.from_pretrained(
             base_dir,
             transformer=transformer,
             local_files_only=True,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
         )
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:
