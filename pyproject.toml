@@ -54,6 +54,13 @@ dependencies = [
 # text encoder needs no wheel SDXL lacks). The split is a packaging boundary /
 # naming symmetry, not a real dependency fork (unlike [wan], which genuinely
 # adds gguf/imageio). Only the runtime KNOBS differ: use_tiny_vae is SDXL-only.
+#
+# protobuf backs transformers' slow→fast sentencepiece tokenizer conversion.
+# It is REQUIRED whenever a base repo ships only spiece.model with no
+# tokenizer.json (Chroma1-HD does); without it transformers 5.1 falls back to
+# a tiktoken extractor that cannot parse the file. A clean venv from these
+# extras only ever worked for Chroma when protobuf happened to be present
+# transitively — caught on a clean pod during the 0.40 validation (2026-08-26).
 sdxl = [
     "torch>=2.6",
     "diffusers==0.40.0",
@@ -62,6 +69,7 @@ sdxl = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -76,6 +84,7 @@ zimage = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -92,6 +101,7 @@ sd15 = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -112,6 +122,7 @@ flux = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -127,6 +138,7 @@ chroma = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -144,6 +156,7 @@ qwenimage = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -161,6 +174,7 @@ anima = [
     "peft==0.18.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",
@@ -194,6 +208,7 @@ wan = [
     "gguf>=0.10",
     "ftfy>=6.3",
     "sentencepiece>=0.2",
+    "protobuf>=4",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",

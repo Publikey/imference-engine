@@ -86,6 +86,14 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Fixed
 
+- **`protobuf` added to every image extra and `[wan]`.** transformers 5.1 needs
+  it to convert a slow sentencepiece tokenizer (a base repo shipping only
+  `spiece.model`, no `tokenizer.json` — Chroma1-HD does) and otherwise falls
+  back to a tiktoken extractor that cannot parse the file
+  (`ValueError: tiktoken is required…`). A clean venv built from the extras
+  alone never worked for Chroma — earlier validation boxes had protobuf
+  transitively. Caught on a clean pod during the 0.40.0 GPU validation
+  (2026-08-26).
 - **MiniMax-H3 loader: `transformer_ref` no longer streamed from the Hub.**
   `_load_components` passed every null component to `load_components`,
   including the out-of-scope Ref2VA partition whose spec points at the hub
