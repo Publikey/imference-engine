@@ -61,12 +61,21 @@ dependencies = [
 # a tiktoken extractor that cannot parse the file. A clean venv from these
 # extras only ever worked for Chroma when protobuf happened to be present
 # transitively — caught on a clean pod during the 0.40 validation (2026-08-26).
+#
+# peft is 0.19.1 (bumped from the 0.18.1 prod combo during the 0.40
+# validation): peft 0.18.1's LoRA torchao dispatcher imports
+# LinearActivationQuantizedTensor, which torchao 0.18 removed — so ANY
+# load_lora_weights crashes the moment torchao is importable in the venv.
+# Invisible before the 0.40 fold (H3's torchao lived in a separate venv);
+# fatal now that [wan] + [minimax-h3] share one venv (Wan's Lightning LoRA is
+# the exposed surface). 0.19.1 dispatches via torchao.utils.TorchAOBaseTensor
+# (the v2 API) and coexists with torchao 0.18.
 sdxl = [
     "torch>=2.6",
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -81,7 +90,7 @@ zimage = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -98,7 +107,7 @@ sd15 = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -119,7 +128,7 @@ flux = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -135,7 +144,7 @@ chroma = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -153,7 +162,7 @@ qwenimage = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -171,7 +180,7 @@ anima = [
     "diffusers==0.40.0",
     "transformers==5.1.0",
     "accelerate==1.12.0",
-    "peft==0.18.1",
+    "peft==0.19.1",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -204,7 +213,7 @@ wan = [
     "diffusers==0.40.0",
     "transformers>=5.1",
     "accelerate>=1.12",
-    "peft>=0.18",
+    "peft>=0.19.1",
     "gguf>=0.10",
     "ftfy>=6.3",
     "sentencepiece>=0.2",
@@ -232,7 +241,10 @@ minimax-h3 = [
     "diffusers==0.40.0",
     "transformers>=5.1",
     "accelerate>=1.12",
-    "torchao>=0.10",
+    # torchao floor: 0.18 is what serialized the R2 int8 mirror tree AND the
+    # version whose v2 API peft 0.19.1's LoRA dispatcher expects (see the peft
+    # note above the image extras).
+    "torchao>=0.18",
     "safetensors>=0.4",
     "Pillow>=10",
     "numpy",

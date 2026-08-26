@@ -86,6 +86,17 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Fixed
 
+- **peft pinned 0.18.1 → 0.19.1 (all extras); torchao floor raised to 0.18 in
+  `[minimax-h3]`.** peft 0.18.1's LoRA torchao dispatcher imports
+  `LinearActivationQuantizedTensor`, removed in torchao 0.18 — with torchao
+  importable in the venv, **any** `load_lora_weights` call crashes
+  (`ImportError` at `peft/tuners/lora/torchao.py`). Harmless while H3's
+  torchao lived in its own venv; fatal in the unified 0.40 venv where
+  `[wan]` (Lightning LoRA) and `[minimax-h3]` (torchao) coexist — caught by
+  `validate_wan.py` i2v on the 0.40 validation pod (2026-08-26). peft 0.19.1
+  dispatches via `torchao.utils.TorchAOBaseTensor` (v2 API) and coexists with
+  torchao 0.18. The torchao floor moves to 0.18 because the R2 int8 mirror
+  tree is serialized with it.
 - **`protobuf` added to every image extra and `[wan]`.** transformers 5.1 needs
   it to convert a slow sentencepiece tokenizer (a base repo shipping only
   `spiece.model`, no `tokenizer.json` — Chroma1-HD does) and otherwise falls
