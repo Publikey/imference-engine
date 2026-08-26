@@ -48,10 +48,18 @@ Each top-level key is a backend name. Edit it to match your setup:
 - **`base_model`** — shared-component repo for transformer-only checkpoints
   (FLUX/Chroma/Qwen/Z-Image). Downloaded from HF on first use.
 
-## Status — all 7 validated
+## Status — all 7 validated on the 0.40 stack (2026-08-26)
 
 Every engine below has been validated end-to-end (base model → rendered image) on
-**diffusers 0.39** (RTX PRO 5000 Blackwell, torch 2.12).
+the final v0.4.0 combo — **diffusers 0.40.0 + transformers 5.4.0 + peft 0.19.1 +
+accelerate 1.12.0, with torchao 0.18 co-installed** (RTX PRO 4500 Blackwell
+32 GB, torch 2.11+cu128, vast.ai pod). Seed-42 renders are visually identical to
+the 0.39 set. One caveat: **qwenimage's engine residency path needs a ≥48 GB
+card** (the 41 GB bf16 transformer must fit on-GPU under
+`enable_model_cpu_offload`); on the 32 GB pod its diffusers-0.40 load+render
+path was validated with `validate_qwen_offload.py` (same backend load code,
+group offloading instead — peak 4.7 GB VRAM). Earlier full-engine-path
+validation: diffusers 0.39, RTX PRO 5000 48 GB.
 
 | Engine | Base model | Notes |
 |---|---|---|
@@ -79,8 +87,13 @@ Outputs `renders/wan_<variant>_seed42.mp4` + a sample frame PNG. Heavy: A14B
 experts are ~15 GB GGUF each (×2) + shared UMT5/VAE (~11.5 GB); `WAN_PROFILE=auto`
 picks the quant from VRAM/RAM, offload keeps VRAM ≈ one expert (~17 GB).
 
-**Status: re-validated end-to-end on diffusers 0.39** (RTX PRO 5000 Blackwell,
-torch 2.12) — t2v and i2v both render. Two fixes came out of it: the UMT5 input
+**Status: re-validated end-to-end on the 0.40 stack (2026-08-26)** — t2v and
+i2v both render (diffusers 0.40.0 + transformers 5.4.0 + peft 0.19.1, torchao
+0.18 co-installed, RTX PRO 4500 Blackwell 32 GB). The 0.40 mixed-rank LoRA
+scaling change is benign here: the Lightning 4-step rank-64 LoRAs apply
+unfused and render sharp. ⚠️ peft ≥ 0.19.1 is REQUIRED the moment torchao
+shares the venv (see CHANGELOG). Earlier: validated on 0.39 (RTX PRO 5000,
+torch 2.12). Two fixes came out of the 0.39 pass: the UMT5 input
 embedding is re-tied on load (transformers 5.1 left it zero-init → the encoder
 ignored the prompt), and the i2v default GGUF is now **bullerwins** — the
 QuantStack i2v GGUF renders mush on this stack (its `patch_embedding` dequantizes

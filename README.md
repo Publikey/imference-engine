@@ -35,8 +35,9 @@ script, or app.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
 - **Validated.** All seven image backends render end-to-end on diffusers 0.39
-  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same stack.
-  See [`validation/`](validation/).
+  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same
+  stack. Pins are now on diffusers 0.40.0 (the MiniMax-H3-unlocking fold) —
+  re-run the suites on it before releasing. See [`validation/`](validation/).
 
 ---
 
@@ -58,8 +59,8 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-(and `runtime` = all seven), `wan`, `minimax-h3` (dedicated venv — needs an
-unreleased diffusers, see its README), `stage` (R2 staging, boto3), `dev`.
+(and `runtime` = all seven), `wan`, `minimax-h3`, `stage` (R2 staging, boto3),
+`dev`. Every extra shares the one repo-wide `diffusers==0.40.0` pin.
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
@@ -142,9 +143,9 @@ plug in as a `VideoBackend` with a new `arch` — no engine fork.
 
 ## Quickstart — MiniMax-H3 video + audio
 
-> ⚠️ Requires a diffusers build with the unreleased
-> [PR #14355](https://github.com/huggingface/diffusers/pull/14355) — dedicated
-> venv until it ships in a release; **not yet validated e2e**. See
+> Requires diffusers ≥ 0.40.0 ([PR #14355](https://github.com/huggingface/diffusers/pull/14355)
+> shipped in 0.40.0 — now the repo-wide pin, so H3 shares the venv with every
+> other backend). Validated e2e on the PR head that became 0.40.0. See
 > [`imference_engine/minimax_h3/README.md`](imference_engine/minimax_h3/README.md).
 
 ```python
@@ -363,16 +364,18 @@ Design docs: [unified engine core](docs/unified-engine-core.md) ·
 [`validation/`](validation/) holds a GPU harness that loads each engine's base
 model, renders, and reports pass/fail — `python validation/validate.py`
 (`validate_wan.py` for video). All seven image backends pass end-to-end on
-diffusers 0.39; see [`validation/README.md`](validation/README.md).
+diffusers 0.39; the pins now sit on 0.40.0, so re-run the suites before
+tagging. See [`validation/README.md`](validation/README.md).
 
 ## Status & scope
 
 Wired and validated: the seven image backends, Wan 2.2 video, img2img,
 multi-tier residency, weighted prompts, the catalog loader + precedence chain,
-and offline/CDN resolution. **Wired, pending upstream to validate:** MiniMax-H3
-video+audio (needs the unreleased diffusers PR #14355 — structural tests pass,
-e2e blocked on a diffusers release; see its README), including the offline
-converter for ComfyUI/civitai int8-ConvRot single-files
+and offline/CDN resolution. **Wired, validated on the pre-release head:**
+MiniMax-H3 video+audio (its diffusers integration, PR #14355, shipped in
+diffusers 0.40.0 — validated e2e 2026-08-05 on the PR head that became that
+release; re-run `validate_h3.py` on the 0.40.0 pin; see its README), including
+the offline converter for ComfyUI/civitai int8-ConvRot single-files
 (`validation/stage_h3_from_comfy.py` — ~67 GB downloaded instead of ~124 GB).
 **Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
 but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`

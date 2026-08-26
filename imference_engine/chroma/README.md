@@ -7,7 +7,7 @@ env↔param↔default table lives in
 
 Chroma is a FLUX-derived, **de-distilled** 8.9B flow-matching DiT (Apache-2.0)
 with a large community-finetune following. It rides the generic engine machinery
-on the same diffusers 0.39 stack — no separate engine class.
+on the same diffusers 0.40 stack — no separate engine class.
 
 ## Chroma specifics
 

@@ -20,9 +20,10 @@ Three separate concerns live here:
    (``comfy_kitchen/tensor/int8_utils.py``, Apache-2.0).
 
 2. **Key-layout conversion.** Adapted from diffusers'
-   ``scripts/convert_minimax_h3_to_diffusers.py`` (Apache-2.0, ``minimax-h3``
-   branch — PR #14355; not importable from an installed diffusers, hence
-   vendored). One deliberate difference, verified against the ComfyUI model
+   ``scripts/convert_minimax_h3_to_diffusers.py`` (Apache-2.0; landed via
+   PR #14355, in the repo since 0.40.0 — ``scripts/`` isn't shipped in the
+   wheel, hence vendored). One deliberate difference, verified against the
+   ComfyUI model
    code and the shipped safetensors headers: the Comfy **DiT** repackage stores
    fused QKV already in the reference ``[q_all; k_all; v_all]`` layout (its
    forward splits contiguous thirds), while the Comfy **video-VAE** file keeps

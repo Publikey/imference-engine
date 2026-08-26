@@ -1,11 +1,11 @@
 """MiniMax-H3 pipeline builder — modular load, int8 quant, group offload.
 
-UPSTREAM STATUS: MiniMax-H3 lives in diffusers PR #14355 (branch ``minimax-h3``)
-and is NOT in any diffusers release yet. This loader guards every entry point
-with ``require_h3_support()`` so an unsupported install fails with an
-actionable message instead of a deep AttributeError. Once the PR ships in a
-release, pinning that release in the ``[minimax-h3]`` extra is the only change
-needed here.
+UPSTREAM STATUS: MiniMax-H3 shipped in diffusers 0.40.0 (PR #14355); the
+``[minimax-h3]`` extra pins that release — the same repo-wide pin every other
+extra uses, so H3 no longer needs a dedicated venv. This loader still guards
+every entry point with ``require_h3_support()`` so a stale install (an old venv
+on diffusers <= 0.39) fails with an actionable message instead of a deep
+AttributeError.
 
 Load path (mirrors the upstream loading recipes, consumer-card variant):
 
@@ -79,11 +79,10 @@ _TEXT_ENCODER_SKIP = [
 _EXCLUDED_COMPONENTS = ("transformer_ref",)
 
 _INSTALL_HINT = (
-    "MiniMax-H3 requires a diffusers build that includes PR #14355 (not in any "
-    "release yet). Install it in a dedicated environment with:\n"
-    "  pip install git+https://github.com/huggingface/diffusers.git@refs/pull/14355/head\n"
-    "Once the PR ships in a diffusers release, install that release instead "
-    "(and this message disappears)."
+    "MiniMax-H3 requires diffusers >= 0.40.0 (its integration, PR #14355, "
+    "shipped in the 0.40.0 release). This venv's diffusers is older — a stale "
+    "install predating the repo-wide 0.40.0 pin. Reinstall with:\n"
+    "  pip install \"imference-engine[minimax-h3]\"   # pins diffusers==0.40.0"
 )
 
 
@@ -190,9 +189,10 @@ def _quantize_large_components(pipe: Any, local_dir: str) -> None:
         local_dir, subfolder="transformer", dtype=torch.bfloat16,
         quantization_config=TorchAoConfig(
             Int8WeightOnlyConfig(version=2), modules_to_not_convert=_TRANSFORMER_SKIP),
-        # NOTE: low_cpu_mem_usage must stay at its default (True) — the current
-        # PR #14355 head REJECTS low_cpu_mem_usage=False with quantization
-        # (earlier drafts of the PR docs said the opposite).
+        # NOTE: low_cpu_mem_usage must stay at its default (True) — diffusers
+        # (0.40.0, unchanged from the PR #14355 head) REJECTS
+        # low_cpu_mem_usage=False with quantization (earlier drafts of the PR
+        # docs said the opposite).
     )
     text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
         local_dir, subfolder="text_encoder", dtype=torch.bfloat16,
@@ -235,7 +235,7 @@ def _load_components(pipe: Any, local_dir: str) -> None:
                 name, src, local_dir)
 
     pipe.load_components(names=names, pretrained_model_name_or_path=paths,
-                         torch_dtype=torch.bfloat16)
+                         dtype=torch.bfloat16)
 
     missing = [n for n in names if getattr(pipe, n, None) is None]
     if missing:

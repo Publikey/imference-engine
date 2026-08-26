@@ -93,7 +93,7 @@ class SDXLBackend(PipelineBackend):
             local_path,
             config=cfg_dir,
             local_files_only=True,
-            torch_dtype=torch.float16,
+            dtype=torch.float16,
             use_safetensors=True,
         )
         # Some Illustrious-based fine-tunes leave bias params in float32 after
@@ -113,7 +113,7 @@ class SDXLBackend(PipelineBackend):
                 self.TINY_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
                 namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderTiny.from_pretrained(
-                vae_dir, torch_dtype=torch.float16, local_files_only=True
+                vae_dir, dtype=torch.float16, local_files_only=True
             )
         else:
             # Swap in the fp16-fix VAE. The previous `pipe.vae.to(torch.float32)`
@@ -129,7 +129,7 @@ class SDXLBackend(PipelineBackend):
                 self.FP16_VAE_REPO, self._VAE_PATTERNS, self._cache_dir,
                 namespace="image", sentinel="config.json", cdn_base=self._cdn_base)
             pipe.vae = AutoencoderKL.from_pretrained(
-                vae_dir, torch_dtype=torch.float16, local_files_only=True
+                vae_dir, dtype=torch.float16, local_files_only=True
             )
 
         # channels_last memory format on the U-Net: trades a few MB of metadata

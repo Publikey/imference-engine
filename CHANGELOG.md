@@ -5,7 +5,22 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased]
+## [Unreleased] — targets v0.4.0
+
+### ⚠️ Breaking
+
+- **diffusers pinned 0.39.0 → 0.40.0 across EVERY extra** (the 7 image
+  backends, `[wan]`, and `[minimax-h3]` — one diffusers repo-wide again).
+  0.40.0 ships H3's PR #14355, which is what unblocks the fold. Consumer
+  impact: mixed-rank LoRAs without alpha keys now load at their intended
+  scale (upstream fix — previously arbitrary and key-order-dependent), and
+  Flax/`Flax*` classes are gone from diffusers (unused here). ⚠️ GPU
+  re-validation on 0.40 (validate.py, validate_wan.py, validate_h3.py) is
+  **pending** — run it before tagging v0.4.0. Last green: all 7 image
+  backends + Wan on 0.39, H3 on the PR head that became 0.40.0.
+- **Version 0.4.0** (dependency-combo change per RELEASING.md). Also re-syncs
+  `imference_engine.__version__`, which had drifted to "0.3.1" while
+  pyproject said "0.3.4".
 
 ### Added
 
@@ -48,6 +63,20 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Changed
 
+- **MiniMax-H3's dedicated-venv era is over.** PR #14355 shipped in diffusers
+  0.40.0 (2026-08), so `[minimax-h3]` pins `diffusers==0.40.0` — the same
+  repo-wide pin as every other extra — instead of documenting a
+  `pip install git+...@refs/pull/14355/head` side-install; the loader's guard
+  message now points at a stale-venv reinstall. Supersedes the "requires
+  unreleased diffusers" warning on the H3 entry below. Prod stays on the
+  validated torch 2.11+/cu128 combo even though released 0.40.0 dropped the
+  PR head's `torch.nn.functional.ScalingType` import (the source of the old
+  torch>=2.10 floor).
+- **`torch_dtype=` → `dtype=` across all backends** (sdxl, sd15, zimage,
+  flux, chroma, qwenimage, anima, wan; H3 already used `dtype`). diffusers
+  0.40 deprecates `torch_dtype` (removal slated for v1.0) and transformers 5
+  prefers `dtype` — both accept it today, so this is warning-hygiene, not a
+  behavior change.
 - **Shared video catalogs across engines.** Video rows are now validated
   against every *known* video arch (`imference_engine.video.KNOWN_VIDEO_ARCHS`)
   and each engine registers only its own — one `models.yml` can carry `wan`
@@ -57,6 +86,37 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Fixed
 
+- **transformers pinned 5.1.0 → 5.4.0 (image extras; `[wan]` floor ≥5.4,
+  `[minimax-h3]` floor ≥5.3).** The RELEASED diffusers 0.40.0 H3 text-encoder
+  step diverged from the validated PR #14355 head: it now calls
+  `Qwen3VLProcessor.create_mm_token_type_ids` (transformers ≥5.2) and passes
+  `mm_token_type_ids` into the Qwen3-VL forward, which the model only accepts
+  from transformers **5.3.0** — on 5.1.0 the pipeline fails with
+  `AttributeError: 'Qwen3VLProcessor' object has no attribute
+  'create_mm_token_type_ids'`. Caught by `validate_h3.py` on the 0.40
+  validation pod (2026-08-26); H3 renders green on 5.4.0 (124f + soundtrack,
+  int8 R2 mirror, block offload). The whole stack (7 image backends, Wan
+  t2v/i2v, H3) was re-validated on the final combo: diffusers 0.40.0 +
+  transformers 5.4.0 + peft 0.19.1 + torchao 0.18 + accelerate 1.12.0.
+- **peft pinned 0.18.1 → 0.19.1 (all extras); torchao floor raised to 0.18 in
+  `[minimax-h3]`.** peft 0.18.1's LoRA torchao dispatcher imports
+  `LinearActivationQuantizedTensor`, removed in torchao 0.18 — with torchao
+  importable in the venv, **any** `load_lora_weights` call crashes
+  (`ImportError` at `peft/tuners/lora/torchao.py`). Harmless while H3's
+  torchao lived in its own venv; fatal in the unified 0.40 venv where
+  `[wan]` (Lightning LoRA) and `[minimax-h3]` (torchao) coexist — caught by
+  `validate_wan.py` i2v on the 0.40 validation pod (2026-08-26). peft 0.19.1
+  dispatches via `torchao.utils.TorchAOBaseTensor` (v2 API) and coexists with
+  torchao 0.18. The torchao floor moves to 0.18 because the R2 int8 mirror
+  tree is serialized with it.
+- **`protobuf` added to every image extra and `[wan]`.** transformers 5.1 needs
+  it to convert a slow sentencepiece tokenizer (a base repo shipping only
+  `spiece.model`, no `tokenizer.json` — Chroma1-HD does) and otherwise falls
+  back to a tiktoken extractor that cannot parse the file
+  (`ValueError: tiktoken is required…`). A clean venv built from the extras
+  alone never worked for Chroma — earlier validation boxes had protobuf
+  transitively. Caught on a clean pod during the 0.40.0 GPU validation
+  (2026-08-26).
 - **MiniMax-H3 loader: `transformer_ref` no longer streamed from the Hub.**
   `_load_components` passed every null component to `load_components`,
   including the out-of-scope Ref2VA partition whose spec points at the hub

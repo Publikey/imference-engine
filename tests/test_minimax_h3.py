@@ -2,8 +2,8 @@
 
 Same posture as test_video_backend.py: constraints math, config resolution,
 presets/catalog parsing, the pipe(**call) kwargs the backend builds, loader
-delegation (monkeypatched) and teardown. The e2e path needs the unreleased
-diffusers PR #14355 + a GPU — that lives in validation/validate_h3.py.
+delegation (monkeypatched) and teardown. The e2e path needs diffusers >= 0.40.0
+(PR #14355 shipped there) + a GPU — that lives in validation/validate_h3.py.
 """
 from __future__ import annotations
 

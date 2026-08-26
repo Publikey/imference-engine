@@ -17,7 +17,7 @@ hidden states) + the `AutoencoderKLQwenImage` VAE.
 
 | Aspect | Behaviour |
 |---|---|
-| Load | `ModularPipeline.from_pretrained(weights)` + `pipe.load_components(torch_dtype=bfloat16)`. **`weights` is a diffusers-format repo id or local dir** (e.g. `circlestone-labs/Anima-Base-v1.0-Diffusers`), NOT a single .safetensors. |
+| Load | `ModularPipeline.from_pretrained(weights)` + `pipe.load_components(dtype=bfloat16)`. **`weights` is a diffusers-format repo id or local dir** (e.g. `circlestone-labs/Anima-Base-v1.0-Diffusers`), NOT a single .safetensors. |
 | `base_model` | Unused (no transformer/base split). |
 | `IMAGE_USE_TINY_VAE` | Ignored. |
 | img2img | **Not supported** (no documented modular img2img) — `make_img2img` raises; call `generate()` without `source_image`. |
