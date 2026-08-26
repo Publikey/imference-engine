@@ -73,7 +73,7 @@ dependencies = [
 sdxl = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -88,7 +88,7 @@ sdxl = [
 zimage = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -105,7 +105,7 @@ zimage = [
 sd15 = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -126,7 +126,7 @@ sd15 = [
 flux = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -142,7 +142,7 @@ flux = [
 chroma = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -155,12 +155,12 @@ chroma = [
     "requests>=2.31",
 ]
 # Qwen-Image — 20B MMDiT with a Qwen2.5-VL text encoder. Same diffusers 0.40
-# stack; the VL encoder needs no wheel the others lack (transformers>=5.1 already
+# stack; the VL encoder needs no wheel the others lack (transformers>=5.4 already
 # ships it). Very heavy — pair with cpu-offload / a quantized build.
 qwenimage = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -173,12 +173,12 @@ qwenimage = [
     "requests>=2.31",
 ]
 # Anima — Modular Diffusers pipeline (Cosmos DiT + Qwen3 encoder). Needs the same
-# diffusers 0.40 stack (AnimaModularPipeline landed in 0.39.0) + transformers>=5.1
+# diffusers 0.40 stack (AnimaModularPipeline landed in 0.39.0) + transformers>=5.4
 # for Qwen3. Modular-only; see imference_engine/anima/README.md.
 anima = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers==5.1.0",
+    "transformers==5.4.0",
     "accelerate==1.12.0",
     "peft==0.19.1",
     "ftfy==6.3.1",
@@ -211,7 +211,7 @@ dev = ["pytest>=8", "pytest-mock", "ruff"]
 wan = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers>=5.1",
+    "transformers>=5.4",
     "accelerate>=1.12",
     "peft>=0.19.1",
     "gguf>=0.10",
@@ -239,7 +239,12 @@ wan = [
 minimax-h3 = [
     "torch>=2.6",
     "diffusers==0.40.0",
-    "transformers>=5.1",
+    # transformers floor 5.3: released 0.40.0's H3 text-encoder step calls
+    # Qwen3VLProcessor.create_mm_token_type_ids and passes mm_token_type_ids
+    # into the Qwen3-VL forward — the processor method lands in 5.2.0 but the
+    # MODEL only accepts the kwarg from 5.3.0 (the PR head validated 2026-08-05
+    # did neither). The image extras pin ==5.4.0 (the stack-validated combo).
+    "transformers>=5.3",
     "accelerate>=1.12",
     # torchao floor: 0.18 is what serialized the R2 int8 mirror tree AND the
     # version whose v2 API peft 0.19.1's LoRA dispatcher expects (see the peft

@@ -86,6 +86,18 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Fixed
 
+- **transformers pinned 5.1.0 → 5.4.0 (image extras; `[wan]` floor ≥5.4,
+  `[minimax-h3]` floor ≥5.3).** The RELEASED diffusers 0.40.0 H3 text-encoder
+  step diverged from the validated PR #14355 head: it now calls
+  `Qwen3VLProcessor.create_mm_token_type_ids` (transformers ≥5.2) and passes
+  `mm_token_type_ids` into the Qwen3-VL forward, which the model only accepts
+  from transformers **5.3.0** — on 5.1.0 the pipeline fails with
+  `AttributeError: 'Qwen3VLProcessor' object has no attribute
+  'create_mm_token_type_ids'`. Caught by `validate_h3.py` on the 0.40
+  validation pod (2026-08-26); H3 renders green on 5.4.0 (124f + soundtrack,
+  int8 R2 mirror, block offload). The whole stack (7 image backends, Wan
+  t2v/i2v, H3) was re-validated on the final combo: diffusers 0.40.0 +
+  transformers 5.4.0 + peft 0.19.1 + torchao 0.18 + accelerate 1.12.0.
 - **peft pinned 0.18.1 → 0.19.1 (all extras); torchao floor raised to 0.18 in
   `[minimax-h3]`.** peft 0.18.1's LoRA torchao dispatcher imports
   `LinearActivationQuantizedTensor`, removed in torchao 0.18 — with torchao
