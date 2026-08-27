@@ -30,8 +30,10 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   the other image extras, folded into `[runtime]`), GPU-free unit tests
   (`test_krea2_convert`, `test_krea2_backend_flags`), a gated e2e smoke
   (`IMFERENCE_TEST_KREA2_PATH`/`_BASE`), and a `base_models.yaml` validation
-  row (Comfy-Org/Krea-2 `krea2_turbo_fp8_scaled`). ⚠️ GPU validation on a pod
-  pending — run `validation/validate.py --engines krea2` before tagging.
+  row (Comfy-Org/Krea-2 `krea2_turbo_fp8_scaled`). **GPU-validated e2e
+  2026-08-27** (RTX PRO 4000 Blackwell 24 GB): the official Turbo scaled-fp8
+  AND a civitai plain-fp8 finetune (GonzaLomo Krea 2 v4.0 — 82.9 s total with
+  cached base components) both render clean at seed 42.
 
 ## [0.4.0] — 2026-08-26
 

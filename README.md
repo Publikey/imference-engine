@@ -34,10 +34,10 @@ script, or app.
   callers override only what they mean to.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
-- **Validated.** The v0.4.0 stack (diffusers 0.40.0 · transformers 5.4.0 ·
-  peft 0.19.1) is GPU-validated end-to-end (2026-08-26): seven image backends,
-  Wan 2.2 t2v + i2v, MiniMax-H3. The new Krea 2 backend awaits its first GPU
-  validation run. See [`validation/`](validation/).
+- **Validated.** The v0.4.x stack (diffusers 0.40.0 · transformers 5.4.0 ·
+  peft 0.19.1) is GPU-validated end-to-end: seven image backends + Wan 2.2
+  t2v/i2v + MiniMax-H3 (2026-08-26), and Krea 2 Turbo — official scaled-fp8
+  AND a civitai fp8 finetune — (2026-08-27). See [`validation/`](validation/).
 
 ---
 
@@ -375,8 +375,9 @@ Design docs: [unified engine core](docs/unified-engine-core.md) ·
 model, renders, and reports pass/fail — `python validation/validate.py`
 (`validate_wan.py` for video). The full v0.4.0 stack — seven image backends,
 Wan t2v/i2v, MiniMax-H3 — passed end-to-end on 2026-08-26 (diffusers 0.40.0 ·
-transformers 5.4.0). The Krea 2 backend has a `base_models.yaml` row and
-awaits its first GPU run. See [`validation/README.md`](validation/README.md).
+transformers 5.4.0); the Krea 2 backend passed on 2026-08-27 (official
+scaled-fp8 + a civitai plain-fp8 finetune, RTX PRO 4000 24 GB). See
+[`validation/README.md`](validation/README.md).
 
 ## Status & scope
 
@@ -386,8 +387,9 @@ img2img, multi-tier residency, weighted prompts, the catalog loader +
 precedence chain, and offline/CDN resolution — including the offline converter
 for ComfyUI/civitai H3 int8-ConvRot single-files
 (`validation/stage_h3_from_comfy.py` — ~67 GB downloaded instead of ~124 GB).
-**Wired, GPU validation pending:** the Krea 2 Turbo backend (civitai/ComfyUI
-single-file + scaled-fp8 load path — run `validate.py --engines krea2`).
+The **Krea 2 Turbo backend** (civitai/ComfyUI single-file + scaled-fp8 load
+path) is validated as of 2026-08-27 — official scaled-fp8 and a civitai
+plain-fp8 finetune both render clean on a 24 GB card.
 **Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
 but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is

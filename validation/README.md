@@ -70,7 +70,7 @@ validation: diffusers 0.39, RTX PRO 5000 48 GB.
 | `chroma` | Chroma1-HD | ✅ real CFG (negative used); trends saturated at high CFG |
 | `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow |
 | `anima` | Anima-Base (diffusers repo) | ✅ **Modular pipeline**; t2i only (no img2img) |
-| `krea2` | Krea 2 Turbo (Comfy-Org fp8_scaled) | ⚠️ **pending first GPU run** — exercises the civitai single-file + scaled-fp8 load path; base repo **gated** (`hf auth login`); t2i only, 8 steps, guidance 0.0 |
+| `krea2` | Krea 2 Turbo (Comfy-Org fp8_scaled) | ✅ validated 2026-08-27 (RTX PRO 4000 24 GB) — official scaled-fp8 AND a civitai plain-fp8 finetune (GonzaLomo v4.0, 82.9 s cached-base); base repo **gated** (`hf auth login`); t2i only, 8 steps, guidance 0.0 |
 
 ## Wan 2.2 (video) — separate harness
 

@@ -82,9 +82,18 @@ models:
 
 ## Status
 
-Wired; unit-tested GPU-free (`tests/test_krea2_convert.py`,
+**VALIDATED end-to-end on 2026-08-27** (RTX PRO 4000 Blackwell 24 GB, torch
+2.11+cu128, diffusers 0.40.0 · transformers 5.4.0), both supported fp8
+flavors, seed 42, 8 steps, guidance 0.0:
+
+- **official Turbo, ComfyUI scaled-fp8** (Comfy-Org/Krea-2
+  `krea2_turbo_fp8_scaled.safetensors` — the `base_models.yaml` row): clean,
+  detailed render; the full dequant → remap → fp8-resident path.
+- **civitai finetune, plain fp8** (GonzaLomo Krea 2 v4.0, 431 tensors all
+  F8_E4M3, no `weight_scale` keys — the raw-fp8 upcast path): render in
+  **82.9 s total** (load + 8 steps, base components cached), the finetune's
+  own look, no artifacts.
+
+Also unit-tested GPU-free (`tests/test_krea2_convert.py`,
 `tests/test_krea2_backend_flags.py`); e2e smoke gated by
-`IMFERENCE_TEST_KREA2_PATH` / `IMFERENCE_TEST_KREA2_BASE`. **First GPU
-validation run pending** — `python validation/validate.py --engines krea2`
-(the `base_models.yaml` row loads Comfy-Org/Krea-2's
-`krea2_turbo_fp8_scaled.safetensors`, exercising the exact civitai load path).
+`IMFERENCE_TEST_KREA2_PATH` / `IMFERENCE_TEST_KREA2_BASE`.

@@ -28,6 +28,7 @@ Repo staged per engine (from base_models.yaml + the backend, single source of tr
     sd15       stable-diffusion-v1-5/stable-diffusion-v1-5   (config/tokenizer only, ~MB)
     qwenimage  Qwen/Qwen-Image
     anima      circlestone-labs/Anima-Base-v1.0-Diffusers    (whole modular repo)
+    krea2      krea/Krea-2-Turbo                             (GATED — hf auth login first)
     (sdxl/zimage work too if you pass them — already mirrored in your setup)
 
 Credentials (env): R2_ENDPOINT (full S3 endpoint; R2_ENDPOINT_URL / R2_ACCOUNT_ID
@@ -71,7 +72,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -83,6 +84,7 @@ _BACKENDS = {
     "zimage": "imference_engine.zimage:ZImageBackend",
     "sd15": "imference_engine.pipelines.sd15:SD15Backend",
     "sdxl": "imference_engine.pipelines.sdxl:SDXLBackend",
+    "krea2": "imference_engine.krea2:Krea2Backend",
 }
 
 
