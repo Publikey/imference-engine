@@ -32,11 +32,25 @@ class RuntimeConfig(BaseRuntimeConfig):
     ``model_cdn`` / ``enable_offload`` from ``BaseRuntimeConfig``; adds the
     image-specific residency + VAE knobs below. All optional.
 
-    ``enable_offload`` (inherited): when True, ModelManager calls
-    ``pipe.enable_model_cpu_offload(device=...)`` instead of moving the whole pipe
-    to GPU — peak VRAM drops to the largest single submodel (~5 GB SDXL unet vs
-    ~7 GB), ~10-30% slower. Strongly recommended on ≤8 GB VRAM. Incompatible with
-    the CPU LRU tier (forces max_cpu_models=0)."""
+    ``enable_offload`` (inherited): when True, ModelManager offloads the pipe
+    instead of moving it wholly to GPU; ``offload_mode`` picks the mechanism.
+    Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
+
+    offload_mode: str = "model"
+    """Offload mechanism when ``enable_offload=True`` (ignored otherwise):
+
+    - ``"model"`` (default): ``pipe.enable_model_cpu_offload`` — whole submodels
+      shuttle CPU↔GPU; peak VRAM = the largest single submodel (~5 GB SDXL unet,
+      but ~13-26 GB for the 12-20B DiTs, which therefore still need big cards).
+      ~10-30% slower than full residency.
+    - ``"group"``: diffusers group offloading — the compute module (unet /
+      transformer) streams **block by block** with a CUDA stream prefetch, text
+      encoders leaf-level, VAE resident. Peak VRAM ~4-5 GB even for the 12-20B
+      DiTs (measured: Qwen-Image 20B at 4.7 GB), so FLUX / Qwen-Image / Krea 2
+      run on 8 GB cards. Cost: the full pipe lives in host RAM and speed is
+      PCIe-bound. CUDA only — silently falls back to "model" elsewhere.
+
+    Env: ``IMAGE_OFFLOAD_MODE``."""
 
     max_cpu_models: Optional[int] = None
     """Cap on CPU-resident pipes kept warm for fast GPU re-promotion. None
@@ -85,6 +99,7 @@ class RuntimeConfig(BaseRuntimeConfig):
             # Env var name kept (IMAGE_ENABLE_CPU_OFFLOAD) — the field is the
             # unified enable_offload. See BaseRuntimeConfig.
             enable_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+            offload_mode=env_str("IMAGE_OFFLOAD_MODE", "model"),
         )
 
 
@@ -191,6 +206,7 @@ class Engine(BaseEngine):
             # ModelManager keeps its internal param name (converged in Phase 6);
             # the config surface is the unified enable_offload.
             enable_offload=self._runtime.enable_offload,
+            offload_mode=self._runtime.offload_mode,
         )
         # Catalog load via the internal helper (no _loaded guard — BaseEngine
         # flips _loaded only after _setup returns).

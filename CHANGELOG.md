@@ -9,6 +9,26 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Added
 
+- **Group offloading for the image engine** (`offload_mode="group"`, env
+  `IMAGE_OFFLOAD_MODE`; default `"model"` = unchanged behavior). With
+  `enable_offload=True` and mode `"group"`, the ModelManager wires diffusers
+  group offloading instead of `enable_model_cpu_offload`: the backend's
+  compute module (unet/transformer) streams **block-by-block** with a
+  CUDA-stream prefetch, text encoders go leaf-level, the VAE stays resident.
+  Peak VRAM drops to ~5-6 GB even for the 12-20B DiTs, so FLUX / Qwen-Image /
+  Krea 2 become runnable on 8 GB cards — at the cost of host RAM holding the
+  full pipe and PCIe-bound step times. **GPU-validated 2026-08-27** (RTX PRO
+  4000 Blackwell): Krea 2 12.9B renders in 108.8 s at a **5.9 GB peak** (vs
+  82.9 s fp8-resident), pixel-identical output. CUDA-only; falls back to model
+  offload elsewhere or on any wiring failure. Two hard-won details: a small
+  **RLIMIT_MEMLOCK** (8 MB on vast.ai/Docker containers) makes streamed
+  pinning SIGKILL the process with no traceback — auto-detected, buffers go
+  unpinned (`low_cpu_mem_usage=True`) under a <1 GiB cap; and Krea 2's
+  fp8-resident auto is OFF under group mode (hook-composition untested;
+  `KREA2_FP8_STORAGE=1` forces it). Works with every image backend via
+  `get_compute_module` (Anima's modular pipe falls back to model offload when
+  it exposes no compute module).
+
 - **Krea 2 (Turbo) image backend** (`imference_engine.krea2`, engine id
   `krea2`) — Krea AI's 12.9B single-stream flow-matching DiT (Qwen3-VL-4B
   text encoder tapped at 12 layers, Qwen-Image VAE), riding the existing

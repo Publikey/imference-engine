@@ -176,13 +176,19 @@ class Krea2Backend(PipelineBackend):
     @staticmethod
     def _resolve_fp8_storage(source_was_fp8: bool) -> bool:
         """KREA2_FP8_STORAGE=1 forces on, =0 forces off; unset = auto (fp8
-        source + CUDA available)."""
+        source + CUDA available — but OFF under IMAGE_OFFLOAD_MODE=group:
+        layerwise-fp8-casting hooks composing with group-offloading hooks on
+        the same module is untested, and under group offload the weights live
+        in host RAM anyway, where the fp8 saving matters less than a hook
+        conflict would cost). Force =1 to try the composition regardless."""
         import torch
 
         env = os.environ.get("KREA2_FP8_STORAGE", "").strip()
         if env in ("1", "true", "yes"):
             return True
         if env in ("0", "false", "no"):
+            return False
+        if os.environ.get("IMAGE_OFFLOAD_MODE", "").strip() == "group":
             return False
         return source_was_fp8 and torch.cuda.is_available()
 

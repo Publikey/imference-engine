@@ -296,7 +296,10 @@ in [`docs/reference.md`](docs/reference.md):
 
 **Image (`IMAGE_*`)** — `IMAGE_DEVICE` · `IMAGE_MODEL_CACHE` · `IMAGE_MODEL_CDN` ·
 `MAX_GPU_MODELS` · `MAX_CPU_MODELS` · `IMAGE_USE_TINY_VAE` (SDXL/SD1.5 only) ·
-`IMAGE_ENABLE_CPU_OFFLOAD`.
+`IMAGE_ENABLE_CPU_OFFLOAD` · `IMAGE_OFFLOAD_MODE` (`model` default | `group` =
+block-streamed compute module, ~5-6 GB peak VRAM even for the 12-20B DiTs —
+runs FLUX/Qwen-Image/Krea 2 on 8 GB cards, PCIe-bound and RAM-hungry; Krea 2
+measured: 5.9 GB peak, ~30% slower than fp8-resident).
 
 **Video (`WAN_*`)** — `WAN_DEVICE` · `WAN_PROFILE` (GGUF quant / `auto`) ·
 `WAN_MAX_RESIDENT` · `WAN_MODEL_CACHE` · `WAN_MODEL_CDN` · `WAN_TEXT_ENCODER_QUANT`
