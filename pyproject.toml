@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imference-engine"
-version = "0.4.0"
+version = "0.4.1"
 description = "Unified Diffusers-based inference engine: SDXL, SD 1.5, Z-Image, FLUX, Chroma, Qwen-Image, Anima, and Wan video behind one API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -190,9 +190,29 @@ anima = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# Krea 2 (Turbo) — 12.9B single-stream flow-matching DiT with a Qwen3-VL-4B
+# text encoder + the Qwen-Image VAE. Same diffusers 0.40 stack (Krea2Pipeline
+# landed in 0.39); transformers 5.4 already ships Qwen3-VL. The civitai/ComfyUI
+# single-file + scaled-fp8 loading is engine-side (krea2/convert.py) — no extra
+# wheel needed. Byte-for-byte identical to the other image extras.
+krea2 = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
 # union of the per-backend image extras. Prefer the specific extra.
-runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima]"]
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2]"]
 azure = ["azure-storage-blob>=12"]
 # R2 / S3-compatible CDN staging (validation/stage_r2.py — upload base components
 # to the mirror). boto3 talks to Cloudflare R2's S3 API.

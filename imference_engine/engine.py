@@ -144,6 +144,7 @@ class Engine(BaseEngine):
         from imference_engine.anima.backend import AnimaBackend
         from imference_engine.chroma.backend import ChromaBackend
         from imference_engine.flux.backend import FluxBackend
+        from imference_engine.krea2.backend import Krea2Backend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
@@ -167,6 +168,8 @@ class Engine(BaseEngine):
             QwenImageBackend.engine: QwenImageBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             AnimaBackend.engine: AnimaBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            Krea2Backend.engine: Krea2Backend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 

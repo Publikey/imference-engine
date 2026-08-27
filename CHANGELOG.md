@@ -5,7 +5,35 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased] — targets v0.4.0
+## [Unreleased] — targets v0.4.1
+
+### Added
+
+- **Krea 2 (Turbo) image backend** (`imference_engine.krea2`, engine id
+  `krea2`) — Krea AI's 12.9B single-stream flow-matching DiT (Qwen3-VL-4B
+  text encoder tapped at 12 layers, Qwen-Image VAE), riding the existing
+  `Krea2Pipeline` from the pinned diffusers 0.40.0. Built for the
+  **civitai/ComfyUI Turbo finetune ecosystem**: transformer-only single-files
+  in the NATIVE key layout, predominantly ComfyUI "scaled fp8". diffusers has
+  no `from_single_file` for Krea 2 (issue #14122, PRs #14126/#14264 unmerged)
+  and no scaled-fp8 path, so `krea2/convert.py` normalizes the file IN MEMORY
+  at load — prefix strip → exact per-tensor fp8 dequant (`w = fp8 ×
+  weight_scale`) → native→diffusers key remap (vendored from InvokeAI,
+  Apache-2.0; matches the unmerged upstream PR) — then composes with the base
+  repo's components (`base_model` REQUIRED, e.g. `krea/Krea-2-Turbo`; gated,
+  Krea 2 Community License). fp8 checkpoints stay **fp8-resident** (~13 GB,
+  layerwise float8 storage + bf16 compute; `KREA2_FP8_STORAGE=1|0` overrides
+  the auto). Turbo defaults: `num_steps=8`, `guidance_scale=0.0` (Krea CFG
+  convention: 0 = off, velocity `cond + g·(cond−uncond)`); `negative_prompt`
+  only acts when g > 0; scheduler name ignored; **t2i only** (no diffusers
+  img2img yet — upstream PR #14290). New `[krea2]` extra (byte-identical to
+  the other image extras, folded into `[runtime]`), GPU-free unit tests
+  (`test_krea2_convert`, `test_krea2_backend_flags`), a gated e2e smoke
+  (`IMFERENCE_TEST_KREA2_PATH`/`_BASE`), and a `base_models.yaml` validation
+  row (Comfy-Org/Krea-2 `krea2_turbo_fp8_scaled`). ⚠️ GPU validation on a pod
+  pending — run `validation/validate.py --engines krea2` before tagging.
+
+## [0.4.0] — 2026-08-26
 
 ### ⚠️ Breaking
 
@@ -14,10 +42,10 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   0.40.0 ships H3's PR #14355, which is what unblocks the fold. Consumer
   impact: mixed-rank LoRAs without alpha keys now load at their intended
   scale (upstream fix — previously arbitrary and key-order-dependent), and
-  Flax/`Flax*` classes are gone from diffusers (unused here). ⚠️ GPU
-  re-validation on 0.40 (validate.py, validate_wan.py, validate_h3.py) is
-  **pending** — run it before tagging v0.4.0. Last green: all 7 image
-  backends + Wan on 0.39, H3 on the PR head that became 0.40.0.
+  Flax/`Flax*` classes are gone from diffusers (unused here). GPU-validated
+  in full on 2026-08-26 (RTX PRO 4500 Blackwell, torch 2.11+cu128): 7 image
+  backends + Wan t2v/i2v + H3 — see `validation/README.md` for the caveats
+  (qwenimage engine-residency path needs a ≥48 GB card).
 - **Version 0.4.0** (dependency-combo change per RELEASING.md). Also re-syncs
   `imference_engine.__version__`, which had drifted to "0.3.1" while
   pyproject said "0.3.4".
