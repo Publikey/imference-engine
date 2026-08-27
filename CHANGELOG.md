@@ -7,6 +7,17 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ## [Unreleased] — targets v0.4.1
 
+### Fixed
+
+- **Prompts with lone UTF-16 surrogates no longer crash the tokenizer.**
+  Broken copy-pastes (an emoji/astral codepoint split in half) survive
+  JS strings → JSON → Python and then kill the Rust fast tokenizer at the
+  PyO3 boundary with the opaque `TypeError: TextEncodeInput must be
+  Union[...]` (hit in production via the desktop sidecar with a pasted
+  Chinese prompt). All three engines now strip lone surrogates at their
+  `generate()` boundary (`core/text.py`, warning logged) — valid text is
+  passed through untouched, real emoji included.
+
 ### Added
 
 - **Group offloading for the image engine** (`offload_mode="group"`, env
@@ -20,12 +31,18 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   full pipe and PCIe-bound step times. **GPU-validated 2026-08-27** (RTX PRO
   4000 Blackwell): Krea 2 12.9B renders in 108.8 s at a **5.9 GB peak** (vs
   82.9 s fp8-resident), pixel-identical output. CUDA-only; falls back to model
-  offload elsewhere or on any wiring failure. Two hard-won details: a small
-  **RLIMIT_MEMLOCK** (8 MB on vast.ai/Docker containers) makes streamed
-  pinning SIGKILL the process with no traceback — auto-detected, buffers go
-  unpinned (`low_cpu_mem_usage=True`) under a <1 GiB cap; and Krea 2's
-  fp8-resident auto is OFF under group mode (hook-composition untested;
-  `KREA2_FP8_STORAGE=1` forces it). Works with every image backend via
+  offload elsewhere or on any wiring failure. Host buffers are **UNPINNED by
+  default** (`low_cpu_mem_usage=True`): pinning the multi-GB pipe kills the
+  process under a container RLIMIT_MEMLOCK cap (8 MB on vast.ai/Docker —
+  SIGKILL, no traceback) and, on a low-RAM Windows host, fails as a
+  "CUDA error: out of memory" whose async report poisons the CUDA context
+  (observed on the desktop sidecar). Unpinned measured ~free on a datacenter
+  pod; `IMAGE_GROUP_PINNED=1` opts back in (refused under a small memlock).
+  **Krea 2's fp8-resident composes with group offloading** (GPU-validated:
+  83.6 s / 4.7 GB peak VRAM for the 12.9B — faster than the bf16 group run,
+  half the bytes per streamed block; render identical) and halves the HOST RAM
+  footprint (~13 GB transformer instead of ~26) — the difference between
+  fitting and swapping on a 32 GB machine. Works with every image backend via
   `get_compute_module` (Anima's modular pipe falls back to model offload when
   it exposes no compute module).
 

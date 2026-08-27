@@ -373,6 +373,11 @@ class Engine(BaseEngine):
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before generate")
+        # Strip lone surrogates (broken copy-paste debris) BEFORE anything
+        # touches a fast tokenizer — they crash it with an opaque TypeError.
+        from imference_engine.core.text import sanitize_prompt_text
+        prompt = sanitize_prompt_text(prompt, field="prompt")
+        negative_prompt = sanitize_prompt_text(negative_prompt, field="negative_prompt")
         if loras:
             logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
 
