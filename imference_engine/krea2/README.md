@@ -44,6 +44,12 @@ source was fp8 and CUDA is available; `KREA2_FP8_STORAGE=1|0` forces it.
 bf16 checkpoints load as plain bf16 (~26 GB) — pair with
 `RuntimeConfig(enable_offload=True)` on consumer VRAM.
 
+fp8-resident **composes with group offloading** (`IMAGE_OFFLOAD_MODE=group`,
+GPU-validated 2026-08-27): 83.6 s / **4.7 GB peak VRAM** for the 12.9B —
+faster than the bf16 group run (half the bytes per streamed block), identical
+render — and the transformer sits fp8 in HOST RAM (~13 GB instead of ~26),
+which is what makes 8 GB-VRAM / 32 GB-RAM machines viable.
+
 ## Behavior
 
 | knob | behavior |

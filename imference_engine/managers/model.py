@@ -25,6 +25,7 @@ The manager is intentionally NOT thread-safe — Engine docs state
 from __future__ import annotations
 import gc
 import logging
+import os
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -427,19 +428,32 @@ class ModelManager:
             onload_device=torch.device(device),
             offload_device=torch.device("cpu"),
             use_stream=True,
+            # UNPINNED host buffers by default (low_cpu_mem_usage=True).
+            # Pinning the full multi-GB pipe is how streamed group offload
+            # dies in the field, in two different ways:
+            #   - containers cap RLIMIT_MEMLOCK (8 MB on vast.ai/Docker) →
+            #     the process is SIGKILLed with no traceback (observed,
+            #     exit 137 during wiring);
+            #   - Windows has no memlock limit to detect, but cudaHostAlloc
+            #     of ~26 GB on a 32 GB laptop fails as a "CUDA error: out of
+            #     memory" whose async report POISONS the CUDA context — every
+            #     later CUDA call in the process fails (observed on the
+            #     desktop sidecar; the model-offload fallback then dies too).
+            # Measured cost of unpinned on a datacenter pod: ~none vs the
+            # theoretical pinned path (108.8 s / 5.9 GB peak for Krea 2
+            # 12.9B). Big-RAM Linux hosts can opt back in with
+            # IMAGE_GROUP_PINNED=1 (refused when memlock says otherwise).
+            low_cpu_mem_usage=True,
         )
-        # Streamed group offload pins host buffers (page-locked memory). Under
-        # a small RLIMIT_MEMLOCK — vast.ai/Docker containers commonly cap it at
-        # 8 MB — pinning a multi-GB pipe gets the process SIGKILLed with no
-        # Python traceback (observed on a vast pod, exit 137 during wiring).
-        # diffusers' low_cpu_mem_usage=True keeps the stream but skips the
-        # pinned buffers (somewhat slower transfers). Auto-detect: any memlock
-        # cap below 1 GiB turns it on.
-        if _memlock_limit_bytes() < (1 << 30):
-            offload_kwargs["low_cpu_mem_usage"] = True
-            logger.info(
-                f"{name!r}: small RLIMIT_MEMLOCK detected — group offload "
-                "will not pin host buffers (low_cpu_mem_usage=True)")
+        if os.environ.get("IMAGE_GROUP_PINNED", "").strip() in ("1", "true", "yes"):
+            if _memlock_limit_bytes() < (1 << 30):
+                logger.warning(
+                    f"{name!r}: IMAGE_GROUP_PINNED=1 ignored — RLIMIT_MEMLOCK "
+                    "is below 1 GiB and pinning the pipe would kill the process")
+            else:
+                del offload_kwargs["low_cpu_mem_usage"]
+                logger.info(f"{name!r}: group offload with PINNED host buffers "
+                            "(IMAGE_GROUP_PINNED=1)")
         if hasattr(compute, "enable_group_offload"):
             compute.enable_group_offload(
                 offload_type="block_level", num_blocks_per_group=1, **offload_kwargs)

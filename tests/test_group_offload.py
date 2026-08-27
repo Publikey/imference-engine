@@ -130,6 +130,9 @@ def test_group_mode_wires_compute_encoders_and_vae(leaf_calls):
     assert kw["offload_type"] == "block_level"
     assert kw["num_blocks_per_group"] == 1
     assert kw["use_stream"] is True
+    # UNPINNED host buffers by default — pinning kills the process under a
+    # container memlock cap and poisons the CUDA context on low-RAM Windows.
+    assert kw["low_cpu_mem_usage"] is True
     assert kw["onload_device"] == torch.device("cuda:0")
     assert kw["offload_device"] == torch.device("cpu")
 
@@ -185,12 +188,15 @@ def test_runtime_config_reads_env(monkeypatch):
     assert RuntimeConfig.from_env().offload_mode == "model"
 
 
-def test_krea2_fp8_storage_auto_off_under_group_mode(monkeypatch):
+def test_krea2_fp8_storage_env_overrides(monkeypatch):
+    """fp8-resident composes with group offloading (GPU-validated), so the
+    auto no longer special-cases the offload mode — only the env forces it."""
     from imference_engine.krea2 import Krea2Backend
     monkeypatch.setenv("IMAGE_OFFLOAD_MODE", "group")
-    monkeypatch.delenv("KREA2_FP8_STORAGE", raising=False)
-    # auto (unset) → off under group mode, even for an fp8 source
+    monkeypatch.setenv("KREA2_FP8_STORAGE", "0")
     assert Krea2Backend._resolve_fp8_storage(source_was_fp8=True) is False
-    # explicit force still wins
     monkeypatch.setenv("KREA2_FP8_STORAGE", "1")
     assert Krea2Backend._resolve_fp8_storage(source_was_fp8=True) is True
+    # auto with a non-fp8 source stays off regardless of CUDA
+    monkeypatch.delenv("KREA2_FP8_STORAGE")
+    assert Krea2Backend._resolve_fp8_storage(source_was_fp8=False) is False
