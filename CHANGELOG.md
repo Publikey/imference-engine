@@ -5,6 +5,22 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [0.4.3] — 2026-08-28
+
+### Fixed
+
+- **Krea 2: single-file checkpoints with mixed float dtypes no longer crash
+  mid-inference.** Some finetune tooling saves fp32 biases (or norm scales)
+  next to bf16/fp8 weights; `load_state_dict(assign=True)` kept them fp32 and
+  the first denoising step died with `RuntimeError: self and mat2 must have
+  the same dtype, but got Float and BFloat16` (hit in production with a
+  civitai fp8_scaled finetune carrying 7 fp32 biases — same failure family as
+  the Illustrious SDXL fp32 biases). `prepare_krea2_state_dict` now unifies
+  EVERY floating tensor to the compute dtype after dequantization, matching
+  `from_pretrained(dtype=...)`. Side effect: the official file's fp32 norm
+  scales are now bf16 too (upstream-canonical; renders shift imperceptibly
+  vs. v0.4.2 at the same seed).
+
 ## [0.4.2] — 2026-08-28
 
 ### Added

@@ -93,6 +93,22 @@ def test_prepare_upcasts_plain_fp8_without_scales():
     assert out["transformer_blocks.0.attn.to_q.weight"].dtype == torch.bfloat16
 
 
+def test_prepare_casts_stray_fp32_params_to_compute_dtype():
+    """Some finetune tooling saves fp32 biases next to bf16 weights; with
+    load_state_dict(assign=True) they would stay fp32 and F.linear dies
+    mid-inference with 'self and mat2 must have the same dtype'. Every
+    floating tensor must come out in the compute dtype."""
+    sd = {
+        "tmlp.0.weight": torch.zeros(4, 4, dtype=torch.bfloat16),
+        "tmlp.0.bias": torch.zeros(4, dtype=torch.float32),
+        "blocks.0.prenorm.scale": torch.zeros(4, dtype=torch.float32),
+    }
+    out, _ = prepare_krea2_state_dict(sd, torch.bfloat16)
+    assert out["time_embed.linear_1.bias"].dtype == torch.bfloat16
+    assert out["transformer_blocks.0.norm1.weight"].dtype == torch.bfloat16
+    assert out["time_embed.linear_1.weight"].dtype == torch.bfloat16
+
+
 # ------------------------------------------------------------------ key remap
 
 def _native_sd():

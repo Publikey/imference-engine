@@ -462,14 +462,24 @@ def prepare_krea2_state_dict(
     was_fp8 = has_fp8_weights(sd)
     sd = dequantize_scaled_fp8(sd, dtype, device)
     sd = _drop_quant_metadata_keys(sd)
-    # Plain-fp8 files (raw float8 weights, NO weight_scale — some community
-    # quants): upcast to the compute dtype, else nn.Linear gets raw float8
-    # parameters and fails at forward. Scaled-fp8 weights are already handled
-    # above; every other tensor keeps its file dtype (bf16 weights stay bf16,
-    # fp32 norm scales stay fp32).
-    fp8_dtypes = (torch.float8_e4m3fn, torch.float8_e5m2)
+    # Unify EVERY floating tensor to the compute dtype — what
+    # ``from_pretrained(dtype=...)`` would do. This covers plain-fp8 files
+    # (raw float8 weights, no scales — nn.Linear cannot forward float8
+    # params) AND stray fp32 params some finetune tooling leaves behind
+    # (e.g. fp32 biases next to bf16 weights: F.linear then dies mid-inference
+    # with "self and mat2 must have the same dtype" — the same failure family
+    # as the Illustrious SDXL fp32 biases, hit in production with a civitai
+    # Krea 2 finetune). load_state_dict(assign=True) keeps whatever dtype the
+    # state dict carries, so the cast must happen HERE. Integer tensors are
+    # untouched (a leftover int8 is rejected below).
     sd = {
-        k: (v.to(dtype) if getattr(v, "dtype", None) in fp8_dtypes else v)
+        k: (
+            v.to(dtype)
+            if getattr(v, "dtype", None) is not None
+            and getattr(v.dtype, "is_floating_point", False)
+            and v.dtype != dtype
+            else v
+        )
         for k, v in sd.items()
     }
     # Any int8 tensor left at this point followed an unknown quantization
