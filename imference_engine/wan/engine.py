@@ -238,6 +238,10 @@ class WanEngine(BaseEngine):
     ) -> MediaResult:
         if not self._loaded:
             raise RuntimeError("Call WanEngine.load() before generate_video")
+        # Lone-surrogate debris crashes the fast tokenizer — see core/text.py.
+        from imference_engine.core.text import sanitize_prompt_text
+        prompt = sanitize_prompt_text(prompt, field="prompt")
+        negative_prompt = sanitize_prompt_text(negative_prompt, field="negative_prompt")
         if variant not in self._variants:
             raise KeyError(f"unknown variant {variant!r}; known: {self.list_variants()}")
         var = self._variants[variant]

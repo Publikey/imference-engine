@@ -59,8 +59,11 @@ def test_resolve_repo_mode_stages_whole_repo():
 
 def test_default_engines_are_all_cdn_wired():
     # anima is now wired through local_repo_dir (see AnimaBackend.load_pipeline),
-    # so it's staged by default alongside the transformer-only backends.
-    assert set(stage_r2.DEFAULT_ENGINES) == {"flux", "chroma", "sd15", "qwenimage", "anima"}
+    # so it's staged by default alongside the transformer-only backends —
+    # krea2 likewise (its gated krea/Krea-2-Turbo base must live on the mirror
+    # for offline workers).
+    assert set(stage_r2.DEFAULT_ENGINES) == {
+        "flux", "chroma", "sd15", "qwenimage", "anima", "krea2"}
 
 
 def test_anima_backend_is_cdn_wired():

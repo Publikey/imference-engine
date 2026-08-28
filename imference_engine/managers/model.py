@@ -25,6 +25,7 @@ The manager is intentionally NOT thread-safe — Engine docs state
 from __future__ import annotations
 import gc
 import logging
+import os
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -34,6 +35,27 @@ from imference_engine.pipelines.base import PipelineBackend
 from imference_engine.runtime.device import Device
 
 logger = logging.getLogger(__name__)
+
+
+def _leaf_offload(module: Any, **kwargs: Any) -> None:
+    """Thin indirection over diffusers.hooks.apply_group_offloading so unit
+    tests can monkeypatch the diffusers call without a GPU (the import stays
+    lazy for the pure-Python install)."""
+    from diffusers.hooks import apply_group_offloading
+    apply_group_offloading(module, **kwargs)
+
+
+def _memlock_limit_bytes() -> float:
+    """Effective RLIMIT_MEMLOCK soft limit in bytes; +inf when unlimited or
+    unknowable (Windows has no resource module — and no memlock limit)."""
+    try:
+        import resource
+        soft, _hard = resource.getrlimit(resource.RLIMIT_MEMLOCK)
+        if soft == resource.RLIM_INFINITY:
+            return float("inf")
+        return float(soft)
+    except Exception:  # noqa: BLE001 — no limit we can detect
+        return float("inf")
 
 
 @dataclass
@@ -73,6 +95,7 @@ class ModelManager:
         on_loaded: Optional[Callable[[str], None]] = None,
         on_evicted: Optional[Callable[[str], None]] = None,
         enable_offload: bool = False,
+        offload_mode: str = "model",
     ) -> None:
         self._backends = backends
         self._device = device
@@ -86,11 +109,18 @@ class ModelManager:
         self._on_loaded = on_loaded
         self._on_evicted = on_evicted
         self._enable_offload = enable_offload
+        if offload_mode not in ("model", "group"):
+            logger.warning(
+                f"Unknown offload_mode {offload_mode!r} (expected 'model' or "
+                "'group'); using 'model'")
+            offload_mode = "model"
+        self._offload_mode = offload_mode
 
         logger.info(
             f"ModelManager configured: max_gpu_models={self._max_gpu}, "
             f"max_cpu_models={self._max_cpu}, "
-            f"enable_offload={self._enable_offload}"
+            f"enable_offload={self._enable_offload}, "
+            f"offload_mode={self._offload_mode}"
         )
 
     # ------------------------------------------------------------------
@@ -269,30 +299,58 @@ class ModelManager:
         from v1's swap_model_to_gpu — two retry attempts, then bail and
         purge the pipe entirely if VRAM is genuinely insufficient.
 
-        When `enable_offload=True`, takes the accelerate path instead:
-        diffusers' `pipe.enable_model_cpu_offload(device=...)` installs
-        hooks that shuttle individual submodels (text_encoder, unet, vae)
-        between CPU and GPU on demand. Peak VRAM drops to the largest
-        single submodel (~5 GB for SDXL unet vs ~7 GB for the full pipe).
+        When `enable_offload=True`, takes an offload path instead, per
+        `offload_mode`:
+
+        - "model": diffusers' `pipe.enable_model_cpu_offload(device=...)`
+          installs hooks that shuttle whole submodels (text_encoder,
+          unet/transformer, vae) between CPU and GPU on demand. Peak VRAM
+          drops to the largest single submodel (~5 GB for the SDXL unet —
+          but the 12-20B DiT transformers stay 13-26 GB, hence "group").
+        - "group": diffusers group offloading — the backend's compute module
+          streams block-by-block with a CUDA-stream prefetch, the other
+          nn.Module components (text encoders) go leaf-level, and the VAE
+          stays resident. Peak VRAM ~4-5 GB even for the 12-20B DiTs.
+          CUDA-only; falls back to "model" elsewhere or on failure.
+
+        Either way the hooks own device placement afterwards — such a pipe
+        must never be pipe.to()'d again, which the eviction path already
+        guarantees (offload pipes are dropped, never demoted to the CPU tier).
         """
         device = self._device.torch_str
         self._free_device_cache()
 
         if self._enable_offload:
-            # Accelerate manages device placement per-submodel from here on —
-            # we do NOT call pipe.to(device), the hook system would conflict.
-            try:
-                pipe.enable_model_cpu_offload(device=device)
-                logger.info(
-                    f"{name!r}: enable_model_cpu_offload(device={device!r}) — "
-                    "submodels will shuttle on demand"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"enable_model_cpu_offload failed for {name!r}; "
-                    f"falling back to direct .to({device}): {e}"
-                )
-                pipe.to(device)
+            offloaded = False
+            if self._offload_mode == "group":
+                if self._device.kind != "cuda":
+                    logger.warning(
+                        f"{name!r}: offload_mode='group' needs CUDA "
+                        f"(device is {self._device.kind}); using 'model' instead")
+                else:
+                    try:
+                        self._apply_group_offload(pipe, name, device)
+                        offloaded = True
+                    except Exception as e:
+                        logger.warning(
+                            f"group offload failed for {name!r}; falling back "
+                            f"to model offload: {e}")
+            if not offloaded:
+                # Accelerate manages device placement per-submodel from here
+                # on — we do NOT call pipe.to(device), the hook system would
+                # conflict.
+                try:
+                    pipe.enable_model_cpu_offload(device=device)
+                    logger.info(
+                        f"{name!r}: enable_model_cpu_offload(device={device!r}) — "
+                        "submodels will shuttle on demand"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"enable_model_cpu_offload failed for {name!r}; "
+                        f"falling back to direct .to({device}): {e}"
+                    )
+                    pipe.to(device)
         else:
             try:
                 pipe.to(device)
@@ -337,6 +395,87 @@ class ModelManager:
                 logger.debug(f"VAE post-GPU swap setup failed for {name!r}: {e}")
 
         self._free_device_cache()
+
+    def _apply_group_offload(self, pipe: Any, name: str, device: str) -> None:
+        """Wire diffusers group offloading onto a pipe (offload_mode="group").
+
+        The backend's compute module (unet / transformer — the multi-GB part)
+        streams **block by block** onto the GPU with a CUDA-stream prefetch, so
+        its VRAM footprint is a few blocks instead of the whole model. The
+        other nn.Module components (text encoders — the next-biggest pieces)
+        are leaf-offloaded; the VAE moves to the device outright (small, and
+        tiling/slicing already bound its decode peak). This is the same recipe
+        as the MiniMax-H3 loader (block + stream) and the Qwen-Image 32-GB-card
+        validation harness (20B bf16 at 4.7 GB peak VRAM).
+
+        Raises on anything unexpected — the caller falls back to model offload.
+        NOTE: like accelerate's hooks, group offloading leaves hooks + pinned
+        host buffers that a bare `del pipe` does not fully return; the eviction
+        path drops such pipes (never .to()s them) and empty_cache reclaims the
+        device side. Mirrors the known limitation documented for the video
+        backends.
+        """
+        import torch
+
+        meta = self._registered.get(name)
+        backend = self._backends.get(meta.backend) if meta else None
+        compute = backend.get_compute_module(pipe) if backend else None
+        if compute is None:
+            raise RuntimeError(
+                f"backend for {name!r} exposes no compute module to group-offload")
+
+        offload_kwargs = dict(
+            onload_device=torch.device(device),
+            offload_device=torch.device("cpu"),
+            use_stream=True,
+            # UNPINNED host buffers by default (low_cpu_mem_usage=True).
+            # Pinning the full multi-GB pipe is how streamed group offload
+            # dies in the field, in two different ways:
+            #   - containers cap RLIMIT_MEMLOCK (8 MB on vast.ai/Docker) →
+            #     the process is SIGKILLed with no traceback (observed,
+            #     exit 137 during wiring);
+            #   - Windows has no memlock limit to detect, but cudaHostAlloc
+            #     of ~26 GB on a 32 GB laptop fails as a "CUDA error: out of
+            #     memory" whose async report POISONS the CUDA context — every
+            #     later CUDA call in the process fails (observed on the
+            #     desktop sidecar; the model-offload fallback then dies too).
+            # Measured cost of unpinned on a datacenter pod: ~none vs the
+            # theoretical pinned path (108.8 s / 5.9 GB peak for Krea 2
+            # 12.9B). Big-RAM Linux hosts can opt back in with
+            # IMAGE_GROUP_PINNED=1 (refused when memlock says otherwise).
+            low_cpu_mem_usage=True,
+        )
+        if os.environ.get("IMAGE_GROUP_PINNED", "").strip() in ("1", "true", "yes"):
+            if _memlock_limit_bytes() < (1 << 30):
+                logger.warning(
+                    f"{name!r}: IMAGE_GROUP_PINNED=1 ignored — RLIMIT_MEMLOCK "
+                    "is below 1 GiB and pinning the pipe would kill the process")
+            else:
+                del offload_kwargs["low_cpu_mem_usage"]
+                logger.info(f"{name!r}: group offload with PINNED host buffers "
+                            "(IMAGE_GROUP_PINNED=1)")
+        if hasattr(compute, "enable_group_offload"):
+            compute.enable_group_offload(
+                offload_type="block_level", num_blocks_per_group=1, **offload_kwargs)
+        else:  # non-ModelMixin compute module — use the free function
+            _leaf_offload(compute, offload_type="block_level",
+                          num_blocks_per_group=1, **offload_kwargs)
+
+        import torch.nn as nn
+        components = getattr(pipe, "components", None) or {}
+        vae = getattr(pipe, "vae", None)
+        for comp_name, module in components.items():
+            if module is None or not isinstance(module, nn.Module):
+                continue  # tokenizers / schedulers
+            if module is compute:
+                continue
+            if module is vae:
+                module.to(device)
+                continue
+            _leaf_offload(module, offload_type="leaf_level", **offload_kwargs)
+        logger.info(
+            f"{name!r}: group offload wired (compute block_level+stream, "
+            f"encoders leaf_level, vae resident on {device})")
 
     def _safe_move_to_cpu(self, pipe: Any) -> None:
         """Cheap version of _swap_pipe_to_cpu for the fresh-from-load case:

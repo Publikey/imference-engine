@@ -5,7 +5,92 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased] — targets v0.4.0
+## [0.4.1] — 2026-08-28
+
+### Added
+
+- **User LoRAs on SDXL** (`generate(loras=[{source, weight, adapter_name}])`
+  — `path`/`url` accepted as aliases; the pre-LoRA `loras=` warn-and-ignore
+  survives on every other backend via the new
+  `PipelineBackend.supports_loras` gate). New `managers/lora.py` LoRAManager,
+  ported from the legacy sdxl-multimodel worker with the Wan loader's
+  lessons: adapters applied with `set_adapters` and **never fused**,
+  deactivated in a `finally` after every request (resident ModelManager pipes
+  stay clean), loaded in the offline-safe `(dir, weight_name)` form,
+  per-pipe adapter cache (LRU-evicted beyond `MAX_CACHED_LORAS`, default 5)
+  that dies with the pipe on eviction. URL sources download through the
+  engine's parallel downloader into an LRU-pruned cache dir
+  (`IMAGE_LORA_CACHE` / `RuntimeConfig.lora_cache_dir`). A failed LoRA load
+  fails the request as an error result — it never silently renders without
+  the LoRA. `validation/validate.py` passes an optional per-entry `loras:`
+  stack through. 13 GPU-free tests.
+
+### Fixed
+
+- **Prompts with lone UTF-16 surrogates no longer crash the tokenizer.**
+  Broken copy-pastes (an emoji/astral codepoint split in half) survive
+  JS strings → JSON → Python and then kill the Rust fast tokenizer at the
+  PyO3 boundary with the opaque `TypeError: TextEncodeInput must be
+  Union[...]` (hit in production via the desktop sidecar with a pasted
+  Chinese prompt). All three engines now strip lone surrogates at their
+  `generate()` boundary (`core/text.py`, warning logged) — valid text is
+  passed through untouched, real emoji included.
+
+### Added
+
+- **Group offloading for the image engine** (`offload_mode="group"`, env
+  `IMAGE_OFFLOAD_MODE`; default `"model"` = unchanged behavior). With
+  `enable_offload=True` and mode `"group"`, the ModelManager wires diffusers
+  group offloading instead of `enable_model_cpu_offload`: the backend's
+  compute module (unet/transformer) streams **block-by-block** with a
+  CUDA-stream prefetch, text encoders go leaf-level, the VAE stays resident.
+  Peak VRAM drops to ~5-6 GB even for the 12-20B DiTs, so FLUX / Qwen-Image /
+  Krea 2 become runnable on 8 GB cards — at the cost of host RAM holding the
+  full pipe and PCIe-bound step times. **GPU-validated 2026-08-27** (RTX PRO
+  4000 Blackwell): Krea 2 12.9B renders in 108.8 s at a **5.9 GB peak** (vs
+  82.9 s fp8-resident), pixel-identical output. CUDA-only; falls back to model
+  offload elsewhere or on any wiring failure. Host buffers are **UNPINNED by
+  default** (`low_cpu_mem_usage=True`): pinning the multi-GB pipe kills the
+  process under a container RLIMIT_MEMLOCK cap (8 MB on vast.ai/Docker —
+  SIGKILL, no traceback) and, on a low-RAM Windows host, fails as a
+  "CUDA error: out of memory" whose async report poisons the CUDA context
+  (observed on the desktop sidecar). Unpinned measured ~free on a datacenter
+  pod; `IMAGE_GROUP_PINNED=1` opts back in (refused under a small memlock).
+  **Krea 2's fp8-resident composes with group offloading** (GPU-validated:
+  83.6 s / 4.7 GB peak VRAM for the 12.9B — faster than the bf16 group run,
+  half the bytes per streamed block; render identical) and halves the HOST RAM
+  footprint (~13 GB transformer instead of ~26) — the difference between
+  fitting and swapping on a 32 GB machine. Works with every image backend via
+  `get_compute_module` (Anima's modular pipe falls back to model offload when
+  it exposes no compute module).
+
+- **Krea 2 (Turbo) image backend** (`imference_engine.krea2`, engine id
+  `krea2`) — Krea AI's 12.9B single-stream flow-matching DiT (Qwen3-VL-4B
+  text encoder tapped at 12 layers, Qwen-Image VAE), riding the existing
+  `Krea2Pipeline` from the pinned diffusers 0.40.0. Built for the
+  **civitai/ComfyUI Turbo finetune ecosystem**: transformer-only single-files
+  in the NATIVE key layout, predominantly ComfyUI "scaled fp8". diffusers has
+  no `from_single_file` for Krea 2 (issue #14122, PRs #14126/#14264 unmerged)
+  and no scaled-fp8 path, so `krea2/convert.py` normalizes the file IN MEMORY
+  at load — prefix strip → exact per-tensor fp8 dequant (`w = fp8 ×
+  weight_scale`) → native→diffusers key remap (vendored from InvokeAI,
+  Apache-2.0; matches the unmerged upstream PR) — then composes with the base
+  repo's components (`base_model` REQUIRED, e.g. `krea/Krea-2-Turbo`; gated,
+  Krea 2 Community License). fp8 checkpoints stay **fp8-resident** (~13 GB,
+  layerwise float8 storage + bf16 compute; `KREA2_FP8_STORAGE=1|0` overrides
+  the auto). Turbo defaults: `num_steps=8`, `guidance_scale=0.0` (Krea CFG
+  convention: 0 = off, velocity `cond + g·(cond−uncond)`); `negative_prompt`
+  only acts when g > 0; scheduler name ignored; **t2i only** (no diffusers
+  img2img yet — upstream PR #14290). New `[krea2]` extra (byte-identical to
+  the other image extras, folded into `[runtime]`), GPU-free unit tests
+  (`test_krea2_convert`, `test_krea2_backend_flags`), a gated e2e smoke
+  (`IMFERENCE_TEST_KREA2_PATH`/`_BASE`), and a `base_models.yaml` validation
+  row (Comfy-Org/Krea-2 `krea2_turbo_fp8_scaled`). **GPU-validated e2e
+  2026-08-27** (RTX PRO 4000 Blackwell 24 GB): the official Turbo scaled-fp8
+  AND a civitai plain-fp8 finetune (GonzaLomo Krea 2 v4.0 — 82.9 s total with
+  cached base components) both render clean at seed 42.
+
+## [0.4.0] — 2026-08-26
 
 ### ⚠️ Breaking
 
@@ -14,10 +99,10 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   0.40.0 ships H3's PR #14355, which is what unblocks the fold. Consumer
   impact: mixed-rank LoRAs without alpha keys now load at their intended
   scale (upstream fix — previously arbitrary and key-order-dependent), and
-  Flax/`Flax*` classes are gone from diffusers (unused here). ⚠️ GPU
-  re-validation on 0.40 (validate.py, validate_wan.py, validate_h3.py) is
-  **pending** — run it before tagging v0.4.0. Last green: all 7 image
-  backends + Wan on 0.39, H3 on the PR head that became 0.40.0.
+  Flax/`Flax*` classes are gone from diffusers (unused here). GPU-validated
+  in full on 2026-08-26 (RTX PRO 4500 Blackwell, torch 2.11+cu128): 7 image
+  backends + Wan t2v/i2v + H3 — see `validation/README.md` for the caveats
+  (qwenimage engine-residency path needs a ≥48 GB card).
 - **Version 0.4.0** (dependency-combo change per RELEASING.md). Also re-syncs
   `imference_engine.__version__`, which had drifted to "0.3.1" while
   pyproject said "0.3.4".

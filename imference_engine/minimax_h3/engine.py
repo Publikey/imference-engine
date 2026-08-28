@@ -218,6 +218,9 @@ class MiniMaxH3Engine(BaseEngine):
         24 fps). Never raises for generation failures — see ``errors``."""
         if not self._loaded:
             raise RuntimeError("Call MiniMaxH3Engine.load() before generate_video")
+        # Lone-surrogate debris crashes the fast tokenizer — see core/text.py.
+        from imference_engine.core.text import sanitize_prompt_text
+        prompt = sanitize_prompt_text(prompt, field="prompt")
         if variant not in self._variants:
             raise KeyError(f"unknown variant {variant!r}; known: {self.list_variants()}")
         var = self._variants[variant]

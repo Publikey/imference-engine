@@ -118,6 +118,11 @@ def run_one(engine: str, entry: dict, args) -> dict:
             gen_kwargs["negative_prompt"] = entry["negative_prompt"]
         if entry.get("backend_options"):
             gen_kwargs["backend_options"] = entry["backend_options"]
+        # Optional LoRA stack (supported backends only — SDXL today). Entries:
+        # {source: <path|url>, weight: 0.8}. Not shipped in the default config
+        # (no stable public URL to pin) — add ad hoc when validating LoRAs.
+        if entry.get("loras"):
+            gen_kwargs["loras"] = entry["loras"]
 
         result = eng.generate(**gen_kwargs)
 

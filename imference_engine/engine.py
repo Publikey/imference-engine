@@ -16,6 +16,7 @@ from imference_engine.core.config import BaseRuntimeConfig
 from imference_engine.core.engine_base import MAX_SEED, BaseEngine
 from imference_engine.core.result import GenerationError, MediaResult
 from imference_engine.managers.batch import BatchSizer
+from imference_engine.managers.lora import LoRAManager
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
 
@@ -32,11 +33,25 @@ class RuntimeConfig(BaseRuntimeConfig):
     ``model_cdn`` / ``enable_offload`` from ``BaseRuntimeConfig``; adds the
     image-specific residency + VAE knobs below. All optional.
 
-    ``enable_offload`` (inherited): when True, ModelManager calls
-    ``pipe.enable_model_cpu_offload(device=...)`` instead of moving the whole pipe
-    to GPU — peak VRAM drops to the largest single submodel (~5 GB SDXL unet vs
-    ~7 GB), ~10-30% slower. Strongly recommended on ≤8 GB VRAM. Incompatible with
-    the CPU LRU tier (forces max_cpu_models=0)."""
+    ``enable_offload`` (inherited): when True, ModelManager offloads the pipe
+    instead of moving it wholly to GPU; ``offload_mode`` picks the mechanism.
+    Incompatible with the CPU LRU tier (forces max_cpu_models=0)."""
+
+    offload_mode: str = "model"
+    """Offload mechanism when ``enable_offload=True`` (ignored otherwise):
+
+    - ``"model"`` (default): ``pipe.enable_model_cpu_offload`` — whole submodels
+      shuttle CPU↔GPU; peak VRAM = the largest single submodel (~5 GB SDXL unet,
+      but ~13-26 GB for the 12-20B DiTs, which therefore still need big cards).
+      ~10-30% slower than full residency.
+    - ``"group"``: diffusers group offloading — the compute module (unet /
+      transformer) streams **block by block** with a CUDA stream prefetch, text
+      encoders leaf-level, VAE resident. Peak VRAM ~4-5 GB even for the 12-20B
+      DiTs (measured: Qwen-Image 20B at 4.7 GB), so FLUX / Qwen-Image / Krea 2
+      run on 8 GB cards. Cost: the full pipe lives in host RAM and speed is
+      PCIe-bound. CUDA only — silently falls back to "model" elsewhere.
+
+    Env: ``IMAGE_OFFLOAD_MODE``."""
 
     max_cpu_models: Optional[int] = None
     """Cap on CPU-resident pipes kept warm for fast GPU re-promotion. None
@@ -85,6 +100,8 @@ class RuntimeConfig(BaseRuntimeConfig):
             # Env var name kept (IMAGE_ENABLE_CPU_OFFLOAD) — the field is the
             # unified enable_offload. See BaseRuntimeConfig.
             enable_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
+            offload_mode=env_str("IMAGE_OFFLOAD_MODE", "model"),
+            lora_cache_dir=env_str("IMAGE_LORA_CACHE"),
         )
 
 
@@ -144,6 +161,7 @@ class Engine(BaseEngine):
         from imference_engine.anima.backend import AnimaBackend
         from imference_engine.chroma.backend import ChromaBackend
         from imference_engine.flux.backend import FluxBackend
+        from imference_engine.krea2.backend import Krea2Backend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
@@ -168,6 +186,8 @@ class Engine(BaseEngine):
                 cache_dir=cache_dir, cdn_base=cdn_base),
             AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
+            Krea2Backend.engine: Krea2Backend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
         max_gpu = self._runtime.max_gpu_models or 1
@@ -188,6 +208,14 @@ class Engine(BaseEngine):
             # ModelManager keeps its internal param name (converged in Phase 6);
             # the config surface is the unified enable_offload.
             enable_offload=self._runtime.enable_offload,
+            offload_mode=self._runtime.offload_mode,
+        )
+        # LoRA manager (SDXL-only for now via PipelineBackend.supports_loras).
+        # MAX_CACHED_LORAS keeps the legacy worker env name for drop-in parity.
+        from imference_engine.runtime.env import env_int_or_none as _int
+        self._loras = LoRAManager(
+            cache_dir=str(self._runtime.lora_cache_dir) if self._runtime.lora_cache_dir else None,
+            max_adapters=_int("MAX_CACHED_LORAS") or 5,
         )
         # Catalog load via the internal helper (no _loaded guard — BaseEngine
         # flips _loaded only after _setup returns).
@@ -351,13 +379,36 @@ class Engine(BaseEngine):
         ``request > model defaults > engine defaults > GLOBAL_DEFAULTS`` (finest
         wins), so a per-model catalog default fills what the request omits. Pass
         a value to override at the request layer.
+
+        ``loras`` stacks user LoRAs for the request on backends that support
+        them (``PipelineBackend.supports_loras`` — SDXL only for now; other
+        backends log a warning and ignore). Each entry:
+        ``{"source": <local path | http(s) URL>, "weight": 0.8,
+        "adapter_name": "style"}`` (``path``/``url`` accepted as aliases of
+        ``source``). Adapters are applied WITHOUT fusing and deactivated after
+        the request; a failed LoRA load returns an error result rather than
+        rendering without it.
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before generate")
-        if loras:
-            logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
-
+        # Strip lone surrogates (broken copy-paste debris) BEFORE anything
+        # touches a fast tokenizer — they crash it with an opaque TypeError.
+        from imference_engine.core.text import sanitize_prompt_text
+        prompt = sanitize_prompt_text(prompt, field="prompt")
+        negative_prompt = sanitize_prompt_text(negative_prompt, field="negative_prompt")
         pipe, backend = self._models.get_or_load(model)
+
+        # LoRAs: only backends that declare supports_loras take them (SDXL for
+        # now); everywhere else the request stays valid and the LoRAs are
+        # ignored with a warning — the pre-LoRA behavior.
+        lora_configs: list[dict] = []
+        if loras:
+            if getattr(backend, "supports_loras", False):
+                lora_configs = self._loras.parse(loras)
+            else:
+                logger.warning(
+                    "Backend %r does not support LoRAs yet; ignoring loras=%s",
+                    backend.engine, loras)
 
         # Resolve the effective sampling params through the precedence chain:
         # request > model defaults > engine defaults > GLOBAL_DEFAULTS. A None
@@ -394,27 +445,51 @@ class Engine(BaseEngine):
         # object BEFORE the call — it is not a pipe(...) kwarg. Standard pipelines
         # keep the default no-op and pass guidance_scale in build_inference_kwargs.
         backend.apply_guidance(pipe, eff.guidance_scale)
-        prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
-        seeds = [
-            (seed + i) if seed is not None else random.randint(0, MAX_SEED)
-            for i in range(batch)
-        ]
+        # LoRAs are applied BEFORE prompt encoding — SDXL LoRAs commonly carry
+        # text-encoder deltas, and the weighted-prompt path encodes with the
+        # pipe's encoders right below. Applied without fusing, deactivated in
+        # the finally so the RESIDENT pipe serves the next request clean (the
+        # loaded adapters stay cached on the pipe for cheap reuse). A failed
+        # load fails the whole request as per-batch errors (partial-success
+        # contract: generate() itself does not raise past this point).
+        if lora_configs:
+            try:
+                self._loras.apply(pipe, lora_configs)
+            except Exception as e:  # noqa: BLE001 — surface as a result, not a crash
+                logger.error("LoRA apply failed: %s", e)
+                return MediaResult(
+                    kind="image",
+                    media=[None] * batch,
+                    seeds=[],
+                    errors=[GenerationError(
+                        error=f"Failed to load LoRA: {e}", batch_index=None)],
+                )
+        try:
+            prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
-        return self._run_chunked(
-            pipe=pipe,
-            backend=backend,
-            prompt_kwargs=prompt_kwargs,
-            width=eff.width,
-            height=eff.height,
-            num_steps=eff.num_steps,
-            guidance_scale=eff.guidance_scale,
-            clip_skip=eff.clip_skip,
-            seeds=seeds,
-            is_img2img=is_img2img,
-            source_image=source_image,
-            strength=eff.strength,
-        )
+            seeds = [
+                (seed + i) if seed is not None else random.randint(0, MAX_SEED)
+                for i in range(batch)
+            ]
+
+            return self._run_chunked(
+                pipe=pipe,
+                backend=backend,
+                prompt_kwargs=prompt_kwargs,
+                width=eff.width,
+                height=eff.height,
+                num_steps=eff.num_steps,
+                guidance_scale=eff.guidance_scale,
+                clip_skip=eff.clip_skip,
+                seeds=seeds,
+                is_img2img=is_img2img,
+                source_image=source_image,
+                strength=eff.strength,
+            )
+        finally:
+            if lora_configs:
+                self._loras.deactivate(pipe)
 
     def _run_chunked(
         self,

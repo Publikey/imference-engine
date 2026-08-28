@@ -1,6 +1,6 @@
 # imference-engine
 
-**One Python API for state-of-the-art diffusion. Seven image models and Wan
+**One Python API for state-of-the-art diffusion. Eight image models and Wan
 video behind a single `Engine`, offline-first, from a 6 GB laptop GPU to a
 multi-model cloud fleet.**
 
@@ -20,9 +20,9 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima, plus **Wan 2.2** text/image-to-video and **MiniMax-H3**
-  joint video+audio (pending upstream release — see below) — each a first-class
-  backend, none needing bespoke glue in your code.
+  Qwen-Image · Anima · Krea 2 Turbo, plus **Wan 2.2** text/image-to-video and
+  **MiniMax-H3** joint video+audio — each a first-class backend, none needing
+  bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
   zero bytes from HuggingFace — immune to a repo going gated or disappearing.
   Ships with a staging tool ([`validation/stage_r2.py`](validation/stage_r2.py)).
@@ -34,10 +34,10 @@ script, or app.
   callers override only what they mean to.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
-- **Validated.** All seven image backends render end-to-end on diffusers 0.39
-  (RTX PRO 5000 Blackwell, torch 2.12); Wan 2.2 t2v + i2v confirmed on the same
-  stack. Pins are now on diffusers 0.40.0 (the MiniMax-H3-unlocking fold) —
-  re-run the suites on it before releasing. See [`validation/`](validation/).
+- **Validated.** The v0.4.x stack (diffusers 0.40.0 · transformers 5.4.0 ·
+  peft 0.19.1) is GPU-validated end-to-end: seven image backends + Wan 2.2
+  t2v/i2v + MiniMax-H3 (2026-08-26), and Krea 2 Turbo — official scaled-fp8
+  AND a civitai fp8 finetune — (2026-08-27). See [`validation/`](validation/).
 
 ---
 
@@ -59,8 +59,9 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-(and `runtime` = all seven), `wan`, `minimax-h3`, `stage` (R2 staging, boto3),
-`dev`. Every extra shares the one repo-wide `diffusers==0.40.0` pin.
+· `krea2` (and `runtime` = all eight), `wan`, `minimax-h3`, `stage` (R2
+staging, boto3), `dev`. Every extra shares the one repo-wide
+`diffusers==0.40.0` pin.
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
@@ -196,7 +197,7 @@ are interchangeable and no engine logic leaks into them.
 |---|---|---|---|
 | `model` | `str` | — (required) | A registered model name. |
 | `prompt` | `str` | — (required) | Positive prompt. |
-| `negative_prompt` | `str?` | `None` | Honored by SDXL/SD1.5/Z-Image/Chroma/Qwen-Image/Anima; **ignored by FLUX** (guidance-distilled). |
+| `negative_prompt` | `str?` | `None` | Honored by SDXL/SD1.5/Z-Image/Chroma/Qwen-Image/Anima; **ignored by FLUX** (guidance-distilled) and **by Krea 2 whenever `guidance_scale <= 0`** (the Turbo norm). |
 | `width`, `height` | `int?` | `1024` | 512 for SD 1.5. |
 | `num_steps` | `int?` | `28` | |
 | `guidance_scale` | `float?` | `6.0` | Per-engine sweet spots differ (see matrix). |
@@ -204,10 +205,10 @@ are interchangeable and no engine logic leaks into them.
 | `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
 | `batch` | `int` | `1` | N independent images, one seed each. |
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
-| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Anima excepted — t2i only). |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Anima and Krea 2 excepted — t2i only). |
 | `strength` | `float?` | `0.75` | img2img denoise strength. |
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
-| `loras` | `list[dict]?` | `None` | Reserved — not wired in V1 (logged + ignored). |
+| `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
 
 ¹ Unset (`None`) request fields fall through the **precedence chain** —
 `request > model defaults > engine defaults > GLOBAL_DEFAULTS` (finest non-None
@@ -257,6 +258,7 @@ the complete cross-engine reference is in
 | `chroma` | flow DiT (8.9B) | honored (real CFG) | 2.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `anima` | modular DiT | honored (if set) | **ignored** (Guider block) | ignored (block) | — | ❌ (t2i) | — | bf16 |
+| `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8 files) |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
@@ -264,8 +266,15 @@ oversaturates); **Qwen-Image** maps `guidance_scale → true_cfg_scale`, negativ
 default is a single space `" "`, and it wants ~40–50 steps (set per-model);
 **Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, no img2img,
 `guidance_scale` ignored — guidance is a Guider block);
-the four flow-matching DiTs ignore the `scheduler` name and take an explicit
-`shift` via `backend_options` only.
+**Krea 2** is Turbo-first (8 steps, `guidance 0.0` in the Krea convention —
+velocity `cond + g·(cond−uncond)`, so conventional CFG ≈ 1+g; negatives only
+act when g > 0), loads civitai/ComfyUI single-files **as-is** (native keys +
+scaled-fp8 dequantized in memory; fp8 files stay ~13 GB fp8-resident,
+`KREA2_FP8_STORAGE` overrides), requires `base_model=` (`krea/Krea-2-Turbo`,
+gated), t2i only for now;
+the flow-matching DiTs ignore the `scheduler` name; Z-Image/FLUX/Chroma/
+Qwen-Image take an explicit `shift` via `backend_options` (Krea 2 does not —
+its Turbo checkpoints pin a fixed mu internally).
 
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
@@ -273,6 +282,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [Chroma](imference_engine/chroma/README.md) ·
 [Qwen-Image](imference_engine/qwenimage/README.md) ·
 [Anima](imference_engine/anima/README.md) ·
+[Krea 2](imference_engine/krea2/README.md) ·
 [Wan video](imference_engine/wan/README.md) ·
 [MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
@@ -286,7 +296,10 @@ in [`docs/reference.md`](docs/reference.md):
 
 **Image (`IMAGE_*`)** — `IMAGE_DEVICE` · `IMAGE_MODEL_CACHE` · `IMAGE_MODEL_CDN` ·
 `MAX_GPU_MODELS` · `MAX_CPU_MODELS` · `IMAGE_USE_TINY_VAE` (SDXL/SD1.5 only) ·
-`IMAGE_ENABLE_CPU_OFFLOAD`.
+`IMAGE_ENABLE_CPU_OFFLOAD` · `IMAGE_OFFLOAD_MODE` (`model` default | `group` =
+block-streamed compute module, ~5-6 GB peak VRAM even for the 12-20B DiTs —
+runs FLUX/Qwen-Image/Krea 2 on 8 GB cards, PCIe-bound and RAM-hungry; Krea 2
+measured: 5.9 GB peak, ~30% slower than fp8-resident).
 
 **Video (`WAN_*`)** — `WAN_DEVICE` · `WAN_PROFILE` (GGUF quant / `auto`) ·
 `WAN_MAX_RESIDENT` · `WAN_MODEL_CACHE` · `WAN_MODEL_CDN` · `WAN_TEXT_ENCODER_QUANT`
@@ -342,7 +355,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/    # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager
@@ -363,20 +376,23 @@ Design docs: [unified engine core](docs/unified-engine-core.md) ·
 
 [`validation/`](validation/) holds a GPU harness that loads each engine's base
 model, renders, and reports pass/fail — `python validation/validate.py`
-(`validate_wan.py` for video). All seven image backends pass end-to-end on
-diffusers 0.39; the pins now sit on 0.40.0, so re-run the suites before
-tagging. See [`validation/README.md`](validation/README.md).
+(`validate_wan.py` for video). The full v0.4.0 stack — seven image backends,
+Wan t2v/i2v, MiniMax-H3 — passed end-to-end on 2026-08-26 (diffusers 0.40.0 ·
+transformers 5.4.0); the Krea 2 backend passed on 2026-08-27 (official
+scaled-fp8 + a civitai plain-fp8 finetune, RTX PRO 4000 24 GB). See
+[`validation/README.md`](validation/README.md).
 
 ## Status & scope
 
-Wired and validated: the seven image backends, Wan 2.2 video, img2img,
-multi-tier residency, weighted prompts, the catalog loader + precedence chain,
-and offline/CDN resolution. **Wired, validated on the pre-release head:**
-MiniMax-H3 video+audio (its diffusers integration, PR #14355, shipped in
-diffusers 0.40.0 — validated e2e 2026-08-05 on the PR head that became that
-release; re-run `validate_h3.py` on the 0.40.0 pin; see its README), including
-the offline converter for ComfyUI/civitai int8-ConvRot single-files
+Wired and validated (v0.4.0 stack, 2026-08-26): seven image backends, Wan 2.2
+video, MiniMax-H3 video+audio (released diffusers 0.40.0, int8 R2 mirror),
+img2img, multi-tier residency, weighted prompts, the catalog loader +
+precedence chain, and offline/CDN resolution — including the offline converter
+for ComfyUI/civitai H3 int8-ConvRot single-files
 (`validation/stage_h3_from_comfy.py` — ~67 GB downloaded instead of ~124 GB).
+The **Krea 2 Turbo backend** (civitai/ComfyUI single-file + scaled-fp8 load
+path) is validated as of 2026-08-27 — official scaled-fp8 and a civitai
+plain-fp8 finetune both render clean on a 24 GB card.
 **Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
 but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is
