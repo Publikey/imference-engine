@@ -16,6 +16,7 @@ from imference_engine.core.config import BaseRuntimeConfig
 from imference_engine.core.engine_base import MAX_SEED, BaseEngine
 from imference_engine.core.result import GenerationError, MediaResult
 from imference_engine.managers.batch import BatchSizer
+from imference_engine.managers.lora import LoRAManager
 from imference_engine.managers.model import ModelManager, RegisteredModel
 from imference_engine.pipelines.base import PipelineBackend
 
@@ -100,6 +101,7 @@ class RuntimeConfig(BaseRuntimeConfig):
             # unified enable_offload. See BaseRuntimeConfig.
             enable_offload=env_bool("IMAGE_ENABLE_CPU_OFFLOAD", False),
             offload_mode=env_str("IMAGE_OFFLOAD_MODE", "model"),
+            lora_cache_dir=env_str("IMAGE_LORA_CACHE"),
         )
 
 
@@ -207,6 +209,13 @@ class Engine(BaseEngine):
             # the config surface is the unified enable_offload.
             enable_offload=self._runtime.enable_offload,
             offload_mode=self._runtime.offload_mode,
+        )
+        # LoRA manager (SDXL-only for now via PipelineBackend.supports_loras).
+        # MAX_CACHED_LORAS keeps the legacy worker env name for drop-in parity.
+        from imference_engine.runtime.env import env_int_or_none as _int
+        self._loras = LoRAManager(
+            cache_dir=str(self._runtime.lora_cache_dir) if self._runtime.lora_cache_dir else None,
+            max_adapters=_int("MAX_CACHED_LORAS") or 5,
         )
         # Catalog load via the internal helper (no _loaded guard — BaseEngine
         # flips _loaded only after _setup returns).
@@ -370,6 +379,15 @@ class Engine(BaseEngine):
         ``request > model defaults > engine defaults > GLOBAL_DEFAULTS`` (finest
         wins), so a per-model catalog default fills what the request omits. Pass
         a value to override at the request layer.
+
+        ``loras`` stacks user LoRAs for the request on backends that support
+        them (``PipelineBackend.supports_loras`` — SDXL only for now; other
+        backends log a warning and ignore). Each entry:
+        ``{"source": <local path | http(s) URL>, "weight": 0.8,
+        "adapter_name": "style"}`` (``path``/``url`` accepted as aliases of
+        ``source``). Adapters are applied WITHOUT fusing and deactivated after
+        the request; a failed LoRA load returns an error result rather than
+        rendering without it.
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before generate")
@@ -378,10 +396,19 @@ class Engine(BaseEngine):
         from imference_engine.core.text import sanitize_prompt_text
         prompt = sanitize_prompt_text(prompt, field="prompt")
         negative_prompt = sanitize_prompt_text(negative_prompt, field="negative_prompt")
-        if loras:
-            logger.warning("LoRA support not yet wired in V1; ignoring loras=%s", loras)
-
         pipe, backend = self._models.get_or_load(model)
+
+        # LoRAs: only backends that declare supports_loras take them (SDXL for
+        # now); everywhere else the request stays valid and the LoRAs are
+        # ignored with a warning — the pre-LoRA behavior.
+        lora_configs: list[dict] = []
+        if loras:
+            if getattr(backend, "supports_loras", False):
+                lora_configs = self._loras.parse(loras)
+            else:
+                logger.warning(
+                    "Backend %r does not support LoRAs yet; ignoring loras=%s",
+                    backend.engine, loras)
 
         # Resolve the effective sampling params through the precedence chain:
         # request > model defaults > engine defaults > GLOBAL_DEFAULTS. A None
@@ -418,27 +445,51 @@ class Engine(BaseEngine):
         # object BEFORE the call — it is not a pipe(...) kwarg. Standard pipelines
         # keep the default no-op and pass guidance_scale in build_inference_kwargs.
         backend.apply_guidance(pipe, eff.guidance_scale)
-        prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
-        seeds = [
-            (seed + i) if seed is not None else random.randint(0, MAX_SEED)
-            for i in range(batch)
-        ]
+        # LoRAs are applied BEFORE prompt encoding — SDXL LoRAs commonly carry
+        # text-encoder deltas, and the weighted-prompt path encodes with the
+        # pipe's encoders right below. Applied without fusing, deactivated in
+        # the finally so the RESIDENT pipe serves the next request clean (the
+        # loaded adapters stay cached on the pipe for cheap reuse). A failed
+        # load fails the whole request as per-batch errors (partial-success
+        # contract: generate() itself does not raise past this point).
+        if lora_configs:
+            try:
+                self._loras.apply(pipe, lora_configs)
+            except Exception as e:  # noqa: BLE001 — surface as a result, not a crash
+                logger.error("LoRA apply failed: %s", e)
+                return MediaResult(
+                    kind="image",
+                    media=[None] * batch,
+                    seeds=[],
+                    errors=[GenerationError(
+                        error=f"Failed to load LoRA: {e}", batch_index=None)],
+                )
+        try:
+            prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
-        return self._run_chunked(
-            pipe=pipe,
-            backend=backend,
-            prompt_kwargs=prompt_kwargs,
-            width=eff.width,
-            height=eff.height,
-            num_steps=eff.num_steps,
-            guidance_scale=eff.guidance_scale,
-            clip_skip=eff.clip_skip,
-            seeds=seeds,
-            is_img2img=is_img2img,
-            source_image=source_image,
-            strength=eff.strength,
-        )
+            seeds = [
+                (seed + i) if seed is not None else random.randint(0, MAX_SEED)
+                for i in range(batch)
+            ]
+
+            return self._run_chunked(
+                pipe=pipe,
+                backend=backend,
+                prompt_kwargs=prompt_kwargs,
+                width=eff.width,
+                height=eff.height,
+                num_steps=eff.num_steps,
+                guidance_scale=eff.guidance_scale,
+                clip_skip=eff.clip_skip,
+                seeds=seeds,
+                is_img2img=is_img2img,
+                source_image=source_image,
+                strength=eff.strength,
+            )
+        finally:
+            if lora_configs:
+                self._loras.deactivate(pipe)
 
     def _run_chunked(
         self,

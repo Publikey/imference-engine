@@ -22,6 +22,12 @@ class SDXLBackend(PipelineBackend):
 
     engine: ClassVar[str] = "sdxl"
 
+    # First (and currently only) backend with user-LoRA support wired: the
+    # civitai kohya-format SDXL LoRAs load via StableDiffusionXLLoraLoaderMixin
+    # (UNet + both text encoders), applied unfused per request by the engine's
+    # LoRAManager. Other backends flip this as each is validated.
+    supports_loras = True
+
     # HuggingFace repo id for the SDXL tiny autoencoder. Tiny (~5 MB), fp16-safe,
     # designed by madebyollin specifically as a fast drop-in for SDXL's VAE.
     TINY_VAE_REPO: ClassVar[str] = "madebyollin/taesdxl"

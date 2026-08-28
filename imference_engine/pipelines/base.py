@@ -19,6 +19,13 @@ class PipelineBackend(Backend):
     scheduler selection, img2img construction, and inference kwargs.
     """
 
+    # Whether Engine.generate(loras=...) applies user LoRAs on this backend's
+    # pipes (via managers/lora.py — set_adapters, never fused, deactivated per
+    # request). Every diffusers 0.40 pipeline HAS a LoRA mixin; this flag is
+    # about what the ENGINE has validated: SDXL first, the others flip as each
+    # is proven (watch the interaction with offload/fp8 hooks per backend).
+    supports_loras: bool = False
+
     @abstractmethod
     def load_pipeline(
         self,

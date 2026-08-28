@@ -7,6 +7,24 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ## [Unreleased] — targets v0.4.1
 
+### Added
+
+- **User LoRAs on SDXL** (`generate(loras=[{source, weight, adapter_name}])`
+  — `path`/`url` accepted as aliases; the pre-LoRA `loras=` warn-and-ignore
+  survives on every other backend via the new
+  `PipelineBackend.supports_loras` gate). New `managers/lora.py` LoRAManager,
+  ported from the legacy sdxl-multimodel worker with the Wan loader's
+  lessons: adapters applied with `set_adapters` and **never fused**,
+  deactivated in a `finally` after every request (resident ModelManager pipes
+  stay clean), loaded in the offline-safe `(dir, weight_name)` form,
+  per-pipe adapter cache (LRU-evicted beyond `MAX_CACHED_LORAS`, default 5)
+  that dies with the pipe on eviction. URL sources download through the
+  engine's parallel downloader into an LRU-pruned cache dir
+  (`IMAGE_LORA_CACHE` / `RuntimeConfig.lora_cache_dir`). A failed LoRA load
+  fails the request as an error result — it never silently renders without
+  the LoRA. `validation/validate.py` passes an optional per-entry `loras:`
+  stack through. 13 GPU-free tests.
+
 ### Fixed
 
 - **Prompts with lone UTF-16 surrogates no longer crash the tokenizer.**

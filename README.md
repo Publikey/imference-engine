@@ -208,7 +208,7 @@ are interchangeable and no engine logic leaks into them.
 | `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Anima and Krea 2 excepted — t2i only). |
 | `strength` | `float?` | `0.75` | img2img denoise strength. |
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
-| `loras` | `list[dict]?` | `None` | Reserved — not wired in V1 (logged + ignored). |
+| `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
 
 ¹ Unset (`None`) request fields fall through the **precedence chain** —
 `request > model defaults > engine defaults > GLOBAL_DEFAULTS` (finest non-None
