@@ -55,6 +55,11 @@ trade already. Auto when the source was quantized and CUDA is available;
 bf16 checkpoints load as plain bf16 (~26 GB) — pair with
 `RuntimeConfig(enable_offload=True)` on consumer VRAM.
 
+Under group offloading, diffusers' prefetch tracing logs a long "some layers
+were not executed during the forward pass" warning listing `visual.*` layers —
+that is the Qwen3-VL text encoder's VISION tower, which t2i never runs (no
+image input). Harmless; it will go quiet when img2img lands (upstream #14290).
+
 fp8-resident **composes with group offloading** (`IMAGE_OFFLOAD_MODE=group`,
 GPU-validated 2026-08-27): 83.6 s / **4.7 GB peak VRAM** for the 12.9B —
 faster than the bf16 group run (half the bytes per streamed block), identical
