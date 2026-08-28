@@ -92,7 +92,7 @@ def rotate_weight(weight: torch.Tensor, group_size: int) -> torch.Tensor:
     if in_features % group_size:
         raise ValueError(
             f"in_features {in_features} not divisible by group_size {group_size}")
-    h_t = build_hadamard(group_size).T.to(weight.dtype)
+    h_t = build_hadamard(group_size).T.to(device=weight.device, dtype=weight.dtype)
     grouped = weight.reshape(out_features, in_features // group_size, group_size)
     return torch.matmul(grouped, h_t).reshape(out_features, in_features)
 

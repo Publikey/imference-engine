@@ -5,6 +5,38 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased] — targets v0.4.2
+
+### Added
+
+- **Krea 2: quantized-checkpoint dequant streams through the GPU.** The
+  fp8/int8 conversion multiplies in fp32 on CPU (~25 s of the cold load on a
+  datacenter pod); with a CUDA device present, the per-tensor math now runs on
+  GPU — ONE tensor at a time (<1 GB peak VRAM, largest layer ≈ 100 MB
+  quantized), result immediately back to CPU in bf16, so it cannot OOM even on
+  8 GB cards. Any device error falls back to the CPU path for the remaining
+  tensors. ``prepare_krea2_state_dict`` gains an optional ``device=``;
+  ``comfy_convert.rotate_weight`` now builds its Hadamard on the weight's
+  device (no-op for the H3 offline converter, which stays CPU).
+
+- **Krea 2: ComfyUI int8 "ConvRot" checkpoints load as-is.** After the fp8
+  wave, the other dominant civitai Krea 2 format (aimed at pre-fp8 cards —
+  RTX 3000 and older; several popular finetunes ship *only* int8):
+  ``<base>.weight`` int8 block-Hadamard-rotated + per-output-channel
+  ``.weight_scale`` + per-layer ``.comfy_quant`` JSON config.
+  ``krea2/convert.py`` now detects the triplet (gated on the WEIGHT dtype —
+  scaled-fp8 files can carry ``.comfy_quant`` tags too) and dequantizes
+  exactly via the vendored comfy-kitchen ConvRot dequant already shared with
+  the MiniMax-H3 converter (verified byte-level against Comfy-Org/Krea-2
+  ``int8_convrot``: ``{"format": "int8_tensorwise", "convrot": true,
+  "convrot_groupsize": 256}``). Previously these files were **silently
+  corrupted** — the ``.weight_scale`` keys matched the scaled-fp8 path, which
+  multiplied without un-rotating. The fp8-resident auto now covers all
+  quantized sources (fp8 or int8 — ~13 GB resident; ``KREA2_FP8_STORAGE``
+  still overrides), int8 tensors without a recognized config are refused
+  loudly (int4/nvfp4/mxfp8 too), and ``prepare_krea2_state_dict``'s flag is
+  now ``source_was_quantized``.
+
 ## [0.4.1] — 2026-08-28
 
 ### Added

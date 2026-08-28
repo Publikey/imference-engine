@@ -194,9 +194,9 @@ def test_krea2_fp8_storage_env_overrides(monkeypatch):
     from imference_engine.krea2 import Krea2Backend
     monkeypatch.setenv("IMAGE_OFFLOAD_MODE", "group")
     monkeypatch.setenv("KREA2_FP8_STORAGE", "0")
-    assert Krea2Backend._resolve_fp8_storage(source_was_fp8=True) is False
+    assert Krea2Backend._resolve_fp8_storage(source_was_quantized=True) is False
     monkeypatch.setenv("KREA2_FP8_STORAGE", "1")
-    assert Krea2Backend._resolve_fp8_storage(source_was_fp8=True) is True
-    # auto with a non-fp8 source stays off regardless of CUDA
+    assert Krea2Backend._resolve_fp8_storage(source_was_quantized=True) is True
+    # auto with a non-quantized source stays off regardless of CUDA
     monkeypatch.delenv("KREA2_FP8_STORAGE")
-    assert Krea2Backend._resolve_fp8_storage(source_was_fp8=False) is False
+    assert Krea2Backend._resolve_fp8_storage(source_was_quantized=False) is False

@@ -73,12 +73,13 @@ def test_apply_scheduler_is_a_noop():
 def test_fp8_storage_env_override(monkeypatch):
     be = Krea2Backend()
     monkeypatch.setenv("KREA2_FP8_STORAGE", "1")
-    assert be._resolve_fp8_storage(source_was_fp8=False) is True
+    assert be._resolve_fp8_storage(source_was_quantized=False) is True
     monkeypatch.setenv("KREA2_FP8_STORAGE", "0")
-    assert be._resolve_fp8_storage(source_was_fp8=True) is False
+    assert be._resolve_fp8_storage(source_was_quantized=True) is False
     monkeypatch.delenv("KREA2_FP8_STORAGE")
-    # auto: needs an fp8 source (CUDA availability decides the rest at runtime)
-    assert be._resolve_fp8_storage(source_was_fp8=False) is False
+    # auto: needs a quantized source (fp8 or int8-ConvRot; CUDA availability
+    # decides the rest at runtime)
+    assert be._resolve_fp8_storage(source_was_quantized=False) is False
 
 
 def test_registered_as_a_backend():

@@ -258,7 +258,7 @@ the complete cross-engine reference is in
 | `chroma` | flow DiT (8.9B) | honored (real CFG) | 2.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `anima` | modular DiT | honored (if set) | **ignored** (Guider block) | ignored (block) | — | ❌ (t2i) | — | bf16 |
-| `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8 files) |
+| `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8/int8 files) |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
@@ -268,10 +268,11 @@ default is a single space `" "`, and it wants ~40–50 steps (set per-model);
 `guidance_scale` ignored — guidance is a Guider block);
 **Krea 2** is Turbo-first (8 steps, `guidance 0.0` in the Krea convention —
 velocity `cond + g·(cond−uncond)`, so conventional CFG ≈ 1+g; negatives only
-act when g > 0), loads civitai/ComfyUI single-files **as-is** (native keys +
-scaled-fp8 dequantized in memory; fp8 files stay ~13 GB fp8-resident,
-`KREA2_FP8_STORAGE` overrides), requires `base_model=` (`krea/Krea-2-Turbo`,
-gated), t2i only for now;
+act when g > 0), loads civitai/ComfyUI single-files **as-is** (native keys;
+scaled-fp8, plain fp8, AND int8 "ConvRot" dequantized in memory — int4/nvfp4/
+mxfp8 refused; quantized files stay ~13 GB fp8-resident, `KREA2_FP8_STORAGE`
+overrides), requires `base_model=` (`krea/Krea-2-Turbo`, gated), t2i only for
+now;
 the flow-matching DiTs ignore the `scheduler` name; Z-Image/FLUX/Chroma/
 Qwen-Image take an explicit `shift` via `backend_options` (Krea 2 does not —
 its Turbo checkpoints pin a fixed mu internally).

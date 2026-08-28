@@ -13,21 +13,24 @@ This backend is built for **Krea 2 Turbo** (the TDM few-step distillate) and
 the civitai/ComfyUI finetune ecosystem around it:
 
 - **Checkpoint form**: transformer-only single-file ``.safetensors`` in the
-  NATIVE key layout, predominantly ComfyUI "scaled fp8" (float8_e4m3fn +
-  per-tensor ``weight_scale``); bf16 and all-in-one prefixed variants too.
-  diffusers has no ``from_single_file`` for Krea 2 (issue #14122) and no
-  scaled-fp8 path at all, so ``krea2/convert.py`` normalizes the state dict IN
-  MEMORY at load (prefix strip → exact fp8 dequant → native→diffusers key
-  remap) and the result is injected into ``Krea2Pipeline`` from the base repo's
-  components — the same transformer-only composition as FLUX/Chroma/Qwen-Image.
+  NATIVE key layout — ComfyUI "scaled fp8" (float8_e4m3fn + per-tensor
+  ``weight_scale``), ComfyUI **int8 "ConvRot"** (int8 + per-channel scale +
+  ``.comfy_quant``, the other dominant civitai format), plain fp8, bf16, and
+  all-in-one prefixed variants. diffusers has no ``from_single_file`` for
+  Krea 2 (issue #14122) and no quantized path at all, so ``krea2/convert.py``
+  normalizes the state dict IN MEMORY at load (prefix strip → exact
+  fp8/int8-ConvRot dequant → native→diffusers key remap) and the result is
+  injected into ``Krea2Pipeline`` from the base repo's components — the same
+  transformer-only composition as FLUX/Chroma/Qwen-Image.
 - **base_model is REQUIRED** (e.g. ``krea/Krea-2-Turbo`` — gated, accept the
   Krea 2 Community License; mirror it on the CDN for offline workers). The
   single files carry no text encoder / VAE / scheduler / tokenizer.
-- **fp8-resident storage**: when the checkpoint was fp8 on disk, the
-  dequantized transformer is re-cast to float8_e4m3fn storage with bf16 compute
-  via diffusers layerwise casting (same approach as InvokeAI) — ~13 GB resident
-  instead of ~26 GB, which is the whole point of the fp8 ecosystem. Env
-  override: ``KREA2_FP8_STORAGE=1|0`` (unset = auto: fp8 source + CUDA).
+- **fp8-resident storage**: when the checkpoint was quantized on disk (fp8 OR
+  int8-ConvRot), the dequantized transformer is re-cast to float8_e4m3fn
+  storage with bf16 compute via diffusers layerwise casting (same approach as
+  InvokeAI) — ~13 GB resident instead of ~26 GB: a user shipping a quantized
+  file chose the small-footprint trade already. Env override:
+  ``KREA2_FP8_STORAGE=1|0`` (unset = auto: quantized source + CUDA).
 - **Guidance**: Krea 2 Turbo is TDM-distilled WITHOUT CFG — the family norm is
   ``guidance_scale=0.0`` + ``num_steps=8``. The pipeline's ``guidance_scale``
   follows the KREA convention (velocity ``cond + g*(cond-uncond)``; g>0 enables
@@ -102,9 +105,10 @@ class Krea2Backend(PipelineBackend):
         return self._load_with_base_model(local_path, base_model)
 
     def _load_with_base_model(self, local_path: str, base_repo: str) -> Any:
-        """Transformer WEIGHTS from local_path (native/ComfyUI layout, fp8 or
-        bf16 — normalized in memory by krea2/convert.py) + shared components
-        from the base repo, resolved into the flat offline tree."""
+        """Transformer WEIGHTS from local_path (native/ComfyUI layout, fp8 /
+        int8-ConvRot / bf16 — normalized in memory by krea2/convert.py) +
+        shared components from the base repo, resolved into the flat offline
+        tree."""
         import accelerate
         import torch
         from diffusers import Krea2Pipeline, Krea2Transformer2DModel
@@ -125,8 +129,21 @@ class Krea2Backend(PipelineBackend):
 
         # --- transformer: normalize the single file in memory, then assign.
         logger.info(f"Loading Krea 2 transformer from {local_path}")
+        # The safetensors header can carry the quant config for third-party
+        # int8 files (_quantization_metadata) — load_file drops it, so read it
+        # separately.
+        from safetensors import safe_open
+
+        with safe_open(local_path, framework="pt") as f:
+            quant_metadata = f.metadata()
         sd = load_file(local_path)
-        sd, source_was_fp8 = prepare_krea2_state_dict(sd, torch.bfloat16)
+        # Stream the dequant math through the GPU when there is one: per-tensor,
+        # <1 GB peak VRAM, CPU fallback on any device error. Cuts the quantized
+        # conversion from ~25 s (CPU fp32 multiply) to a few seconds.
+        dequant_device = "cuda" if torch.cuda.is_available() else None
+        sd, source_was_quantized = prepare_krea2_state_dict(
+            sd, torch.bfloat16, device=dequant_device,
+            quant_metadata=quant_metadata)
 
         transformer_cfg_dir = os.path.join(base_dir, "transformer")
         if os.path.isfile(os.path.join(transformer_cfg_dir, "config.json")):
@@ -140,11 +157,12 @@ class Krea2Backend(PipelineBackend):
         reject_incomplete_load(transformer, what="Krea 2 single-file checkpoint")
         del sd
 
-        # --- fp8-resident storage (auto for fp8 sources on CUDA; the point of
-        # the civitai fp8 ecosystem: ~13 GB resident instead of ~26 GB).
+        # --- fp8-resident storage (auto for quantized sources — fp8 or
+        # int8-ConvRot — on CUDA; the point of the civitai quantized ecosystem:
+        # ~13 GB resident instead of ~26 GB).
         # KREA2_FP8_STORAGE=1|0 forces it on/off. Compute stays bf16; norm-like
         # modules are excluded by diffusers' default skip patterns.
-        if self._resolve_fp8_storage(source_was_fp8):
+        if self._resolve_fp8_storage(source_was_quantized):
             try:
                 transformer.enable_layerwise_casting(
                     storage_dtype=torch.float8_e4m3fn,
@@ -174,9 +192,10 @@ class Krea2Backend(PipelineBackend):
         )
 
     @staticmethod
-    def _resolve_fp8_storage(source_was_fp8: bool) -> bool:
-        """KREA2_FP8_STORAGE=1 forces on, =0 forces off; unset = auto (fp8
-        source + CUDA available). The layerwise-fp8-casting hooks COMPOSE with
+    def _resolve_fp8_storage(source_was_quantized: bool) -> bool:
+        """KREA2_FP8_STORAGE=1 forces on, =0 forces off; unset = auto (quantized
+        source — fp8 or int8-ConvRot — + CUDA available). The
+        layerwise-fp8-casting hooks COMPOSE with
         group-offloading hooks (IMAGE_OFFLOAD_MODE=group): GPU-validated
         2026-08-27 — 83.6 s / 4.7 GB peak VRAM for the 12.9B (FASTER than the
         bf16 group run: half the bytes per streamed block), render identical.
@@ -190,7 +209,7 @@ class Krea2Backend(PipelineBackend):
             return True
         if env in ("0", "false", "no"):
             return False
-        return source_was_fp8 and torch.cuda.is_available()
+        return source_was_quantized and torch.cuda.is_available()
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:
         if not base_model:

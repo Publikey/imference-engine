@@ -13,34 +13,45 @@ Krea 2 Mix, …). Output is native 1K–2K.
 ## The load path (why this backend has a `convert.py`)
 
 Civitai/ComfyUI Krea 2 checkpoints are **transformer-only single-files in the
-NATIVE key layout** (`blocks.N.attn.wq`, `txtfusion.*`), predominantly ComfyUI
+NATIVE key layout** (`blocks.N.attn.wq`, `txtfusion.*`), quantized as ComfyUI
 **"scaled fp8"** (float8_e4m3fn weights + per-tensor float32 `weight_scale` +
-`_quantization_metadata` header). diffusers (0.40, and `main` as of 2026-08-27)
-has **no `from_single_file` for Krea 2** (issue #14122; PRs #14126/#14264
-unmerged) and **no scaled-fp8 handling for any model** — so nothing upstream
-loads these files.
+`_quantization_metadata` header) or ComfyUI **int8 "ConvRot"** (int8 weights,
+block-Hadamard-rotated, + per-output-channel `weight_scale` + per-layer
+`.comfy_quant` JSON config — the other dominant civitai format, aimed at
+pre-fp8 cards). diffusers (0.40, and `main` as of 2026-08-27) has **no
+`from_single_file` for Krea 2** (issue #14122; PRs #14126/#14264 unmerged) and
+**no quantized-checkpoint handling for any model** — so nothing upstream loads
+these files.
 
 `convert.py` bridges the gap **in memory at load time** (no on-disk conversion,
 no offline step; register the civitai file as-is):
 
 1. strip an optional `model.diffusion_model.` prefix (all-in-one checkpoints);
-2. dequantize scaled fp8 exactly — `w = w_fp8.float() × weight_scale`, computed
-   in fp32, stored per-tensor in bf16 (lossless w.r.t. the distributed file;
-   raw-fp8 files without scales are upcast too);
+2. dequantize exactly —
+   - scaled fp8: `w = w_fp8.float() × weight_scale`, computed in fp32, stored
+     per-tensor in bf16 (lossless w.r.t. the distributed file; raw-fp8 files
+     without scales are upcast too);
+   - int8 ConvRot: per-channel de-scale then the involutive block-Hadamard
+     un-rotation, per each layer's `.comfy_quant` config — the vendored
+     comfy-kitchen dequant shared with the MiniMax-H3 converter
+     (`minimax_h3/comfy_convert.py`). int4 / nvfp4 / mxfp8 files are refused
+     with an explanation, as are int8 tensors without a recognized config;
 3. remap native → diffusers `Krea2Transformer2DModel` keys (vendored from
    InvokeAI, Apache-2.0 — the same mapping as the unmerged upstream PR #14126;
    mixed-layout files are rejected, incomplete loads fail loudly at load time).
 
-When upstream ships single-file + scaled-fp8 support, `convert.py` can be
+When upstream ships single-file + quantized support, `convert.py` can be
 dropped for `Krea2Transformer2DModel.from_single_file`.
 
 ## fp8-resident storage
 
-An fp8-on-disk checkpoint is kept **fp8-resident**: after the exact dequant,
-the transformer re-casts to float8_e4m3fn storage with bf16 compute (diffusers
-layerwise casting — the InvokeAI approach). ~13 GB resident instead of ~26 GB,
-which is the whole point of the fp8 ecosystem on 16–24 GB cards. Auto when the
-source was fp8 and CUDA is available; `KREA2_FP8_STORAGE=1|0` forces it.
+A quantized-on-disk checkpoint (fp8 OR int8-ConvRot) is kept **fp8-resident**:
+after the exact dequant, the transformer re-casts to float8_e4m3fn storage with
+bf16 compute (diffusers layerwise casting — the InvokeAI approach). ~13 GB
+resident instead of ~26 GB, which is the whole point of the quantized ecosystem
+on 16–24 GB cards — a user shipping a quantized file chose the small-footprint
+trade already. Auto when the source was quantized and CUDA is available;
+`KREA2_FP8_STORAGE=1|0` forces it.
 bf16 checkpoints load as plain bf16 (~26 GB) — pair with
 `RuntimeConfig(enable_offload=True)` on consumer VRAM.
 

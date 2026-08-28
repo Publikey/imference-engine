@@ -11,8 +11,10 @@ torch = pytest.importorskip("torch")
 
 from imference_engine.krea2.convert import (  # noqa: E402
     convert_krea2_native_to_diffusers,
+    dequantize_int8_convrot,
     dequantize_scaled_fp8,
     has_fp8_weights,
+    has_int8_convrot,
     is_native_krea2_format,
     prepare_krea2_state_dict,
     strip_comfyui_prefix,
@@ -208,3 +210,157 @@ def test_prepare_full_pipeline_scaled_fp8_native_file():
     w = out["transformer_blocks.0.attn.to_q.weight"]
     assert w.dtype == torch.bfloat16
     assert torch.equal(w.float(), torch.ones(2, 2))
+
+
+# --------------------------------------------------------- int8 ConvRot dequant
+
+def _comfy_quant(fmt="int8_tensorwise", convrot=True, groupsize=4):
+    """A ``<base>.comfy_quant`` uint8 tensor as ComfyUI serializes it."""
+    import json
+
+    raw = json.dumps(
+        {"format": fmt, "convrot": convrot, "convrot_groupsize": groupsize}
+    ).encode("utf-8")
+    return torch.tensor(list(raw), dtype=torch.uint8)
+
+
+def _convrot_quantize(w_true, groupsize=4):
+    """Quantize like ComfyUI's ConvRot: block-Hadamard rotate, per-output-channel
+    absmax scale, round to int8. (rotate_weight is involutive — the same op the
+    dequant applies.)"""
+    from imference_engine.minimax_h3.comfy_convert import rotate_weight
+
+    w_rot = rotate_weight(w_true.float(), groupsize)
+    scale = w_rot.abs().amax(dim=1, keepdim=True) / 127.0
+    w_int8 = torch.round(w_rot / scale).to(torch.int8)
+    return w_int8, scale
+
+
+def test_int8_convrot_roundtrip_within_quantization_error():
+    torch.manual_seed(7)
+    w_true = torch.randn(3, 8)
+    w_int8, scale = _convrot_quantize(w_true)
+    sd = {
+        "blocks.0.attn.wq.weight": w_int8,
+        "blocks.0.attn.wq.weight_scale": scale,
+        "blocks.0.attn.wq.comfy_quant": _comfy_quant(),
+    }
+    out = dequantize_int8_convrot(sd, torch.float32)
+    assert "blocks.0.attn.wq.weight_scale" not in out
+    assert "blocks.0.attn.wq.comfy_quant" not in out
+    got = out["blocks.0.attn.wq.weight"]
+    assert got.dtype == torch.float32
+    # Error bound: <= 0.5 int8 step per element in the rotated domain; the
+    # rotation is orthonormal so it cannot amplify beyond the group mixing.
+    assert torch.allclose(got, w_true, atol=float(scale.max()) * 2.0)
+
+
+def test_has_int8_convrot_gates_on_weight_dtype():
+    w_int8 = torch.zeros(2, 4, dtype=torch.int8)
+    assert has_int8_convrot({"x.weight": w_int8, "x.comfy_quant": _comfy_quant()})
+    assert has_int8_convrot({"x.weight": w_int8, "x.weight_scale": torch.ones(2, 1)})
+    # scaled-fp8 layers may carry .comfy_quant tags too — NOT int8-ConvRot
+    assert not has_int8_convrot({
+        "x.weight": torch.zeros(2, 4, dtype=torch.float8_e4m3fn),
+        "x.weight_scale": torch.tensor(1.0),
+        "x.comfy_quant": _comfy_quant(fmt="float8_e4m3fn", convrot=False),
+    })
+
+
+def test_prepare_full_pipeline_int8_convrot_native_file():
+    """End-to-end: prefixed + int8-ConvRot + native keys -> diffusers dict,
+    quantized flag set (drives fp8-resident storage)."""
+    torch.manual_seed(11)
+    w_true = torch.randn(2, 8)
+    w_int8, scale = _convrot_quantize(w_true)
+    sd = {
+        "model.diffusion_model.blocks.0.attn.wq.weight": w_int8,
+        "model.diffusion_model.blocks.0.attn.wq.weight_scale": scale,
+        "model.diffusion_model.blocks.0.attn.wq.comfy_quant": _comfy_quant(),
+        "model.diffusion_model.blocks.0.prenorm.scale": torch.zeros(2),
+    }
+    out, was_quantized = prepare_krea2_state_dict(sd, torch.float32)
+    assert was_quantized
+    assert set(out) == {
+        "transformer_blocks.0.attn.to_q.weight",
+        "transformer_blocks.0.norm1.weight",
+    }
+    got = out["transformer_blocks.0.attn.to_q.weight"]
+    assert got.dtype == torch.float32
+    assert torch.allclose(got, w_true, atol=float(scale.max()) * 2.0)
+
+
+def test_prepare_rejects_int8_without_quant_config():
+    """int8 weights following an unknown scheme must fail loudly, not load."""
+    sd = {"blocks.0.attn.wq.weight": torch.zeros(2, 4, dtype=torch.int8)}
+    with pytest.raises(RuntimeError, match="int8 tensor"):
+        prepare_krea2_state_dict(sd, torch.float32)
+
+
+def test_int8_with_header_metadata_config():
+    """Third-party converters (ComfyUI Kitchen) put ONE _quantization_metadata
+    JSON in the safetensors header instead of per-layer .comfy_quant tensors —
+    the config must be honored from there (keys may lack the tensor prefix)."""
+    import json
+
+    torch.manual_seed(5)
+    w_true = torch.randn(2, 8)
+    w_int8, scale = _convrot_quantize(w_true)
+    sd = {
+        "model.diffusion_model.blocks.0.attn.wq.weight": w_int8,
+        "model.diffusion_model.blocks.0.attn.wq.weight_scale": scale,
+    }
+    meta = {"_quantization_metadata": json.dumps({"layers": {
+        "blocks.0.attn.wq": {"format": "int8_tensorwise", "convrot": True,
+                             "convrot_groupsize": 4},
+    }})}
+    out, was_quantized = prepare_krea2_state_dict(
+        sd, torch.float32, quant_metadata=meta)
+    assert was_quantized
+    got = out["transformer_blocks.0.attn.to_q.weight"]
+    assert torch.allclose(got, w_true, atol=float(scale.max()) * 2.0)
+
+
+def test_int8_with_scale_but_no_config_anywhere_raises():
+    """The CyberRealistic regression: int8 + weight_scale with NO config must
+    refuse — falling through to the scaled-fp8 path multiplies without
+    un-rotating and renders pure noise."""
+    sd = {
+        "blocks.0.attn.wq.weight": torch.zeros(2, 4, dtype=torch.int8),
+        "blocks.0.attn.wq.weight_scale": torch.ones(2, 1),
+    }
+    with pytest.raises(RuntimeError, match="no quantization config"):
+        prepare_krea2_state_dict(sd, torch.float32)
+
+
+def test_dequant_device_falls_back_to_cpu_and_stays_correct():
+    """A broken dequant device (simulating an OOM/driver error) must fall back
+    to the CPU path per-tensor, not fail the load or corrupt results."""
+    w_true = torch.tensor([[0.5, -1.25], [2.0, 0.0]])
+    scale = torch.tensor(0.125)
+    sd = {"blocks.0.attn.wq.weight": (w_true / scale).to(torch.float8_e4m3fn),
+          "blocks.0.attn.wq.weight_scale": scale}
+    out = dequantize_scaled_fp8(sd, torch.bfloat16, device="notadevice")
+    assert torch.equal(out["blocks.0.attn.wq.weight"].float(), w_true)
+
+    torch.manual_seed(3)
+    w2 = torch.randn(2, 8)
+    w_int8, s2 = _convrot_quantize(w2)
+    sd2 = {
+        "blocks.0.attn.wq.weight": w_int8,
+        "blocks.0.attn.wq.weight_scale": s2,
+        "blocks.0.attn.wq.comfy_quant": _comfy_quant(),
+    }
+    out2 = dequantize_int8_convrot(sd2, torch.float32, device="notadevice")
+    assert torch.allclose(out2["blocks.0.attn.wq.weight"], w2,
+                          atol=float(s2.max()) * 2.0)
+
+
+def test_int8_convrot_unsupported_format_raises():
+    sd = {
+        "blocks.0.attn.wq.weight": torch.zeros(2, 4, dtype=torch.int8),
+        "blocks.0.attn.wq.weight_scale": torch.ones(2, 1),
+        "blocks.0.attn.wq.comfy_quant": _comfy_quant(fmt="int4_blockwise"),
+    }
+    with pytest.raises(RuntimeError, match="int4/nvfp4"):
+        dequantize_int8_convrot(sd, torch.float32)
