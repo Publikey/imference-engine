@@ -208,6 +208,10 @@ class LoRAManager:
             loaded[name] = source
 
         pipe.set_adapters(names, adapter_weights=weights)
+        # deactivate() disables the LoRA layers; set_adapters picks WHICH
+        # adapters are active but does not re-enable disabled layers, so without
+        # this every request after the first rendered without its LoRA.
+        pipe.enable_lora()
         logger.info("Active LoRAs (not fused): %s", list(zip(names, weights)))
 
     @staticmethod
@@ -224,15 +228,17 @@ class LoRAManager:
 
     @staticmethod
     def deactivate(pipe: Any) -> None:
-        """Clear the ACTIVE adapter set after a request (adapters stay cached on
-        the pipe for reuse). Never raises — this runs in a finally."""
+        """Bypass the LoRA layers after a request (adapters stay cached on the
+        pipe for reuse; apply() re-enables them). Never raises — this runs in a
+        finally.
+
+        ``disable_lora`` rather than ``set_adapters([])``: on SDXL the empty set
+        raises in diffusers 0.40, and it is the layer-level switch that apply
+        has to undo anyway."""
         try:
-            pipe.set_adapters([])
-        except Exception:  # noqa: BLE001
-            try:
-                pipe.disable_lora()
-            except Exception:  # noqa: BLE001
-                logger.warning("Could not deactivate LoRA adapters on pipe")
+            pipe.disable_lora()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not deactivate LoRA adapters on pipe: %s", e)
 
 
 def _delete_adapter(pipe: Any, name: str) -> None:

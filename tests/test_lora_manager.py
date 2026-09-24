@@ -92,6 +92,13 @@ class FakePipe:
         self.loaded: list[tuple] = []
         self.deleted: list[str] = []
         self.active: tuple | None = None
+        self.enabled = True
+
+    def enable_lora(self):
+        self.enabled = True
+
+    def disable_lora(self):
+        self.enabled = False
 
     def load_lora_weights(self, path, weight_name=None, adapter_name=None):
         self.loaded.append((path, weight_name, adapter_name))
@@ -140,20 +147,30 @@ def test_apply_reuses_cached_adapter_and_evicts_lru(tmp_path):
     assert isinstance(getattr(pipe, "_imference_loras"), OrderedDict)
 
 
-def test_deactivate_clears_active_set_and_never_raises():
+def test_deactivate_disables_layers_and_never_raises():
     pipe = FakePipe()
-    pipe.active = (["x"], [1.0])
     LoRAManager.deactivate(pipe)
-    assert pipe.active == ([], [])
+    assert pipe.enabled is False
 
     class Broken:
-        def set_adapters(self, *_a, **_k):
-            raise RuntimeError("nope")
-
         def disable_lora(self):
             raise RuntimeError("nope")
 
     LoRAManager.deactivate(Broken())  # must not raise
+
+
+def test_apply_after_deactivate_re_enables_the_layers(tmp_path):
+    """Regression (GPU-observed): after the first request's deactivate, every
+    later request rendered without its LoRA — set_adapters alone does not undo
+    disable_lora."""
+    m, files = _mgr_with_files(tmp_path, 1)
+    pipe = FakePipe()
+    cfgs = LoRAManager.parse([{"source": files[0]}])
+    m.apply(pipe, cfgs)
+    LoRAManager.deactivate(pipe)
+    m.apply(pipe, cfgs)
+    assert pipe.enabled is True
+    assert pipe.active == (["l0"], [1.0])
 
 
 # ---------------------------------------------------------------- backend gate
