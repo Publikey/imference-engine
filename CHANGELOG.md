@@ -5,6 +5,35 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Fixed
+
+- **SDXL LoRAs + img2img.** LoRAs were applied on the per-request img2img
+  wrapper, so the adapter bookkeeping was lost while the weights stayed in the
+  shared UNet/text encoders; the next request with the same LoRA reloaded it
+  under a taken adapter name and failed. LoRAs are now applied on the resident
+  pipe before the wrap (and deactivated on it).
+- **Same `adapter_name`, different file** no longer silently reuses the old
+  weights: the loaded adapter is deleted and the new file loaded.
+- **A failed LoRA load** deletes the half-injected adapter, so the next request
+  can load that name again.
+
+### Added
+
+- **LoRA family check** (`imference_engine.managers.lora_inspect`):
+  `inspect_lora(path)` reads the safetensors header only (no torch) and detects
+  the target family from trainer metadata, key layout or cross-attention width.
+  `generate(loras=...)` refuses a LoRA identified for another family with a
+  readable error; unrecognized layouts are let through. Non-safetensors files
+  (pickled `.pt`/`.ckpt`) are refused.
+
+### Changed
+
+- URL-sourced LoRAs now download to `<IMAGE_MODEL_CACHE>/_loras` when
+  `IMAGE_MODEL_CACHE` is set and `IMAGE_LORA_CACHE` is not (was
+  `$HF_HOME/image/_loras` regardless).
+
 ## [0.4.3] — 2026-08-28
 
 ### Fixed

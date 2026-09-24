@@ -206,7 +206,7 @@ def test_generate_applies_and_deactivates_on_supported_backend(tmp_path):
         def parse(self, loras):
             return LoRAManager.parse(loras)
 
-        def apply(self, pipe, cfgs):
+        def apply(self, pipe, cfgs, family=None):
             calls.append(("apply", [c["adapter_name"] for c in cfgs]))
 
         def deactivate(self, pipe):
@@ -222,7 +222,7 @@ def test_generate_applies_and_deactivates_on_supported_backend(tmp_path):
 
     # Failed apply -> error result with the partial-success contract intact.
     class FailingLoras(SpyLoras):
-        def apply(self, pipe, cfgs):
+        def apply(self, pipe, cfgs, family=None):
             raise FileNotFoundError("no such lora")
 
     engine._loras = FailingLoras()
@@ -231,3 +231,159 @@ def test_generate_applies_and_deactivates_on_supported_backend(tmp_path):
     assert not result.ok
     assert result.media == [None, None]
     assert "Failed to load LoRA" in result.errors[0].error
+
+
+# ---------------------------------------------------------------- family check / robustness
+
+def _write_lora(path, tensors: dict, metadata: dict | None = None) -> str:
+    """Header-only safetensors file: enough for inspect_lora (never reads data)."""
+    import json
+    import struct
+
+    header = {k: {"dtype": "F16", "shape": shape, "data_offsets": [0, 0]}
+              for k, shape in tensors.items()}
+    if metadata is not None:
+        header["__metadata__"] = metadata
+    blob = json.dumps(header).encode()
+    with open(path, "wb") as f:
+        f.write(struct.pack("<Q", len(blob)) + blob)
+    return str(path)
+
+
+@pytest.mark.parametrize("tensors,metadata,family,reason", [
+    ({"lora_unet_x.lora_down.weight": [4, 8]}, {"ss_base_model_version": "sdxl_base_v1-0"},
+     "sdxl", "trainer metadata"),
+    ({"x.lora_A.weight": [4, 8]}, {"modelspec.architecture": "stable-diffusion-xl-v1-base/lora"},
+     "sdxl", "trainer metadata"),
+    ({"lora_unet_x.lora_down.weight": [4, 8]}, {"ss_base_model_version": "sd_v1"},
+     "sd15", "trainer metadata"),
+    ({"lora_te2_text_model_encoder_layers_0_mlp_fc1.lora_down.weight": [4, 1280]}, None,
+     "sdxl", "key layout"),
+    ({"lora_unet_input_blocks_4_1_proj_in.lora_down.weight": [4, 640]}, None,
+     "sdxl", "key layout"),
+    ({"lora_unet_double_blocks_0_img_attn_proj.lora_down.weight": [4, 3072]}, None,
+     "flux", "key layout"),
+    ({"unet.down_blocks.1.attentions.0.transformer_blocks.0.attn2.to_k.lora_A.weight": [4, 2048]},
+     None, "sdxl", "cross-attention width"),
+    ({"lora_unet_down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight":
+      [4, 768]}, None, "sd15", "cross-attention width"),
+    ({"layers.0.attention.to_q.lora_A.weight": [4, 3840]}, None, None, "unrecognized layout"),
+])
+def test_inspect_lora_detects_family(tmp_path, tensors, metadata, family, reason):
+    from imference_engine.managers.lora_inspect import inspect_lora
+
+    info = inspect_lora(_write_lora(tmp_path / "l.safetensors", tensors, metadata))
+    assert (info.family, info.reason) == (family, reason)
+
+
+def test_inspect_lora_rejects_non_safetensors(tmp_path):
+    from imference_engine.managers.lora_inspect import inspect_lora
+
+    f = tmp_path / "pickled.safetensors"
+    f.write_bytes(bytes([0x80, 0x02]) + b"}q(X model")  # pickle, not safetensors
+    with pytest.raises(ValueError):
+        inspect_lora(str(f))
+
+
+def test_is_compatible_lets_unknown_through():
+    from imference_engine.managers.lora_inspect import is_compatible
+
+    assert is_compatible("sdxl", "sdxl")
+    assert is_compatible(None, "sdxl")
+    assert not is_compatible("sd15", "sdxl")
+
+
+def test_apply_refuses_lora_for_another_family(tmp_path):
+    f = _write_lora(tmp_path / "sd15.safetensors", {
+        "lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight":
+            [4, 768]})
+    m = LoRAManager(cache_dir=str(tmp_path / "cache"))
+    pipe = FakePipe()
+    with pytest.raises(ValueError, match="targets sd15 .* model is sdxl"):
+        m.apply(pipe, LoRAManager.parse([{"source": f}]), family="sdxl")
+    assert pipe.loaded == []
+
+
+def test_apply_accepts_matching_family(tmp_path):
+    f = _write_lora(tmp_path / "xl.safetensors", {"lora_te2_x.lora_down.weight": [4, 1280]})
+    m = LoRAManager(cache_dir=str(tmp_path / "cache"))
+    pipe = FakePipe()
+    m.apply(pipe, LoRAManager.parse([{"source": f}]), family="sdxl")
+    assert pipe.active == (["xl"], [1.0])
+
+
+def test_apply_reloads_when_adapter_name_points_to_another_file(tmp_path):
+    m, files = _mgr_with_files(tmp_path, 2)
+    pipe = FakePipe()
+    m.apply(pipe, LoRAManager.parse([{"source": files[0], "adapter_name": "style"}]))
+    m.apply(pipe, LoRAManager.parse([{"source": files[1], "adapter_name": "style"}]))
+    assert pipe.deleted == ["style"]
+    assert [entry[1] for entry in pipe.loaded] == ["l0.safetensors", "l1.safetensors"]
+
+
+def test_failed_load_cleans_up_half_injected_adapter(tmp_path):
+    m, files = _mgr_with_files(tmp_path, 1)
+
+    class FailingPipe(FakePipe):
+        def load_lora_weights(self, *a, **k):
+            raise RuntimeError("size mismatch")
+
+    pipe = FailingPipe()
+    with pytest.raises(RuntimeError):
+        m.apply(pipe, LoRAManager.parse([{"source": files[0]}]))
+    assert pipe.deleted == ["l0"]
+    assert "l0" not in getattr(pipe, "_imference_loras")
+
+
+def test_img2img_applies_loras_on_the_resident_pipe_not_the_wrapper(tmp_path):
+    """Regression: the adapter bookkeeping must land on the resident t2i pipe.
+    On the per-request img2img wrapper, the next request would reload the
+    adapter under a name already taken in the shared modules."""
+    from PIL import Image
+
+    from tests.test_generate_precedence import RecordingBackend, _engine_with
+
+    seen = []
+
+    class Wrapper:
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __call__(self, **kwargs):
+            return self.inner(**kwargs)
+
+    class Img2ImgBackend(RecordingBackend):
+        supports_loras = True
+
+        def make_img2img(self, t2i_pipe):
+            return Wrapper(t2i_pipe)
+
+    engine = _engine_with(Img2ImgBackend())
+    resident, _ = engine._models.get_or_load("m")
+
+    class SpyLoras:
+        def parse(self, loras):
+            return LoRAManager.parse(loras)
+
+        def apply(self, pipe, cfgs, family=None):
+            seen.append(("apply", pipe))
+
+        def deactivate(self, pipe):
+            seen.append(("deactivate", pipe))
+
+    engine._loras = SpyLoras()
+    f = tmp_path / "style.safetensors"
+    f.write_bytes(b"x")
+    result = engine.generate(model="m", prompt="cat", seed=1,
+                             source_image=Image.new("RGB", (64, 64)),
+                             loras=[{"source": str(f)}])
+    assert result.media
+    assert seen == [("apply", resident), ("deactivate", resident)]
+
+
+def test_apply_refuses_more_loras_than_the_adapter_cache(tmp_path):
+    m, files = _mgr_with_files(tmp_path, 3)  # max_adapters=2
+    pipe = FakePipe()
+    with pytest.raises(ValueError, match="at most 2"):
+        m.apply(pipe, LoRAManager.parse([{"source": f} for f in files]))
+    assert pipe.loaded == []

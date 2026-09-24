@@ -6,6 +6,7 @@ HTTP server, in-process batch script).
 """
 from __future__ import annotations
 import logging
+import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,8 +214,13 @@ class Engine(BaseEngine):
         # LoRA manager (SDXL-only for now via PipelineBackend.supports_loras).
         # MAX_CACHED_LORAS keeps the legacy worker env name for drop-in parity.
         from imference_engine.runtime.env import env_int_or_none as _int
+        # Downloaded LoRAs default to <IMAGE_MODEL_CACHE>/_loras, next to the
+        # rest of the offline tree (the big volume on workers).
+        lora_cache_dir = self._runtime.lora_cache_dir
+        if not lora_cache_dir and self._runtime.model_cache_dir:
+            lora_cache_dir = os.path.join(str(self._runtime.model_cache_dir), "_loras")
         self._loras = LoRAManager(
-            cache_dir=str(self._runtime.lora_cache_dir) if self._runtime.lora_cache_dir else None,
+            cache_dir=str(lora_cache_dir) if lora_cache_dir else None,
             max_adapters=_int("MAX_CACHED_LORAS") or 5,
         )
         # Catalog load via the internal helper (no _loaded guard — BaseEngine
@@ -436,28 +442,25 @@ class Engine(BaseEngine):
         # (the shared modules are already on the active device). Built per request
         # rather than cached: the wrapper is light and this avoids shadowing the
         # ModelManager's residency bookkeeping.
-        is_img2img = source_image is not None
-        if is_img2img:
-            pipe = backend.make_img2img(pipe)
-        backend.apply_scheduler(pipe, eff.scheduler, **eff.backend_options)
-        # Guidance is applied here (not via build_inference_kwargs) because modular
-        # pipelines (Anima) hold a Guider component whose scale must be set on the
-        # object BEFORE the call — it is not a pipe(...) kwarg. Standard pipelines
-        # keep the default no-op and pass guidance_scale in build_inference_kwargs.
-        backend.apply_guidance(pipe, eff.guidance_scale)
-
-        # LoRAs are applied BEFORE prompt encoding — SDXL LoRAs commonly carry
-        # text-encoder deltas, and the weighted-prompt path encodes with the
-        # pipe's encoders right below. Applied without fusing, deactivated in
-        # the finally so the RESIDENT pipe serves the next request clean (the
-        # loaded adapters stay cached on the pipe for cheap reuse). A failed
-        # load fails the whole request as per-batch errors (partial-success
-        # contract: generate() itself does not raise past this point).
+        #
+        # LoRAs are applied BEFORE the img2img wrap and BEFORE prompt encoding:
+        # - on the RESIDENT pipe, because the adapter bookkeeping lives on it —
+        #   applied on the throwaway wrapper, the next request would not know
+        #   the adapter is already loaded in the shared modules and would
+        #   reload it under a taken name;
+        # - before encoding, because SDXL LoRAs commonly carry text-encoder
+        #   deltas and the weighted-prompt path encodes with the pipe's encoders.
+        # Applied without fusing, deactivated in the finally so the resident
+        # pipe serves the next request clean (loaded adapters stay cached on it
+        # for cheap reuse). A failed load fails the whole request as per-batch
+        # errors (partial-success contract: generate() does not raise here).
+        resident_pipe = pipe
         if lora_configs:
             try:
-                self._loras.apply(pipe, lora_configs)
+                self._loras.apply(resident_pipe, lora_configs, family=backend.engine)
             except Exception as e:  # noqa: BLE001 — surface as a result, not a crash
                 logger.error("LoRA apply failed: %s", e)
+                self._loras.deactivate(resident_pipe)
                 return MediaResult(
                     kind="image",
                     media=[None] * batch,
@@ -466,6 +469,16 @@ class Engine(BaseEngine):
                         error=f"Failed to load LoRA: {e}", batch_index=None)],
                 )
         try:
+            is_img2img = source_image is not None
+            if is_img2img:
+                pipe = backend.make_img2img(resident_pipe)
+            backend.apply_scheduler(pipe, eff.scheduler, **eff.backend_options)
+            # Guidance is applied here (not via build_inference_kwargs) because modular
+            # pipelines (Anima) hold a Guider component whose scale must be set on the
+            # object BEFORE the call — it is not a pipe(...) kwarg. Standard pipelines
+            # keep the default no-op and pass guidance_scale in build_inference_kwargs.
+            backend.apply_guidance(pipe, eff.guidance_scale)
+
             prompt_kwargs = backend.encode_prompts(pipe, prompt, eff.negative_prompt)
 
             seeds = [
@@ -489,7 +502,7 @@ class Engine(BaseEngine):
             )
         finally:
             if lora_configs:
-                self._loras.deactivate(pipe)
+                self._loras.deactivate(resident_pipe)
 
     def _run_chunked(
         self,

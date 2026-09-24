@@ -47,8 +47,8 @@ Every knob is settable **identically by an env var OR a constructor param**.
 | `MAX_CPU_MODELS` | `max_cpu_models` | int/None (`auto`→None) | `None` (=0) | Demoted-but-warm pipes kept in CPU RAM for fast GPU re-promotion. Forced to 0 when `enable_offload`. |
 | `IMAGE_USE_TINY_VAE` | `use_tiny_vae` | bool | `false` | SDXL → TAESDxl, SD 1.5 → TAESD (~5 MB, fast decode, slight quality loss). **Ignored by all other backends.** |
 | `IMAGE_ENABLE_CPU_OFFLOAD` | `enable_offload` | bool | `false` | `enable_model_cpu_offload()` — peak VRAM ≈ largest submodel, ~10–30 % slower. |
-
-`lora_cache_dir` is a constructor field only (no env var); LoRA is not wired in V1.
+| `IMAGE_LORA_CACHE` | `lora_cache_dir` | str/None | `None` → `<IMAGE_MODEL_CACHE>/_loras`, else `$HF_HOME/image/_loras` | Where URL-sourced LoRAs are downloaded (LRU-pruned beyond 20 files). |
+| `MAX_CACHED_LORAS` | — | int | `5` | Adapters kept loaded per resident pipe; the least recently used is deleted beyond it. |
 
 ### Video (`WanRuntimeConfig` / `.from_env()`)
 
@@ -107,7 +107,7 @@ Keyword-only. Returns `MediaResult(kind="image")`.
 | `source_image` | `PIL.Image \| None` | `None` | Present ⇒ img2img (all except Anima). |
 | `strength` | `float \| None` | `0.75` | img2img denoise strength. |
 | `backend_options` | `dict \| None` | `{}` | Engine-specific; merged key-wise through the precedence chain. |
-| `loras` | `list[dict] \| None` | `None` | **Not wired in V1** — logged and ignored. |
+| `loras` | `list[dict] \| None` | `None` | **SDXL only**: stack of `{source: <path\|url>, weight=1.0, adapter_name?}` (`path`/`url` aliases). Applied unfused, deactivated after the request. A LoRA made for another family (read from the safetensors header) or a failed load returns an error result. Other backends: logged and ignored. |
 
 ### `WanEngine.generate_video`
 

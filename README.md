@@ -394,7 +394,7 @@ for ComfyUI/civitai H3 int8-ConvRot single-files
 The **Krea 2 Turbo backend** (civitai/ComfyUI single-file + scaled-fp8 load
 path) is validated as of 2026-08-27 — official scaled-fp8 and a civitai
 plain-fp8 finetune both render clean on a 24 GB card.
-**Not yet wired:** `LoRAManager` (image LoRA stacking — `loras=` is accepted
-but ignored), Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
+**LoRAs: SDXL only** (`loras=` on `generate`; other backends log and ignore).
+**Not yet wired:** Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is
 untested.

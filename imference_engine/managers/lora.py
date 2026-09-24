@@ -13,9 +13,13 @@ production ran on) with the lessons the Wan loader learned since:
 - **Offline-safe load form**: ``load_lora_weights(dir, weight_name=...)`` — a
   bare file path makes diffusers guess the name, which it refuses to do under
   ``HF_HUB_OFFLINE=1``.
-- **Bookkeeping lives ON the pipe** (``pipe._imference_loras``): when the
-  ModelManager evicts a pipe, the adapter cache dies with it — no stale
-  per-model-name maps to reconcile.
+- **Bookkeeping lives ON the resident pipe** (``pipe._imference_loras``):
+  when the ModelManager evicts a pipe, the adapter cache dies with it — no
+  stale per-model-name maps to reconcile. Always apply on the resident t2i
+  pipe, never on the per-request img2img wrapper (which shares the same
+  modules but is thrown away after the request).
+- **Family check before load**: ``managers/lora_inspect`` reads the
+  safetensors header and refuses a LoRA made for another family.
 
 Accepted config shape (one dict per LoRA, list = stack)::
 
@@ -133,8 +137,17 @@ class LoRAManager:
     # Apply / deactivate
     # ------------------------------------------------------------------
 
-    def apply(self, pipe: Any, configs: list[dict]) -> None:
+    def apply(self, pipe: Any, configs: list[dict], *, family: Optional[str] = None) -> None:
         """Load (or reuse) each adapter on the pipe and activate the stack.
+
+        ``pipe`` must be the RESIDENT pipe (not a per-request img2img wrapper):
+        the adapter bookkeeping lives on it, so it has to be the object the
+        next request sees.
+
+        ``family`` is the backend's engine id; when given, each file is checked
+        with :func:`inspect_lora` and a LoRA positively identified for another
+        family is refused with a readable error (instead of a diffusers key
+        mismatch deep in ``load_lora_weights``).
 
         Raises on a failed load — a request that asked for a LoRA must not
         silently render without it. Caching: adapters already on the pipe are
@@ -142,6 +155,13 @@ class LoRAManager:
         """
         if not configs:
             return
+        if len(configs) > self._max_adapters:
+            # Loading more than the cache holds would evict adapters of this
+            # very request before set_adapters activates them.
+            raise ValueError(
+                f"{len(configs)} LoRAs requested but at most {self._max_adapters} "
+                f"can be active (MAX_CACHED_LORAS)"
+            )
         loaded: "OrderedDict[str, str]" = getattr(pipe, _PIPE_ATTR, None) or OrderedDict()
         setattr(pipe, _PIPE_ATTR, loaded)
 
@@ -153,30 +173,54 @@ class LoRAManager:
             weights.append(weight)
 
             if name in loaded:
-                loaded.move_to_end(name)
-                logger.info("LoRA %r already loaded on pipe; reusing (weight=%s)", name, weight)
-                continue
+                if loaded[name] == source:
+                    loaded.move_to_end(name)
+                    logger.info("LoRA %r already loaded on pipe; reusing (weight=%s)", name, weight)
+                    continue
+                # Same adapter name, different file: reusing would silently
+                # render with the wrong weights — drop the old one and reload.
+                logger.info("LoRA %r now points to %s; replacing the loaded adapter", name, source)
+                del loaded[name]
+                _delete_adapter(pipe, name)
 
             while len(loaded) >= self._max_adapters:
                 evict, _ = loaded.popitem(last=False)
                 logger.info("Evicting LRU LoRA adapter %r", evict)
-                try:
-                    pipe.delete_adapters(evict)
-                except Exception as e:  # noqa: BLE001 — eviction is best-effort
-                    logger.warning("delete_adapters(%r) failed: %s", evict, e)
+                _delete_adapter(pipe, evict)
 
             path = self.resolve(source)
+            if family is not None:
+                self._check_family(name, path, family)
             logger.info("Loading LoRA %r from %s (weight=%s)", name, path, weight)
             # (dir, weight_name) form — offline-safe (see module docstring).
-            pipe.load_lora_weights(
-                os.path.dirname(path),
-                weight_name=os.path.basename(path),
-                adapter_name=name,
-            )
+            try:
+                pipe.load_lora_weights(
+                    os.path.dirname(path),
+                    weight_name=os.path.basename(path),
+                    adapter_name=name,
+                )
+            except Exception:
+                # A failed load can leave a half-injected adapter under this
+                # name; without cleanup the next request would hit "adapter
+                # name already in use".
+                _delete_adapter(pipe, name)
+                raise
             loaded[name] = source
 
         pipe.set_adapters(names, adapter_weights=weights)
         logger.info("Active LoRAs (not fused): %s", list(zip(names, weights)))
+
+    @staticmethod
+    def _check_family(name: str, path: str, family: str) -> None:
+        from imference_engine.managers.lora_inspect import inspect_lora, is_compatible
+
+        info = inspect_lora(path)  # ValueError on a non-safetensors file
+        if not is_compatible(info.family, family):
+            raise ValueError(
+                f"LoRA {name!r} targets {info.family} (from {info.reason}) "
+                f"but the model is {family}"
+            )
+        logger.info("LoRA %r family: %s (%s)", name, info.family or "unknown", info.reason)
 
     @staticmethod
     def deactivate(pipe: Any) -> None:
@@ -189,6 +233,15 @@ class LoRAManager:
                 pipe.disable_lora()
             except Exception:  # noqa: BLE001
                 logger.warning("Could not deactivate LoRA adapters on pipe")
+
+
+def _delete_adapter(pipe: Any, name: str) -> None:
+    """Best-effort ``delete_adapters`` — eviction/cleanup must never mask the
+    request's real outcome."""
+    try:
+        pipe.delete_adapters(name)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("delete_adapters(%r) failed: %s", name, e)
 
 
 def _derive_adapter_name(source: str) -> str:
