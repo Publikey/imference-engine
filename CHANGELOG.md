@@ -5,10 +5,18 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased]
+## [0.4.4] — 2026-09-30
 
 ### Fixed
 
+- **SDXL LoRAs only applied to the first request on a resident pipe.** On SDXL
+  `set_adapters([])` raises in diffusers 0.40, so the per-request deactivate
+  fell back to `disable_lora()` and nothing re-enabled the layers: every later
+  request rendered WITHOUT its LoRA while logging it as active. `apply()` now
+  calls `enable_lora()` after `set_adapters`, and `deactivate()` calls
+  `disable_lora()` directly. GPU-checked (RTX 4070 8 GB, model offload):
+  t2i+LoRA, img2img+LoRA, t2i+LoRA again (bit-identical to the first), then a
+  LoRA-less render.
 - **SDXL LoRAs + img2img.** LoRAs were applied on the per-request img2img
   wrapper, so the adapter bookkeeping was lost while the weights stayed in the
   shared UNet/text encoders; the next request with the same LoRA reloaded it
