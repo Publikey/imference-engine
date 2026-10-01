@@ -5,6 +5,35 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [0.4.5] — 2026-10-01
+
+### Added
+
+- **LoRAs on Z-Image, Krea 2 and Anima** (`loras=` on `generate`, same
+  contract as SDXL: unfused, applied on the resident pipe, deactivated after
+  the request, family-checked). The header inspector recognises Z-Image,
+  Krea 2 and Anima LoRAs (trainer metadata + key layouts) and no longer reads a
+  DiT's `attn2.to_k` width as an SD cross-attention width.
+- **Anima img2img.** diffusers 0.40's `AnimaAutoBlocks` switch to img2img on an
+  `image` input: `make_img2img` returns the t2i pipe and the inference kwargs
+  carry `image` / `strength` (previously `NotImplementedError`).
+
+### Fixed
+
+- **Krea 2 LoRAs on the fp8-resident transformer.** peft creates the adapter
+  in the wrapped layer's dtype (fp8) and CUDA has no fp8 addmm
+  (`"addmm_cuda" not implemented for 'Float8_e4m3fn'`): adapter tensors are
+  upcast to bf16 after loading, and group-offload hooks are re-applied so they
+  don't onload the stale fp8 copies.
+- **kohya / lora_down-up Anima LoRAs** loaded nothing through diffusers 0.40
+  (no error until `set_adapters`): `anima/lora_convert.py` rewrites them to the
+  ComfyUI `lora_A`/`lora_B` layout, alpha/rank baked in.
+
+GPU-validated on an RTX 3090 24 GB: Z-Image t2i + img2img, Krea 2 resident and
+group offload + fp8, Anima t2i + img2img — each LoRA changes the render, the
+next request without it is pixel-identical to the base. Krea 2 under group
+offload: a LoRA request is ~2x slower (adapters stream with their groups).
+
 ## [0.4.4] — 2026-09-30
 
 ### Fixed
