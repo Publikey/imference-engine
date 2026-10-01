@@ -24,6 +24,7 @@ diffusers to accept or reject — a guess would block valid files.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import struct
 from dataclasses import dataclass, field
@@ -37,6 +38,18 @@ _MAX_HEADER_BYTES = 100 * 1024 * 1024
 # Families a LoRA is detected as. "flux" covers the FLUX-derived DiTs (Chroma
 # LoRAs share the FLUX block layout).
 SDXL, SD15, SD2, FLUX = "sdxl", "sd15", "sd2", "flux"
+ZIMAGE, KREA2, ANIMA = "zimage", "krea2", "anima"
+
+# Key layouts of the DiT families (original / ComfyUI / kohya / diffusers
+# spellings, from diffusers' lora_conversion_utils). Checked before the UNet
+# heuristics: an Anima LoRA in diffusers format has attn2.to_k too.
+_ZIMAGE_KEYS = re.compile(r"(noise_refiner|context_refiner|(^|[._])layers[._]\d+[._](attention|feed_forward)[._])")
+_KREA2_KEYS = re.compile(r"(txtfusion\.|text_fusion\.|\.attn\.(wq|wk|wv|wo|to_gate)\.|(^|\.)(tmlp|txtmlp)\.)")
+_ANIMA_KEYS = re.compile(
+    r"(llm_adapter\.|text_conditioner\.|adaln_modulation_(self_attn|cross_attn|mlp)|"
+    r"\.(self_attn|cross_attn)\.(q_proj|k_proj|v_proj|output_proj)\.|transformer_blocks\.\d+\.norm[123]\.linear_[12])"
+)
+_UNET_KEYS = ("down_blocks", "up_blocks", "mid_block", "input_blocks", "output_blocks", "middle_block")
 
 _CROSS_ATTN_WIDTH = {2048: SDXL, 768: SD15, 1024: SD2}
 
@@ -109,6 +122,10 @@ def _family_from_metadata(md: dict) -> Optional[str]:
         return SD2
     if base.startswith("flux"):
         return FLUX
+    for prefix, fam in (("zimage", ZIMAGE), ("z_image", ZIMAGE), ("z-image", ZIMAGE),
+                        ("krea", KREA2), ("anima", ANIMA)):
+        if base.startswith(prefix):
+            return fam
 
     arch = str(md.get("modelspec.architecture") or "").lower()
     if arch.startswith("stable-diffusion-xl"):
@@ -119,10 +136,16 @@ def _family_from_metadata(md: dict) -> Optional[str]:
         return SD2
     if arch.startswith("flux"):
         return FLUX
+    for needle, fam in (("z-image", ZIMAGE), ("zimage", ZIMAGE), ("krea", KREA2), ("anima", ANIMA)):
+        if needle in arch:
+            return fam
     return None
 
 
 def _family_from_keys(keys: list[str]) -> Optional[str]:
+    for pattern, fam in ((_ZIMAGE_KEYS, ZIMAGE), (_KREA2_KEYS, KREA2), (_ANIMA_KEYS, ANIMA)):
+        if any(pattern.search(k) for k in keys):
+            return fam
     if any(k.startswith("lora_te2_") or "text_encoder_2." in k for k in keys):
         return SDXL
     if any(k.startswith(("lora_unet_input_blocks_", "lora_unet_output_blocks_",
@@ -136,7 +159,8 @@ def _family_from_keys(keys: list[str]) -> Optional[str]:
 
 def _family_from_cross_attention(header: dict, keys: list[str]) -> Optional[str]:
     for k in keys:
-        if "attn2" not in k or "to_k" not in k:
+        # UNet cross-attention only: DiTs have attn2.to_k too, with other widths.
+        if "attn2" not in k or "to_k" not in k or not any(u in k for u in _UNET_KEYS):
             continue
         if not (k.endswith("lora_down.weight") or k.endswith("lora_A.weight")):
             continue

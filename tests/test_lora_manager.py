@@ -185,8 +185,9 @@ def test_supports_loras_flags():
     from imference_engine.qwenimage.backend import QwenImageBackend
     from imference_engine.zimage.backend import ZImageBackend
 
-    assert SDXLBackend.supports_loras is True
-    for be in (SD15Backend, ZImageBackend, FluxBackend, ChromaBackend,
+    for be in (SDXLBackend, ZImageBackend):
+        assert be.supports_loras is True, be.__name__
+    for be in (SD15Backend, FluxBackend, ChromaBackend,
                QwenImageBackend, AnimaBackend, Krea2Backend):
         assert be.supports_loras is False, be.__name__
 
@@ -284,7 +285,17 @@ def _write_lora(path, tensors: dict, metadata: dict | None = None) -> str:
      None, "sdxl", "cross-attention width"),
     ({"lora_unet_down_blocks_1_attentions_0_transformer_blocks_0_attn2_to_k.lora_down.weight":
       [4, 768]}, None, "sd15", "cross-attention width"),
-    ({"layers.0.attention.to_q.lora_A.weight": [4, 3840]}, None, None, "unrecognized layout"),
+    ({"diffusion_model.layers.0.attention.to_q.lora_A.weight": [4, 3840]}, None, "zimage", "key layout"),
+    ({"lora_unet_layers_0_attention_to_q.lora_down.weight": [4, 3840]}, None, "zimage", "key layout"),
+    ({"diffusion_model.noise_refiner.0.attention.to_k.lora_A.weight": [4, 3840]}, None, "zimage", "key layout"),
+    ({"diffusion_model.blocks.0.attn.wq.lora_A.weight": [4, 3072]}, None, "krea2", "key layout"),
+    ({"transformer.text_fusion.refiner_blocks.0.attn.to_q.lora_A.weight": [4, 3072]}, None, "krea2", "key layout"),
+    ({"diffusion_model.blocks.0.self_attn.q_proj.lora_A.weight": [4, 2048]}, None, "anima", "key layout"),
+    ({"diffusion_model.llm_adapter.blocks.0.self_attn.q_proj.lora_A.weight": [4, 1024]}, None, "anima", "key layout"),
+    # Anima in diffusers format has attn2.to_k: must not read as SD2 by its width.
+    ({"transformer.transformer_blocks.0.attn2.to_k.lora_A.weight": [4, 1024],
+      "transformer.transformer_blocks.0.norm1.linear_1.lora_A.weight": [4, 2048]}, None, "anima", "key layout"),
+    ({"some.unknown.module.lora_A.weight": [4, 3840]}, None, None, "unrecognized layout"),
 ])
 def test_inspect_lora_detects_family(tmp_path, tensors, metadata, family, reason):
     from imference_engine.managers.lora_inspect import inspect_lora

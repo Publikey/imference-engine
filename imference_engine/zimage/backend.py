@@ -35,6 +35,12 @@ class ZImageBackend(PipelineBackend):
 
     engine: ClassVar[str] = "zimage"
 
+    # User LoRAs via ZImageLoraLoaderMixin (transformer; kohya / ComfyUI / PEFT
+    # key layouts converted by diffusers). ZImagePipeline and the img2img
+    # wrapper share the transformer, so an adapter applied on the resident t2i
+    # pipe also drives img2img.
+    supports_loras = True
+
     # Files needed from a Z-Image base repo (Tongyi-MAI/Z-Image[-Turbo]) for the
     # base_model path. The shared tokenizer + (Qwen-family) text_encoder + VAE are
     # FULL weights. The transformer + scheduler are CONFIG-ONLY: from_single_file
