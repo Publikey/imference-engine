@@ -4,8 +4,9 @@
 > 0.39** (RTX PRO 5000 Blackwell, torch 2.12). Anima is the only backend not built
 > on the standard `DiffusionPipeline` API; it adapts the modular API onto
 > `PipelineBackend`, and the modular `__call__` accepts the standard kwarg set
-> this backend passes. Isolated in its own sub-package. img2img is unsupported
-> (no documented modular variant).
+> this backend passes. Isolated in its own sub-package. img2img rides the same
+> pipe: diffusers 0.40's `AnimaAutoBlocks` switch to img2img on an `image` input.
+> LoRAs via `AnimaLoraLoaderMixin` (kohya files converted by `lora_convert.py`).
 
 Anima (CircleStone Labs + Comfy Org) is a text-to-image model shipped in
 diffusers as a **Modular Diffusers pipeline** — there is no standard

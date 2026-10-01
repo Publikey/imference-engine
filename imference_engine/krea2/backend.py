@@ -67,6 +67,12 @@ class Krea2Backend(PipelineBackend):
 
     engine: ClassVar[str] = "krea2"
 
+    # User LoRAs via Krea2LoraLoaderMixin (transformer). On an fp8-resident
+    # transformer peft creates the adapter in fp8: LoRAManager upcasts it to
+    # bf16 (and refreshes group-offload hooks). GPU-validated resident and
+    # group+fp8 (2026-10-01, RTX 3090).
+    supports_loras = True
+
     # Files needed from a Krea 2 base repo (krea/Krea-2-Turbo, diffusers format).
     # Tokenizer + Qwen3-VL text encoder + VAE + scheduler are FULL weights/config;
     # the transformer is CONFIG-ONLY (the weights come from the checkpoint).

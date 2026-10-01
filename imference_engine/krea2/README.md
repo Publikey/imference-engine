@@ -77,7 +77,7 @@ which is what makes 8 GB-VRAM / 32 GB-RAM machines viable.
 | `scheduler` / `shift` | Ignored — FlowMatchEulerDiscreteScheduler with dynamic shifting; Turbo checkpoints carry `is_distilled=true` → fixed `mu=1.15` inside the pipeline. |
 | `clip_skip` | Ignored (no CLIP anywhere). |
 | img2img | **Unsupported** (`make_img2img` raises) — no diffusers Krea 2 img2img yet (upstream PR #14290). |
-| LoRA | Not wired (engine-wide V1 limitation); diffusers has `Krea2LoraLoaderMixin` for the future image-LoRA work. |
+| LoRA | `loras=` via `Krea2LoraLoaderMixin`. On the fp8-resident transformer the adapter is upcast to bf16 (peft creates it fp8; no fp8 matmul on CUDA); works with group offload, but a LoRA request is ~2x slower there. |
 
 Catalog row example:
 

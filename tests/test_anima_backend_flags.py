@@ -1,7 +1,8 @@
 """No-torch assertions on the Anima backend (Modular Diffusers).
 
 Anima is the one backend not on the standard pipeline API, so the guarantees
-differ: img2img is unsupported, and it carries no opinionated engine defaults.
+differ: img2img rides the same modular pipe (auto blocks), and it carries no
+opinionated engine defaults.
 """
 from __future__ import annotations
 
@@ -24,9 +25,26 @@ def test_no_engine_defaults_opinion():
     assert d.backend_options == {}
 
 
-def test_img2img_unsupported():
-    with pytest.raises(NotImplementedError, match="no documented img2img"):
+def test_img2img_needs_auto_blocks_with_image_input():
+    with pytest.raises(NotImplementedError, match="no img2img branch"):
         AnimaBackend().make_img2img(object())
+
+
+def test_img2img_reuses_the_t2i_pipe():
+    from types import SimpleNamespace
+    pipe = SimpleNamespace(blocks=SimpleNamespace(input_names=["prompt", "image", "strength"]))
+    assert AnimaBackend().make_img2img(pipe) is pipe
+
+
+def test_img2img_kwargs_carry_image_and_strength():
+    kw = AnimaBackend().build_inference_kwargs(
+        width=1024, height=1024, num_steps=20, guidance_scale=4.0, clip_skip=None,
+        chunk_size=1, generator=None, image="IMG", strength=0.6)
+    assert kw["image"] == "IMG" and kw["strength"] == 0.6
+    t2i = AnimaBackend().build_inference_kwargs(
+        width=1024, height=1024, num_steps=20, guidance_scale=4.0, clip_skip=None,
+        chunk_size=1, generator=None)
+    assert "image" not in t2i and "strength" not in t2i
 
 
 def test_encode_prompts_omits_empty_negative():

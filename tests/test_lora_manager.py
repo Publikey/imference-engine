@@ -1,8 +1,8 @@
 """GPU-free tests for the image LoRAManager (managers/lora.py) and its
 Engine.generate wiring: parsing/aliases, URL resolution + cache pruning, the
 apply/reuse/evict lifecycle on a fake pipe, the never-fuse + deactivate-in-
-finally contract, and the supports_loras gate (SDXL on, everything else
-warn+ignore).
+finally contract, and the supports_loras gate (SDXL / Z-Image / Krea 2 /
+Anima on, everything else warn+ignore).
 """
 from __future__ import annotations
 
@@ -185,10 +185,9 @@ def test_supports_loras_flags():
     from imference_engine.qwenimage.backend import QwenImageBackend
     from imference_engine.zimage.backend import ZImageBackend
 
-    for be in (SDXLBackend, ZImageBackend):
+    for be in (SDXLBackend, ZImageBackend, Krea2Backend, AnimaBackend):
         assert be.supports_loras is True, be.__name__
-    for be in (SD15Backend, FluxBackend, ChromaBackend,
-               QwenImageBackend, AnimaBackend, Krea2Backend):
+    for be in (SD15Backend, FluxBackend, ChromaBackend, QwenImageBackend):
         assert be.supports_loras is False, be.__name__
 
 

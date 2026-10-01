@@ -3,9 +3,9 @@
 Anima is unlike the other image backends: diffusers ships it ONLY as a Modular
 Diffusers pipeline (``AnimaModularPipeline`` / loaded generically via
 ``ModularPipeline.from_pretrained``). There is NO standard ``AnimaPipeline``, no
-``from_single_file`` and no documented img2img variant, so this backend adapts
-the modular API onto ``PipelineBackend`` rather than mirroring the FLUX/Chroma
-transformer-only load pattern.
+``from_single_file`` and no separate img2img pipeline class, so this backend
+adapts the modular API onto ``PipelineBackend`` rather than mirroring the
+FLUX/Chroma transformer-only load pattern.
 
 Architecture (for context): a ``CosmosTransformer3DModel`` DiT + a Qwen3 text
 encoder + an ``AnimaTextConditioner`` (learned T5 tokens cross-attending Qwen3
@@ -28,8 +28,11 @@ torch 2.12 — against ``circlestone-labs/Anima-Base-v1.0-Diffusers``:
     ``apply_guidance`` / ``apply_scheduler`` / ``build_inference_kwargs`` /
     ``encode_prompts`` are the single place to adjust.
   - CPU-offload: ``enable_model_cpu_offload`` may not exist on a ModularPipeline;
-    the ModelManager already falls back to ``.to(device)`` if it raises. img2img
-    is unsupported (``make_img2img`` raises — no documented modular variant).
+    the ModelManager already falls back to ``.to(device)`` if it raises.
+  - img2img (diffusers 0.40): the repo's default blocks are ``AnimaAutoBlocks``,
+    whose VAE-encoder and denoise steps switch to img2img when an ``image`` is
+    passed (``strength`` sets the start timestep). ``make_img2img`` returns the
+    SAME pipe; ``build_inference_kwargs`` adds ``image`` / ``strength``.
 
 ``weights_path`` may be EITHER a diffusers-format repo id / local directory (the
 whole modular repo, e.g. ``circlestone-labs/Anima-Base-v1.0-Diffusers``) OR a
@@ -63,6 +66,11 @@ class AnimaBackend(PipelineBackend):
     """Backend for Anima (Modular Diffusers pipeline)."""
 
     engine: ClassVar[str] = "anima"
+
+    # User LoRAs via AnimaLoraLoaderMixin (transformer + text_conditioner);
+    # kohya / lora_down-up files are converted first (anima/lora_convert.py).
+    # Applied on the resident pipe, so img2img (same pipe) gets them too.
+    supports_loras = True
 
     # Anima is a single self-contained modular repo (no transformer/base split):
     # every component — the CosmosTransformer3D DiT, the Qwen3 encoder, the
@@ -235,14 +243,23 @@ class AnimaBackend(PipelineBackend):
                        cdn_base=self._cdn_base)
 
     # ------------------------------------------------------------------
-    # Img2img (not supported)
+    # Img2img — the auto blocks switch on ``image`` (diffusers >= 0.40)
     # ------------------------------------------------------------------
 
     def make_img2img(self, t2i_pipe: Any) -> Any:
-        raise NotImplementedError(
-            "Anima has no documented img2img pipeline (Modular Diffusers, "
-            "text-to-image only). Call generate() without source_image."
-        )
+        """The t2i pipe itself: ``AnimaAutoBlocks`` runs the img2img VAE-encode +
+        denoise branch whenever ``image`` is among the call inputs. Refused when
+        the loaded blocks take no ``image`` (pre-0.40 diffusers, or a repo whose
+        modular config pins text-to-image blocks)."""
+        blocks = getattr(t2i_pipe, "blocks", None)
+        inputs = set(getattr(blocks, "input_names", None) or [])
+        if "image" not in inputs:
+            raise NotImplementedError(
+                "This Anima pipeline has no img2img branch (its modular blocks take "
+                "no `image` input; diffusers >= 0.40 AnimaAutoBlocks required). "
+                "Call generate() without source_image."
+            )
+        return t2i_pipe
 
     def get_compute_module(self, pipe: Any) -> Any:
         # Best-effort: the modular pipeline may expose the DiT as .transformer or
@@ -331,22 +348,26 @@ class AnimaBackend(PipelineBackend):
         clip_skip: Optional[int],  # noqa: ARG002 — Anima has no CLIP (Qwen3+T5) → no-op
         chunk_size: int,
         generator: Any,
-        image: Any = None,  # noqa: ARG002 — img2img unsupported (make_img2img raises)
-        strength: float = 0.75,  # noqa: ARG002
+        image: Any = None,
+        strength: float = 0.75,
     ) -> dict:
         # Guidance is NOT a `guidance_scale` __call__ kwarg for Anima (modular
         # pipeline warns "Unexpected input ... will be ignored"). It is set on the
         # ClassifierFreeGuidance *guider* component instead — see `apply_guidance`,
         # which the Engine calls per request before pipe(...). clip_skip is a no-op
-        # (Anima uses a Qwen3 + T5 text stack, no CLIP layer to skip). t2i only —
-        # `image` / `strength` are ignored (make_img2img raises before this).
-        return {
+        # (Anima uses a Qwen3 + T5 text stack, no CLIP layer to skip). An `image`
+        # routes the auto blocks to img2img; `strength` is its start point.
+        kwargs = {
             "num_inference_steps": num_steps,
             "width": width,
             "height": height,
             "generator": generator,
             "num_images_per_prompt": chunk_size,
         }
+        if image is not None:
+            kwargs["image"] = image
+            kwargs["strength"] = strength
+        return kwargs
 
     def make_generator(self, seed: int, device: str) -> Any:
         import torch

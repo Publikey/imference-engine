@@ -194,17 +194,22 @@ class LoRAManager:
             logger.info("Loading LoRA %r from %s (weight=%s)", name, path, weight)
             # (dir, weight_name) form — offline-safe (see module docstring).
             try:
-                pipe.load_lora_weights(
-                    os.path.dirname(path),
-                    weight_name=os.path.basename(path),
-                    adapter_name=name,
-                )
+                converted = _converted_state_dict(path, family)
+                if converted is not None:
+                    pipe.load_lora_weights(converted, adapter_name=name)
+                else:
+                    pipe.load_lora_weights(
+                        os.path.dirname(path),
+                        weight_name=os.path.basename(path),
+                        adapter_name=name,
+                    )
             except Exception:
                 # A failed load can leave a half-injected adapter under this
                 # name; without cleanup the next request would hit "adapter
                 # name already in use".
                 _delete_adapter(pipe, name)
                 raise
+            _upcast_float8_adapter(pipe, name)
             loaded[name] = source
 
         pipe.set_adapters(names, adapter_weights=weights)
@@ -239,6 +244,79 @@ class LoRAManager:
             pipe.disable_lora()
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not deactivate LoRA adapters on pipe: %s", e)
+
+
+def _converted_state_dict(path: str, family: Optional[str]) -> Optional[dict]:
+    """A state dict rewritten into a layout diffusers reads, or None to let
+    ``load_lora_weights`` read the file as-is. Anima only for now: diffusers
+    0.40 silently injects nothing from kohya / lora_down-up Anima files."""
+    if family != "anima":
+        return None
+    from imference_engine.anima.lora_convert import needs_conversion, to_comfy_lora_ab
+    from imference_engine.managers.lora_inspect import read_safetensors_header
+
+    if not needs_conversion(k for k in read_safetensors_header(path) if k != "__metadata__"):
+        return None
+    from safetensors.torch import load_file
+
+    logger.info("Converting Anima LoRA %s (kohya / lora_down-up layout)", path)
+    return to_comfy_lora_ab(load_file(path))
+
+
+def _upcast_float8_adapter(pipe: Any, name: str) -> None:
+    """Move a freshly loaded adapter's weights off float8.
+
+    peft creates ``lora_A`` / ``lora_B`` in the dtype of the layer they wrap.
+    On an fp8-resident transformer (Krea 2 layerwise casting: fp8 storage, bf16
+    compute) that is float8 — but the casting hooks sit on the BASE layers only,
+    so the adapter matmul runs on raw fp8 weights and CUDA has no fp8 addmm
+    ("addmm_cuda not implemented for Float8_e4m3fn"). Adapters are small
+    (tens to hundreds of MB): keep them in bf16, the compute dtype.
+
+    Under group offload the hooks onload each group from tensor references
+    taken when diffusers re-applied them right after the injection — i.e. the
+    fp8 originals — so they are re-applied once more after the upcast."""
+    import torch
+
+    fp8 = {d for d in (getattr(torch, "float8_e4m3fn", None), getattr(torch, "float8_e5m2", None)) if d}
+    if not fp8:
+        return
+    moved = 0
+    for component in _modules_of(pipe):
+        moved_here = 0
+        for module in component.modules():
+            for attr in ("lora_A", "lora_B"):
+                layer = getattr(module, attr, None)
+                sub = layer[name] if layer is not None and name in layer else None
+                if sub is None:
+                    continue
+                for param in sub.parameters():
+                    if param.dtype in fp8:
+                        param.data = param.data.to(torch.bfloat16)
+                        moved_here += 1
+        if moved_here:
+            _refresh_group_offload(component)
+        moved += moved_here
+    if moved:
+        logger.info("LoRA %r: %d float8 adapter tensors upcast to bfloat16", name, moved)
+
+
+def _refresh_group_offload(component: Any) -> None:
+    try:
+        from diffusers.hooks.group_offloading import _maybe_remove_and_reapply_group_offloading
+    except ImportError:  # older diffusers: no group offload to refresh
+        return
+    _maybe_remove_and_reapply_group_offloading(component)
+
+
+def _modules_of(pipe: Any) -> list:
+    """The pipe's torch modules (standard and modular pipelines alike)."""
+    import torch
+
+    components = getattr(pipe, "components", None) or {}
+    if not isinstance(components, dict):
+        return []
+    return [m for m in components.values() if isinstance(m, torch.nn.Module)]
 
 
 def _delete_adapter(pipe: Any, name: str) -> None:

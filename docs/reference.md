@@ -182,7 +182,7 @@ blank fields fall through to `GLOBAL_DEFAULTS`.
 | **flux** | `guidance_scale=3.5, num_steps=28` | **ignored** (guidance-distilled; logs if supplied) | ignored; flow-match w/ dynamic shifting. `shift` → fixed shift. | `shift` | ✅ `FluxImg2ImgPipeline` | ignored | **512** | bf16 |
 | **chroma** | `guidance_scale=2.0, num_steps=28` | **honored** (de-distilled, real CFG; default `""`) | ignored; flow-match. `shift` → fixed. | `shift` | ✅ `ChromaImg2ImgPipeline` (single T5, no CLIP) | ignored | **512** | bf16 |
 | **qwenimage** | `guidance_scale=4.0` | **honored**, mapped to `true_cfg_scale`; default `" "` (single space) | ignored; flow-match. `shift` → fixed. | `shift` | ✅ `QwenImageImg2ImgPipeline` | ignored | — | bf16 |
-| **anima** | *(none — all global)* | honored **only if truthy** (no default injected) | ignored; block-defined in the modular pipeline (no-op) | — | ❌ raises `NotImplementedError` (t2i only) | ignored | — | bf16 |
+| **anima** | *(none — all global)* | honored **only if truthy** (no default injected) | ignored; block-defined in the modular pipeline (no-op) | — | ✅ same modular pipe (`AnimaAutoBlocks`, `image` + `strength`) | ignored | — | bf16 |
 
 > **Anima ignores `guidance_scale`.** Its modular pipeline configures guidance via
 > a separate Guider block, not a `guidance_scale` __call__ kwarg — the backend

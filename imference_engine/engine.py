@@ -211,7 +211,7 @@ class Engine(BaseEngine):
             enable_offload=self._runtime.enable_offload,
             offload_mode=self._runtime.offload_mode,
         )
-        # LoRA manager (SDXL-only for now via PipelineBackend.supports_loras).
+        # LoRA manager (backends opt in via PipelineBackend.supports_loras).
         # MAX_CACHED_LORAS keeps the legacy worker env name for drop-in parity.
         from imference_engine.runtime.env import env_int_or_none as _int
         # Downloaded LoRAs default to <IMAGE_MODEL_CACHE>/_loras, next to the
@@ -387,8 +387,8 @@ class Engine(BaseEngine):
         a value to override at the request layer.
 
         ``loras`` stacks user LoRAs for the request on backends that support
-        them (``PipelineBackend.supports_loras`` — SDXL only for now; other
-        backends log a warning and ignore). Each entry:
+        them (``PipelineBackend.supports_loras`` — SDXL, Z-Image, Krea 2 and
+        Anima; other backends log a warning and ignore). Each entry:
         ``{"source": <local path | http(s) URL>, "weight": 0.8,
         "adapter_name": "style"}`` (``path``/``url`` accepted as aliases of
         ``source``). Adapters are applied WITHOUT fusing and deactivated after
@@ -404,8 +404,8 @@ class Engine(BaseEngine):
         negative_prompt = sanitize_prompt_text(negative_prompt, field="negative_prompt")
         pipe, backend = self._models.get_or_load(model)
 
-        # LoRAs: only backends that declare supports_loras take them (SDXL for
-        # now); everywhere else the request stays valid and the LoRAs are
+        # LoRAs: only backends that declare supports_loras take them (SDXL,
+        # Z-Image, Krea 2, Anima); everywhere else the request stays valid and the LoRAs are
         # ignored with a warning — the pre-LoRA behavior.
         lora_configs: list[dict] = []
         if loras:

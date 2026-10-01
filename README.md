@@ -205,7 +205,7 @@ are interchangeable and no engine logic leaks into them.
 | `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
 | `batch` | `int` | `1` | N independent images, one seed each. |
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
-| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Anima and Krea 2 excepted — t2i only). |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2 excepted — t2i only). |
 | `strength` | `float?` | `0.75` | img2img denoise strength. |
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
 | `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
@@ -264,7 +264,7 @@ Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and default
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
 oversaturates); **Qwen-Image** maps `guidance_scale → true_cfg_scale`, negative
 default is a single space `" "`, and it wants ~40–50 steps (set per-model);
-**Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, no img2img,
+**Anima** is a Modular Diffusers pipeline (repo-id `weights_path`, img2img via the auto blocks,
 `guidance_scale` ignored — guidance is a Guider block);
 **Krea 2** is Turbo-first (8 steps, `guidance 0.0` in the Krea convention —
 velocity `cond + g·(cond−uncond)`, so conventional CFG ≈ 1+g; negatives only
@@ -394,7 +394,7 @@ for ComfyUI/civitai H3 int8-ConvRot single-files
 The **Krea 2 Turbo backend** (civitai/ComfyUI single-file + scaled-fp8 load
 path) is validated as of 2026-08-27 — official scaled-fp8 and a civitai
 plain-fp8 finetune both render clean on a 24 GB card.
-**LoRAs: SDXL only** (`loras=` on `generate`; other backends log and ignore).
+**LoRAs: SDXL, Z-Image, Krea 2, Anima** (`loras=` on `generate`; other backends log and ignore).
 **Not yet wired:** Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is
 untested.
