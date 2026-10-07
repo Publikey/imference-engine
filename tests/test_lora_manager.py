@@ -414,3 +414,9 @@ def test_apply_refuses_more_loras_than_the_adapter_cache(tmp_path):
     with pytest.raises(ValueError, match="at most 2"):
         m.apply(pipe, LoRAManager.parse([{"source": f} for f in files]))
     assert pipe.loaded == []
+
+
+def test_download_encodes_spaces_and_brackets():
+    from imference_engine.managers.lora import _encode_url
+    assert _encode_url("https://cdn/lora/z/DC Vivid [Trigger=x.] v1.safetensors") ==         "https://cdn/lora/z/DC%20Vivid%20%5BTrigger=x.%5D%20v1.safetensors"
+    assert _encode_url("https://cdn/a%20b.safetensors") == "https://cdn/a%20b.safetensors"

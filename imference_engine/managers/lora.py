@@ -113,7 +113,7 @@ class LoRAManager:
     def _download(self, url: str, dest: str) -> None:
         """Seam for tests; multipart + atomic + retries via the engine downloader."""
         from imference_engine.runtime.download import download_parallel
-        download_parallel(url, dest)
+        download_parallel(_encode_url(url), dest)
 
     def _prune_cache(self) -> None:
         """Drop the oldest downloaded files beyond ``max_cached_files``."""
@@ -326,6 +326,22 @@ def _delete_adapter(pipe: Any, name: str) -> None:
         pipe.delete_adapters(name)
     except Exception as e:  # noqa: BLE001
         logger.warning("delete_adapters(%r) failed: %s", name, e)
+
+
+def _encode_url(url: str) -> str:
+    """Percent-encode a URL's path and query. Catalog files may keep their CivitAI names
+    (spaces, brackets), which urllib refuses ("URL can't contain control characters");
+    already-encoded sequences stay as they are (% is kept)."""
+    from urllib.parse import quote, urlsplit, urlunsplit
+
+    p = urlsplit(url)
+    return urlunsplit((
+        p.scheme,
+        p.netloc,
+        quote(p.path, safe="/%:@!$&'()*+,;=~"),
+        quote(p.query, safe="=&%/:+,;@"),
+        p.fragment,
+    ))
 
 
 def _derive_adapter_name(source: str) -> str:
