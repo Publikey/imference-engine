@@ -1,0 +1,17 @@
+# Benchmark cases: paths relative to this file. Put your own test images next to it.
+- id: sky
+  image: photo.jpg
+  instruction: Replace the sky with a dramatic orange sunset, keep everything else unchanged.
+- id: text
+  image: sign.jpg
+  instruction: Change the text on the sign to "OPEN 24/7" in the same font and color.
+- id: remove
+  image: street.jpg
+  instruction: Remove the person on the left and fill the background naturally.
+- id: style
+  image: photo.jpg
+  instruction: Turn this photo into a watercolor painting.
+- id: reference
+  image: person.jpg
+  references: [hat.jpg]
+  instruction: Put the hat from image 2 on the person in image 1.

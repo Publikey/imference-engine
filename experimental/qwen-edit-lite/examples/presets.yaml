@@ -1,0 +1,15 @@
+# Custom presets for `qwen-edit-lite bench --presets examples/presets.yaml`
+- base: q5-l4
+  name: q5-l4-leaf
+  offload: group-leaf
+- base: q6-l4
+  name: q6-l8steps
+  steps: 8
+- name: nunchaku-2509
+  transformer: nunchaku:/path/to/svdq-int4_r128-qwen-image-edit-2509-lightning-4steps-251115.safetensors
+  encoder: nf4
+  lightning: none          # Lightning is fused in this checkpoint
+  steps: 4
+  cfg: 1.0
+  offload: none
+  extra: {nunchaku_offload: true, num_blocks_on_gpu: 1}
