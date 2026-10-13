@@ -41,7 +41,7 @@
       "path": "gfpgan/GFPGANv1.4.onnx",
       "size_mb": 340,
       "sha256": "",
-      "source": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth (exported to ONNX)"
+      "source": "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/gfpgan_1.4.onnx"
     },
     {
       "name": "detector",

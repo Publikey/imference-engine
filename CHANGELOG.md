@@ -5,6 +5,36 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [0.5.0] — unreleased
+
+### Added
+
+- **Editing tools** (`imference_engine.tools`): a catalog of small editing
+  tools that run the same code locally and in the cloud. One JSON manifest per
+  tool (inputs, params, weights, runtimes, cloud queue, price, license),
+  validated params, typed errors (`invalid_input`, `too_large`,
+  `unsupported_runtime`, `weights_missing`, `oom`, `timeout`, `internal`),
+  named progress stages, and one entry point `run_tool(tool_id, inputs,
+  params)`. Tools: resize, crop, convert/compress, strip-metadata, video
+  trim/concat/convert (ffmpeg), upscale (Real-ESRGAN), remove-background
+  (BiRefNet-lite / ISNet / U2-Net-p), erase-object (LaMa), segment
+  (MobileSAM), describe (Florence-2), interpolate (RIFE), restore-faces
+  (GFPGAN, local-only until its license is reviewed), and vary / inpaint /
+  outpaint on top of `Engine.generate` (any backend, no inpaint pipeline).
+  Contract between engine, workers, API, Desktop and MCP: `docs/tools.md`.
+- `Engine.registered_models()`.
+- Extras `[tools]` (Pillow, numpy, onnxruntime, imageio-ffmpeg) and
+  `[tools-torch]` (+ torch, transformers for describe).
+- `python -m imference_engine.tools` (list / show / export / run / weights)
+  and `validation/stage_tools_r2.py` (mirror the tool weights on R2, convert
+  Real-ESRGAN .pth to ONNX, write sha256 back into the manifests).
+
+### Not validated yet
+
+- Real weights: the ONNX contracts are covered by synthetic graphs in
+  `tests/test_tools.py`; run each tool once on real weights after staging.
+- describe (Florence-2) and vary/inpaint/outpaint on a real model (GPU).
+
 ## [0.4.5] — 2026-10-01
 
 ### Added

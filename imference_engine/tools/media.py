@@ -188,7 +188,7 @@ def probe_video(path: str) -> dict:
     probe = ffprobe_bin()
     if probe:
         r = subprocess.run([probe, "-v", "error", "-select_streams", "v:0", "-show_entries",
-                            "stream=width,height,r_frame_rate,nb_frames:format=duration", "-of", "json", path],
+                            "stream=width,height,r_frame_rate,nb_frames:format=duration,format_name", "-of", "json", path],
                            capture_output=True, text=True)
         if r.returncode == 0:
             try:
@@ -196,7 +196,10 @@ def probe_video(path: str) -> dict:
                 st = (d.get("streams") or [{}])[0]
                 num, _, den = (st.get("r_frame_rate") or "0/1").partition("/")
                 fps = float(num) / float(den or 1) if float(den or 1) else 0.0
-                dur = float((d.get("format") or {}).get("duration") or 0)
+                fmt = (d.get("format") or {})
+                dur = float(fmt.get("duration") or 0)
+                if _is_still(fmt.get("format_name") or ""):
+                    raise ToolError(INVALID_INPUT, f"{os.path.basename(path)} is a still image, not a video")
                 if st.get("width"):
                     return {"duration": dur, "width": int(st["width"]), "height": int(st["height"]), "fps": fps}
             except (ValueError, KeyError, ZeroDivisionError):
@@ -207,11 +210,18 @@ def probe_video(path: str) -> dict:
     m = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", err)
     v = re.search(r"Video: .*?(\d{2,5})x(\d{2,5})", err)
     f = re.search(r"(\d+(?:\.\d+)?) fps", err) or re.search(r"(\d+(?:\.\d+)?) tbr", err)
-    if not v:
+    inp = re.search(r"Input #0, ([\w,]+)", err)
+    if not v or (inp and _is_still(inp.group(1))):
         raise ToolError(INVALID_INPUT, f"not a readable video: {os.path.basename(path)}")
     dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else 0.0
     return {"duration": dur, "width": int(v.group(1)), "height": int(v.group(2)),
             "fps": float(f.group(1)) if f else 0.0}
+
+
+def _is_still(format_name: str) -> bool:
+    """ffmpeg's image demuxers (png_pipe, image2, jpeg_pipe, webp_pipe...) —
+    a still image is not a video input (GIF is: its demuxer is "gif")."""
+    return any(f == "image2" or f.endswith("_pipe") for f in format_name.split(","))
 
 
 def check_video(path: str, spec: Optional[InputSpec]) -> dict:

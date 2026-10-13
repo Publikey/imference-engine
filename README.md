@@ -124,6 +124,31 @@ result = engine.generate(model="flux-dev", prompt="an astronaut riding a horse")
 result = engine.generate(model="sdxl", prompt="...", source_image=pil_img, strength=0.6)
 ```
 
+## Editing tools
+
+Small single-purpose tools (upscale, remove background, magic eraser, click
+to select, describe, face restoration, frame interpolation, image and video
+utilities, plus vary / inpaint / outpaint on a loaded model) behind one call,
+identical in the Desktop sidecar and in the cloud workers:
+
+```python
+from imference_engine.tools import catalog, run_tool, ToolError
+
+res = run_tool("remove-background", {"image": "photo.jpg"}, {"output": "png-alpha"},
+               output_dir="out/", on_progress=lambda stage, frac: print(stage, frac))
+res.outputs[0].path      # out/remove-background-1a2b3c4d.png
+```
+
+```bash
+pip install -e ".[tools]"
+python -m imference_engine.tools list
+python -m imference_engine.tools run upscale -i image=in.png -p scale=2 -o out/
+```
+
+Each tool is a JSON manifest (`imference_engine/tools/manifests/`); weights
+come from `TOOLS_MODEL_CDN` (staged with `validation/stage_tools_r2.py`). See
+[`docs/tools.md`](docs/tools.md) for the catalog format and the wire contracts.
+
 ## Quickstart — Wan video
 
 ```python
