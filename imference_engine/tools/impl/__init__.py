@@ -26,6 +26,7 @@ _REGISTRY = {
     "vary": "generation:vary",
     "inpaint": "generation:inpaint",
     "outpaint": "generation:outpaint",
+    "instruct-edit": "generation:instruct_edit",
 }
 
 

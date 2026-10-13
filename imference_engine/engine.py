@@ -167,6 +167,7 @@ class Engine(BaseEngine):
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
         from imference_engine.qwenimage.backend import QwenImageBackend
+        from imference_engine.qwenimage.edit_backend import QwenImageEditBackend
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
         cdn_base = self._runtime.model_cdn
@@ -184,6 +185,8 @@ class Engine(BaseEngine):
             ChromaBackend.engine: ChromaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             QwenImageBackend.engine: QwenImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            QwenImageEditBackend.engine: QwenImageEditBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
@@ -292,6 +295,13 @@ class Engine(BaseEngine):
         if not self._loaded:
             return []
         return list(self._models._registered)
+
+    def model_backend(self, name: str) -> Optional[str]:
+        """Backend key of a registered model (e.g. "sdxl", "qwenimage-edit"), or None."""
+        if not self._loaded:
+            return None
+        reg = self._models._registered.get(name)
+        return reg.backend if reg is not None else None
 
     def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "Engine":
         """Load a ``models.yml`` catalog and register every entry.

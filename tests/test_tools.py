@@ -78,10 +78,10 @@ def test_builtin_catalog_parses_and_is_consistent():
         assert t.mcp_name.replace("_", "").isalnum()
 
 
-def test_unavailable_tool_hidden():
-    assert "instruct-edit" not in catalog.builtin().ids()
+def test_unknown_tool():
+    assert "instruct-edit" in catalog.builtin().ids()
     with pytest.raises(ToolError) as e:
-        catalog.get("instruct-edit")
+        catalog.get("no-such-tool")
     assert e.value.code == "invalid_input"
 
 
@@ -546,3 +546,52 @@ def test_probe_without_ffprobe(tmp_path, clip, monkeypatch):
     assert abs(info["fps"] - 10) < 0.5 and 1.8 <= info["duration"] <= 2.2
     with pytest.raises(ToolError):
         media.probe_video(str(img(tmp_path)))
+
+
+class FakeEditEngine(FakeEngine):
+    def __init__(self, backend="qwenimage-edit"):
+        super().__init__()
+        self.backend = backend
+
+    def registered_models(self):
+        return ["qwen-image-edit-2511"]
+
+    def model_backend(self, name):
+        return self.backend if name == "qwen-image-edit-2511" else None
+
+    def generate(self, **kw):
+        from imference_engine.core.result import MediaResult
+        self.calls.append(kw)
+        return MediaResult(kind="image", media=[Image.new("RGB", (1024, 768), (0, 255, 0))], seeds=[kw["seed"]])
+
+
+def test_instruct_edit(tmp_path):
+    eng = FakeEditEngine()
+    p = img(tmp_path, (640, 480))
+    ref = img(tmp_path, (300, 300), name="ref.png")
+    r = run_tool("instruct-edit", {"image": str(p), "references": [str(ref)]},
+                 {"model": "qwen-image-edit-2511", "instruction": "make it green", "steps": 8, "guidance": 1.0, "seed": 3},
+                 engine=eng)
+    kw = eng.calls[0]
+    assert kw["prompt"] == "make it green" and kw["num_steps"] == 8 and kw["guidance_scale"] == 1.0
+    assert isinstance(kw["source_image"], list) and len(kw["source_image"]) == 2
+    assert r.outputs[0].image.size == (640, 480) and r.outputs[0].data == {"seed": 3}
+    r = run_tool("instruct-edit", {"image": str(p)}, {"model": "qwen-image-edit-2511", "instruction": "x",
+                                                     "keep_size": False}, engine=eng)
+    assert r.outputs[0].image.size == (1024, 768)
+    assert not isinstance(eng.calls[-1]["source_image"], list)
+    assert eng.calls[-1]["num_steps"] is None                    # model recipe applies
+
+
+def test_instruct_edit_rejects_non_edit_model_and_vary_rejects_edit_model(tmp_path):
+    p = img(tmp_path)
+    with pytest.raises(ToolError) as e:
+        run_tool("instruct-edit", {"image": str(p)}, {"model": "qwen-image-edit-2511", "instruction": "x"},
+                 engine=FakeEditEngine(backend="sdxl"))
+    assert e.value.code == "unsupported_runtime"
+    with pytest.raises(ToolError) as e:
+        run_tool("vary", {"image": str(p)}, {"model": "qwen-image-edit-2511"}, engine=FakeEditEngine())
+    assert e.value.code == "unsupported_runtime"
+    with pytest.raises(ToolError) as e:
+        run_tool("instruct-edit", {"image": str(p)}, {"model": "m"}, engine=FakeEditEngine())
+    assert e.value.field == "instruction"

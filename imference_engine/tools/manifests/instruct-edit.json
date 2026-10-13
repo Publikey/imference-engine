@@ -1,24 +1,63 @@
 {
   "id": "instruct-edit",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "name": "Edit with instructions",
   "category": "generation",
   "mcp_name": "edit_with_instructions",
-  "description": "Edit an image by describing the change (Qwen-Image-Edit). Not implemented yet.",
+  "description": "Edit an image by describing the change in plain words (Qwen-Image-Edit): change the background, add or remove objects, restyle, fix text. Optional reference images.",
   "inputs": {
     "image": {
       "type": "image",
       "required": true,
       "max_megapixels": 4,
       "max_mb": 30,
-      "description": "Source image"
+      "description": "Image to edit"
+    },
+    "references": {
+      "type": "image",
+      "required": false,
+      "multiple": true,
+      "min_items": 1,
+      "max_items": 2,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "Optional reference images (image 2, image 3 in the instruction)"
     }
   },
   "params": {
+    "model": {
+      "type": "string",
+      "required": true,
+      "max_length": 128,
+      "description": "An instruction-edit model (catalog models with engine qwenimage-edit, e.g. qwen-image-edit-2511)."
+    },
     "instruction": {
       "type": "string",
       "required": true,
-      "max_length": 2000
+      "max_length": 2000,
+      "description": "The change to make, e.g. \"replace the sky with a sunset\"."
+    },
+    "negative_prompt": {
+      "type": "string",
+      "max_length": 2000,
+      "default": ""
+    },
+    "steps": {
+      "type": "int",
+      "min": 1,
+      "max": 80,
+      "description": "Denoising steps (default: the model's recipe, 40 for 2511)."
+    },
+    "guidance": {
+      "type": "float",
+      "min": 0,
+      "max": 10,
+      "description": "True CFG scale (default: the model's recipe, 4.0)."
+    },
+    "keep_size": {
+      "type": "bool",
+      "default": true,
+      "description": "Resize the result back to the input size (the model renders at about 1 MP)."
     },
     "seed": {
       "type": "int",
@@ -34,20 +73,22 @@
   },
   "runtimes": {
     "local": [
-      "cuda"
+      "cuda",
+      "rocm"
     ],
     "cloud_queue": "generation",
     "needs_engine": true,
-    "min_vram_gb": 24
+    "min_vram_gb": 12,
+    "min_ram_gb": 64
   },
   "cost": {
     "credits": 0
   },
   "license": {
     "spdx": "Apache-2.0",
-    "source": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511 (to verify)",
-    "verified": false
+    "source": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+    "verified": true
   },
-  "available": false,
+  "available": true,
   "weights": []
 }

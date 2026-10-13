@@ -1,4 +1,5 @@
-"""Generation tools: vary, inpaint, outpaint — on top of ``Engine.generate``.
+"""Generation tools: vary, inpaint, outpaint, instruct-edit — on top of
+``Engine.generate``.
 
 Backend-agnostic by construction: every image backend already does img2img,
 so inpainting is "img2img on a pre-filled crop + feathered composite" and
@@ -43,12 +44,16 @@ def _work_size(w: int, h: int, long_side: int = WORK_LONG_SIDE) -> tuple:
 
 def _generate(ctx, params, source, strength: float):
     engine = ctx.engine
+    name = _model(engine, params["model"])
+    if hasattr(engine, "model_backend") and engine.model_backend(name) in EDIT_BACKENDS:
+        raise ToolError("unsupported_runtime", f"model {name!r} is an instruction-edit model: "
+                        "use instruct-edit, or load an image generation model", field="model")
     seed = params.get("seed")
     if seed is None:
         seed = random.randint(0, 2**32 - 1)
     ctx.progress(RUNNING, 0.05)
     try:
-        res = engine.generate(model=_model(engine, params["model"]), prompt=params.get("prompt") or "",
+        res = engine.generate(model=name, prompt=params.get("prompt") or "",
                               negative_prompt=params.get("negative_prompt") or None,
                               source_image=source, strength=strength, seed=seed, batch=1)
     except ToolError:
@@ -164,5 +169,49 @@ def outpaint(ctx, inputs, params):
     out = canvas.copy()
     out.paste(gen, (0, 0), soft)
     o = ToolOutput(name="image", type="image", format="png", image=out)
+    o.data = {"seed": seed}
+    return [o]
+
+
+EDIT_BACKENDS = ("qwenimage-edit",)
+
+
+def instruct_edit(ctx, inputs, params):
+    """Instruction editing on an edit model (Qwen-Image-Edit): the image (plus
+    optional references) is the condition, the instruction is the prompt."""
+    from PIL import Image
+
+    engine = ctx.engine
+    model = _model(engine, params["model"])
+    backend = engine.model_backend(model) if hasattr(engine, "model_backend") else None
+    if backend is not None and backend not in EDIT_BACKENDS:
+        raise ToolError("unsupported_runtime", f"model {model!r} ({backend}) is not an instruction-edit model; "
+                        "load an edit model such as Qwen-Image-Edit-2511", field="model")
+    src = media.load_image(inputs["image"], ctx.manifest.inputs["image"], mode="RGB")
+    refs = [media.load_image(r, ctx.manifest.inputs["references"], mode="RGB")
+            for r in (inputs.get("references") or [])]
+    seed = params.get("seed")
+    if seed is None:
+        seed = random.randint(0, 2**32 - 1)
+    ctx.progress(LOADING, 0.0)
+    ctx.progress(RUNNING, 0.05)
+    try:
+        res = engine.generate(model=model, prompt=params["instruction"],
+                              negative_prompt=params.get("negative_prompt") or None,
+                              source_image=[src, *refs] if refs else src, seed=seed, batch=1,
+                              num_steps=params.get("steps"), guidance_scale=params.get("guidance"))
+    except ToolError:
+        raise
+    except Exception as e:
+        raise classify(e) from e
+    img = res.images[0] if res.images else None
+    if img is None:
+        raise classify(RuntimeError(res.errors[0].error if res.errors else "edit returned no image"))
+    ctx.runtime = "engine"
+    img = img.convert("RGB")
+    if params["keep_size"] and img.size != src.size:
+        img = img.resize(src.size, Image.LANCZOS)
+    ctx.progress(RUNNING, 1.0)
+    o = ToolOutput(name="image", type="image", format="png", image=img)
     o.data = {"seed": seed}
     return [o]

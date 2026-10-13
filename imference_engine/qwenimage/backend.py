@@ -20,9 +20,9 @@ VRAM: the 20B transformer is very heavy — run with
 ``RuntimeConfig(enable_offload=True)`` (shared ModelManager path). A quantized
 build is the realistic route on <40 GB cards; quantization is not wired here yet.
 
-NOTE: Qwen-Image-Edit (instruction-based editing) is a DIFFERENT pipeline with an
-image-condition call signature, not this strength-based img2img — a future
-addition, out of scope here.
+Qwen-Image-Edit (instruction-based editing) is a DIFFERENT pipeline with an
+image-condition call signature: see ``edit_backend.py`` (engine key
+``qwenimage-edit``).
 """
 from __future__ import annotations
 import logging

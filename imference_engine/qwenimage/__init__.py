@@ -7,5 +7,6 @@ split is a packaging boundary. The 20B transformer is very heavy — run with
 consumer VRAM.
 """
 from imference_engine.qwenimage.backend import QwenImageBackend
+from imference_engine.qwenimage.edit_backend import QwenImageEditBackend
 
-__all__ = ["QwenImageBackend"]
+__all__ = ["QwenImageBackend", "QwenImageEditBackend"]

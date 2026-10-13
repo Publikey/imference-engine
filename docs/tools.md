@@ -107,7 +107,7 @@ Outputs go to the workers' Azure Blob container (`AZURE_STORAGE_CONTAINER`,
 default `ephemeral`, 24 h lifecycle rule). The worker logs `tool_id`,
 `tool_version`, duration and input size for pricing.
 
-## Cloud: generation tools (`vary`, `inpaint`, `outpaint`)
+## Cloud: generation tools (`vary`, `inpaint`, `outpaint`, `instruct-edit`)
 
 They run on the existing image workers of the selected model (its normal
 queue). The API enqueues a normal generation request for the model plus:
@@ -124,6 +124,12 @@ An im-engine worker that sees `tool_id` calls
 `params.model = model_name` and answers with the result envelope above
 (`seed` = the seed used). Workers whose engine predates tools answer
 `unsupported_runtime`.
+
+`instruct-edit` needs a model whose engine is `qwenimage-edit` (e.g. catalog
+model `qwen-image-edit-2511`); `vary` / `inpaint` / `outpaint` need a model
+that is NOT an edit model. Its prompt is `tool_params.instruction` (there is
+no `prompt` param); `tool_inputs` may carry `references` (a list of up to 2
+URLs) next to `image`. Served by the `qwen-image-edit-im-engine` worker.
 
 ## API (imference)
 

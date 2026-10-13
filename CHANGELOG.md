@@ -22,7 +22,13 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   (GFPGAN, local-only until its license is reviewed), and vary / inpaint /
   outpaint on top of `Engine.generate` (any backend, no inpaint pipeline).
   Contract between engine, workers, API, Desktop and MCP: `docs/tools.md`.
-- `Engine.registered_models()`.
+- **Instruction editing**: new `qwenimage-edit` backend
+  (`QwenImageEditPlusPipeline`, Qwen-Image-Edit 2509 / 2511; diffusers repo id
+  or single-file transformer + `base_model`, default `Qwen/Qwen-Image-Edit-2511`)
+  and the `instruct-edit` tool (instruction + up to 2 reference images, steps /
+  guidance overrides, output resized back to the input size). Vary / inpaint /
+  outpaint refuse an edit model, instruct-edit refuses a non-edit model.
+- `Engine.registered_models()`, `Engine.model_backend(name)`.
 - Extras `[tools]` (Pillow, numpy, onnxruntime, imageio-ffmpeg) and
   `[tools-torch]` (+ torch, transformers for describe).
 - `python -m imference_engine.tools` (list / show / export / run / weights)
@@ -33,7 +39,9 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 - Real weights: the ONNX contracts are covered by synthetic graphs in
   `tests/test_tools.py`; run each tool once on real weights after staging.
-- describe (Florence-2) and vary/inpaint/outpaint on a real model (GPU).
+- describe (Florence-2), vary/inpaint/outpaint and instruct-edit on a real
+  model (GPU). The qwenimage-edit backend matches diffusers 0.40's
+  `QwenImageEditPlusPipeline` signature but has not rendered an image yet.
 
 ## [0.4.5] — 2026-10-01
 
