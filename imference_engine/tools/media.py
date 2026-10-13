@@ -246,3 +246,35 @@ def run_ffmpeg(args: list, *, timeout: Optional[float] = None) -> None:
         msg = (r.stderr or "").strip().splitlines()[-3:]
         raise ToolError(INVALID_INPUT if "Invalid data" in (r.stderr or "") else "internal",
                         "ffmpeg failed: " + " | ".join(msg))
+
+
+def precheck(manifest, inputs: dict) -> None:
+    """Cheap limit checks before any weight download or model load: file size
+    for every input, and header-only dimensions for images/masks (Pillow reads
+    no pixels here). Content errors surface later, in the implementation."""
+    from PIL import Image, UnidentifiedImageError
+
+    for name, spec in manifest.inputs.items():
+        vals = inputs.get(name)
+        if vals is None:
+            continue
+        for v in (vals if isinstance(vals, (list, tuple)) else [vals]):
+            if isinstance(v, Image.Image):
+                w, h = v.size
+            else:
+                mb = _size_mb(v)
+                if spec.max_mb and mb is not None and mb > spec.max_mb:
+                    raise ToolError(TOO_LARGE, f"input {name!r} is {mb:.1f} MB (max {spec.max_mb} MB)", field=name)
+                if spec.type == "video" or not spec.max_megapixels:
+                    continue
+                if isinstance(v, (str, os.PathLike)) and not os.path.isfile(v):
+                    raise ToolError(INVALID_INPUT, f"input {name!r}: file not found: {v}", field=name)
+                Image.MAX_IMAGE_PIXELS = _HARD_MAX_PIXELS
+                try:
+                    with Image.open(io.BytesIO(v) if isinstance(v, (bytes, bytearray)) else v) as im:
+                        w, h = im.size
+                except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as e:
+                    raise ToolError(INVALID_INPUT, f"input {name!r} is not a readable image: {e}", field=name) from None
+            if spec.max_megapixels and w * h > spec.max_megapixels * 1e6:
+                raise ToolError(TOO_LARGE, f"input {name!r} is {w}x{h} ({w*h/1e6:.1f} MP, max "
+                                f"{spec.max_megapixels} MP)", field=name)

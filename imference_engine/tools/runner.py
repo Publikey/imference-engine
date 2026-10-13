@@ -132,8 +132,10 @@ def run_tool(
         raise ToolError(UNSUPPORTED_RUNTIME, f"tool {tool_id!r} runs a generation model: "
                         "load a model (Engine) first or run it in the cloud")
 
+    from imference_engine.tools import media
     from imference_engine.tools.impl import get_impl
     impl = get_impl(manifest.id)
+    media.precheck(manifest, inputs)   # too_large before any weight download
 
     progress = Progress(on_progress)
     work = Path(tempfile.mkdtemp(prefix=f"imtool-{tool_id}-"))

@@ -182,9 +182,9 @@ def test_classify_errors():
 
 # ------------------------------------------------------------------ weights
 
-def test_weights_missing_without_mirror(cache):
+def test_weights_missing_without_mirror(tmp_path, cache):
     with pytest.raises(ToolError) as e:
-        run_tool("upscale", {"image": "x.png"}, {})
+        run_tool("upscale", {"image": str(img(tmp_path))}, {})
     assert e.value.code == "weights_missing"
 
 
@@ -289,7 +289,7 @@ def test_input_limits(tmp_path):
     Image.new("L", (2100, 2100)).save(p)                        # 4.4 MP > upscale's 4 MP
     with pytest.raises(ToolError) as e:
         run_tool("upscale", {"image": str(p)}, {}, cdn="https://unused")
-    assert e.value.code in ("too_large", "weights_missing")
+    assert e.value.code == "too_large"
     bad = tmp_path / "bad.png"
     bad.write_bytes(b"not an image")
     with pytest.raises(ToolError) as e:
