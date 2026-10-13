@@ -1,0 +1,59 @@
+{
+  "id": "video-convert",
+  "version": "1.0.0",
+  "name": "GIF / MP4 / WebM",
+  "category": "video",
+  "description": "Convert between MP4, WebM and GIF, optionally resizing and changing the frame rate.",
+  "inputs": {
+    "video": {
+      "type": "video",
+      "required": true,
+      "max_mb": 500,
+      "max_seconds": 600,
+      "description": "Source video or GIF"
+    }
+  },
+  "params": {
+    "format": {
+      "type": "enum",
+      "values": [
+        "mp4",
+        "gif",
+        "webm"
+      ],
+      "default": "mp4"
+    },
+    "fps": {
+      "type": "int",
+      "min": 1,
+      "max": 60,
+      "description": "Output frame rate (default: source, GIF: 15)."
+    },
+    "width": {
+      "type": "int",
+      "min": 16,
+      "max": 3840,
+      "description": "Output width, height follows the ratio."
+    }
+  },
+  "outputs": {
+    "video": {
+      "type": "video"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 2
+  },
+  "license": {
+    "spdx": "LGPL-2.1-or-later",
+    "source": "https://ffmpeg.org/legal.html",
+    "verified": true
+  },
+  "weights": []
+}

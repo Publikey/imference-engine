@@ -1,0 +1,61 @@
+{
+  "id": "describe",
+  "version": "1.0.0",
+  "name": "Describe image",
+  "category": "image",
+  "mcp_name": "describe_image",
+  "description": "Write a detailed caption of an image, ready to reuse as a prompt (Florence-2).",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "detail": {
+      "type": "enum",
+      "values": [
+        "short",
+        "detailed",
+        "more_detailed"
+      ],
+      "default": "more_detailed"
+    }
+  },
+  "outputs": {
+    "text": {
+      "type": "text"
+    }
+  },
+  "weights": [
+    {
+      "name": "model",
+      "path": "florence2/florence-2-base.tar",
+      "size_mb": 465,
+      "sha256": "",
+      "source": "https://huggingface.co/florence-community/Florence-2-base"
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm"
+    ],
+    "cloud_queue": "tools-light",
+    "slow_on_cpu": true,
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 2
+  },
+  "license": {
+    "spdx": "MIT",
+    "source": "https://huggingface.co/microsoft/Florence-2-base/blob/main/LICENSE",
+    "verified": true
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "id": "outpaint",
+  "version": "1.0.0",
+  "name": "Expand image",
+  "category": "generation",
+  "mcp_name": "outpaint",
+  "description": "Extend the canvas on any side and let a generation model paint the new area.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "model": {
+      "type": "string",
+      "required": true,
+      "max_length": 128,
+      "description": "Generation model (a catalog model name that accepts an image input)."
+    },
+    "prompt": {
+      "type": "string",
+      "max_length": 4000,
+      "default": "",
+      "description": "Prompt (default: empty; reuse the image's original prompt for best results)."
+    },
+    "negative_prompt": {
+      "type": "string",
+      "max_length": 2000,
+      "default": ""
+    },
+    "left": {
+      "type": "int",
+      "min": 0,
+      "max": 2048,
+      "default": 0
+    },
+    "right": {
+      "type": "int",
+      "min": 0,
+      "max": 2048,
+      "default": 0
+    },
+    "top": {
+      "type": "int",
+      "min": 0,
+      "max": 2048,
+      "default": 0
+    },
+    "bottom": {
+      "type": "int",
+      "min": 0,
+      "max": 2048,
+      "default": 0
+    },
+    "seed": {
+      "type": "int",
+      "min": 0,
+      "max": 4294967295,
+      "description": "Fixed seed for a reproducible result (default: random)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cuda",
+      "mps",
+      "rocm"
+    ],
+    "cloud_queue": "generation",
+    "needs_engine": true
+  },
+  "cost": {
+    "credits": 0
+  },
+  "license": {
+    "spdx": "model",
+    "source": "license of the selected model",
+    "verified": true
+  },
+  "weights": []
+}

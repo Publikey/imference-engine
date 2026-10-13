@@ -1,0 +1,77 @@
+{
+  "id": "crop",
+  "version": "1.0.0",
+  "name": "Crop",
+  "category": "image",
+  "description": "Crop an image to a rectangle or to an aspect ratio (centered).",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 40,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "x": {
+      "type": "int",
+      "min": 0,
+      "default": 0
+    },
+    "y": {
+      "type": "int",
+      "min": 0,
+      "default": 0
+    },
+    "width": {
+      "type": "int",
+      "min": 1,
+      "description": "Crop width (default: to the right edge)."
+    },
+    "height": {
+      "type": "int",
+      "min": 1,
+      "description": "Crop height (default: to the bottom edge)."
+    },
+    "aspect": {
+      "type": "string",
+      "pattern": "^[0-9]{1,4}:[0-9]{1,4}$",
+      "description": "e.g. 16:9; centered crop, overrides the rectangle."
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "same",
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "default": "same"
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 1
+  },
+  "license": {
+    "spdx": "n/a",
+    "source": "Pillow (HPND)",
+    "verified": true
+  },
+  "weights": []
+}

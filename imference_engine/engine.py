@@ -287,6 +287,12 @@ class Engine(BaseEngine):
             )
         )
 
+    def registered_models(self) -> list[str]:
+        """Names accepted by ``generate(model=...)`` (registration order)."""
+        if not self._loaded:
+            return []
+        return list(self._models._registered)
+
     def load_catalog(self, path: Optional[Union[str, Path]] = None) -> "Engine":
         """Load a ``models.yml`` catalog and register every entry.
 

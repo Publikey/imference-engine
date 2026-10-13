@@ -1,0 +1,55 @@
+{
+  "id": "video-trim",
+  "version": "1.0.0",
+  "name": "Trim video",
+  "category": "video",
+  "description": "Cut a video between two timestamps.",
+  "inputs": {
+    "video": {
+      "type": "video",
+      "required": true,
+      "max_mb": 500,
+      "max_seconds": 600,
+      "description": "Source video or GIF"
+    }
+  },
+  "params": {
+    "start": {
+      "type": "float",
+      "min": 0,
+      "default": 0,
+      "description": "Start, seconds."
+    },
+    "end": {
+      "type": "float",
+      "min": 0,
+      "description": "End, seconds (default: end of the video)."
+    },
+    "reencode": {
+      "type": "bool",
+      "default": true,
+      "description": "Frame-accurate cut (re-encode). False = fast keyframe cut."
+    }
+  },
+  "outputs": {
+    "video": {
+      "type": "video",
+      "format": "mp4"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 2
+  },
+  "license": {
+    "spdx": "LGPL-2.1-or-later",
+    "source": "https://ffmpeg.org/legal.html",
+    "verified": true
+  },
+  "weights": []
+}

@@ -1,0 +1,48 @@
+{
+  "id": "video-concat",
+  "version": "1.0.0",
+  "name": "Join videos",
+  "category": "video",
+  "description": "Concatenate several clips into one MP4 (scaled to the first clip's size).",
+  "inputs": {
+    "videos": {
+      "type": "video",
+      "required": true,
+      "max_mb": 500,
+      "max_seconds": 600,
+      "description": "Clips, in order",
+      "multiple": true,
+      "min_items": 2,
+      "max_items": 20
+    }
+  },
+  "params": {
+    "fps": {
+      "type": "int",
+      "min": 1,
+      "max": 60,
+      "description": "Output frame rate (default: first clip)."
+    }
+  },
+  "outputs": {
+    "video": {
+      "type": "video",
+      "format": "mp4"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 3
+  },
+  "license": {
+    "spdx": "LGPL-2.1-or-later",
+    "source": "https://ffmpeg.org/legal.html",
+    "verified": true
+  },
+  "weights": []
+}

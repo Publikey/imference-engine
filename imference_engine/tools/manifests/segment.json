@@ -1,0 +1,72 @@
+{
+  "id": "segment",
+  "version": "1.0.0",
+  "name": "Click to select",
+  "category": "image",
+  "mcp_name": "select_object",
+  "description": "Select an object from one or more clicks and return its mask (MobileSAM).",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "points": {
+      "type": "points",
+      "required": true,
+      "max_items": 16,
+      "description": "Clicks in image pixels: [{x, y, label}] with label 1 = include, 0 = exclude."
+    },
+    "dilate": {
+      "type": "int",
+      "min": 0,
+      "max": 64,
+      "default": 0
+    }
+  },
+  "outputs": {
+    "mask": {
+      "type": "mask",
+      "format": "png"
+    }
+  },
+  "weights": [
+    {
+      "name": "encoder",
+      "path": "mobilesam/mobile_sam_image_encoder.onnx",
+      "size_mb": 28,
+      "sha256": "",
+      "source": "https://huggingface.co/Acly/MobileSAM/resolve/main/mobile_sam_image_encoder.onnx"
+    },
+    {
+      "name": "decoder",
+      "path": "mobilesam/sam_mask_decoder_single.onnx",
+      "size_mb": 16,
+      "sha256": "",
+      "source": "https://huggingface.co/Acly/MobileSAM/resolve/main/sam_mask_decoder_single.onnx"
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "min_ram_gb": 2
+  },
+  "cost": {
+    "credits": 1
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "source": "https://github.com/ChaoningZhang/MobileSAM/blob/master/LICENSE",
+    "verified": true
+  }
+}

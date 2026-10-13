@@ -1,0 +1,52 @@
+{
+  "id": "strip-metadata",
+  "version": "1.0.0",
+  "name": "Remove metadata",
+  "category": "image",
+  "description": "Remove EXIF, XMP, PNG text chunks (prompts, settings) and GPS data before sharing.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 40,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "format": {
+      "type": "enum",
+      "values": [
+        "same",
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "default": "same"
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 1
+  },
+  "license": {
+    "spdx": "n/a",
+    "source": "Pillow (HPND)",
+    "verified": true
+  },
+  "weights": []
+}

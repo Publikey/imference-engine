@@ -1,0 +1,73 @@
+{
+  "id": "restore-faces",
+  "version": "1.0.0",
+  "name": "Restore faces",
+  "category": "image",
+  "mcp_name": "restore_faces",
+  "description": "Detect faces and restore them with GFPGAN, blended back into the image.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "strength": {
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "default": 0.8,
+      "description": "Blend between the original (0) and the restored face (1)."
+    },
+    "max_faces": {
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "default": 10
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image",
+      "format": "png"
+    }
+  },
+  "weights": [
+    {
+      "name": "restorer",
+      "path": "gfpgan/GFPGANv1.4.onnx",
+      "size_mb": 340,
+      "sha256": "",
+      "source": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth (exported to ONNX)"
+    },
+    {
+      "name": "detector",
+      "path": "yunet/face_detection_yunet_2023mar.onnx",
+      "size_mb": 0.3,
+      "sha256": "",
+      "source": "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 4
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "source": "https://github.com/TencentARC/GFPGAN/blob/master/LICENSE (StyleGAN2 parts: check)",
+    "verified": false
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "id": "erase-object",
+  "version": "1.0.0",
+  "name": "Magic eraser",
+  "category": "image",
+  "mcp_name": "erase_object",
+  "description": "Remove what the mask covers and fill it with matching background (LaMa).",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "Source image"
+    },
+    "mask": {
+      "type": "mask",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "White = area to erase, same size as the image"
+    }
+  },
+  "params": {
+    "dilate": {
+      "type": "int",
+      "min": 0,
+      "max": 64,
+      "default": 8,
+      "description": "Grow the mask by this many pixels (catches edges and shadows)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image",
+      "format": "png"
+    }
+  },
+  "weights": [
+    {
+      "name": "model",
+      "path": "lama/lama_fp32.onnx",
+      "size_mb": 208,
+      "sha256": "",
+      "source": "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx"
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 4
+  },
+  "license": {
+    "spdx": "Apache-2.0",
+    "source": "https://github.com/advimman/lama/blob/main/LICENSE",
+    "verified": true
+  }
+}

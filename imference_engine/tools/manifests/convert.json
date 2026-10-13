@@ -1,0 +1,75 @@
+{
+  "id": "convert",
+  "version": "1.0.0",
+  "name": "Convert / compress",
+  "category": "image",
+  "description": "Convert to PNG, JPEG or WebP and set the compression quality.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 40,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "format": {
+      "type": "enum",
+      "values": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "default": "webp"
+    },
+    "quality": {
+      "type": "int",
+      "min": 1,
+      "max": 100,
+      "default": 85,
+      "description": "JPEG/WebP quality."
+    },
+    "lossless": {
+      "type": "bool",
+      "default": false,
+      "description": "WebP lossless."
+    },
+    "max_kb": {
+      "type": "int",
+      "min": 10,
+      "max": 50000,
+      "description": "Lower the quality until the file fits (JPEG/WebP)."
+    },
+    "background": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "default": "#ffffff",
+      "description": "Fill for transparent pixels when the format has no alpha (JPEG)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 1
+  },
+  "license": {
+    "spdx": "n/a",
+    "source": "Pillow (HPND)",
+    "verified": true
+  },
+  "weights": []
+}

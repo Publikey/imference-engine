@@ -1,0 +1,85 @@
+{
+  "id": "inpaint",
+  "version": "1.0.0",
+  "name": "Inpaint",
+  "category": "generation",
+  "mcp_name": "inpaint",
+  "description": "Repaint the masked area from a prompt with a generation model; the rest of the image is kept.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "Source image"
+    },
+    "mask": {
+      "type": "mask",
+      "required": true,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "White = area to repaint"
+    }
+  },
+  "params": {
+    "model": {
+      "type": "string",
+      "required": true,
+      "max_length": 128,
+      "description": "Generation model (a catalog model name that accepts an image input)."
+    },
+    "prompt": {
+      "type": "string",
+      "max_length": 4000,
+      "default": "",
+      "description": "What to paint in the masked area."
+    },
+    "negative_prompt": {
+      "type": "string",
+      "max_length": 2000,
+      "default": ""
+    },
+    "strength": {
+      "type": "float",
+      "min": 0.3,
+      "max": 1,
+      "default": 0.9
+    },
+    "seed": {
+      "type": "int",
+      "min": 0,
+      "max": 4294967295,
+      "description": "Fixed seed for a reproducible result (default: random)."
+    },
+    "feather": {
+      "type": "int",
+      "min": 0,
+      "max": 64,
+      "default": 12,
+      "description": "Soft edge of the blend, pixels."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cuda",
+      "mps",
+      "rocm"
+    ],
+    "cloud_queue": "generation",
+    "needs_engine": true
+  },
+  "cost": {
+    "credits": 0
+  },
+  "license": {
+    "spdx": "model",
+    "source": "license of the selected model",
+    "verified": true
+  },
+  "weights": []
+}

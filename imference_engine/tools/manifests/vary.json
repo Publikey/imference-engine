@@ -1,0 +1,73 @@
+{
+  "id": "vary",
+  "version": "1.0.0",
+  "name": "Vary",
+  "category": "generation",
+  "mcp_name": "vary_image",
+  "description": "Make a variation of an image with a generation model (img2img). Subtle keeps the composition, strong reimagines it.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "model": {
+      "type": "string",
+      "required": true,
+      "max_length": 128,
+      "description": "Generation model (a catalog model name that accepts an image input)."
+    },
+    "prompt": {
+      "type": "string",
+      "max_length": 4000,
+      "default": "",
+      "description": "Prompt (default: empty; reuse the image's original prompt for best results)."
+    },
+    "negative_prompt": {
+      "type": "string",
+      "max_length": 2000,
+      "default": ""
+    },
+    "strength": {
+      "type": "enum",
+      "values": [
+        "subtle",
+        "strong"
+      ],
+      "default": "subtle"
+    },
+    "seed": {
+      "type": "int",
+      "min": 0,
+      "max": 4294967295,
+      "description": "Fixed seed for a reproducible result (default: random)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cuda",
+      "mps",
+      "rocm"
+    ],
+    "cloud_queue": "generation",
+    "needs_engine": true
+  },
+  "cost": {
+    "credits": 0
+  },
+  "license": {
+    "spdx": "model",
+    "source": "license of the selected model",
+    "verified": true
+  },
+  "weights": []
+}

@@ -1,0 +1,80 @@
+{
+  "id": "resize",
+  "version": "1.0.0",
+  "name": "Resize",
+  "category": "image",
+  "description": "Resize an image to an exact size, a bounding box or a scale factor.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 40,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "width": {
+      "type": "int",
+      "min": 1,
+      "max": 8192,
+      "description": "Target width in pixels."
+    },
+    "height": {
+      "type": "int",
+      "min": 1,
+      "max": 8192,
+      "description": "Target height in pixels."
+    },
+    "scale": {
+      "type": "float",
+      "min": 0.05,
+      "max": 8,
+      "description": "Scale factor, used when width and height are both empty."
+    },
+    "mode": {
+      "type": "enum",
+      "values": [
+        "fit",
+        "fill",
+        "stretch"
+      ],
+      "default": "fit",
+      "description": "fit: inside the box, keep ratio. fill: cover the box and center-crop. stretch: exact size."
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "same",
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "default": "same"
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image"
+    }
+  },
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-cpu"
+  },
+  "cost": {
+    "credits": 1
+  },
+  "license": {
+    "spdx": "n/a",
+    "source": "Pillow (HPND)",
+    "verified": true
+  },
+  "weights": []
+}

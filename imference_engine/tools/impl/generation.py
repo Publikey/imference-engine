@@ -1,0 +1,168 @@
+"""Generation tools: vary, inpaint, outpaint — on top of ``Engine.generate``.
+
+Backend-agnostic by construction: every image backend already does img2img,
+so inpainting is "img2img on a pre-filled crop + feathered composite" and
+outpainting is "extend the canvas, pre-fill, inpaint the new area". No
+per-backend inpaint pipeline, so any model that accepts an image input can
+inpaint; pixels outside the mask are kept bit-exact.
+
+The caller passes a loaded ``Engine`` (``run_tool(..., engine=engine)``) and
+``params["model"]`` names a registered model. When the name is unknown but
+the engine holds exactly one model (Desktop's single-model sidecar), that one
+is used.
+"""
+from __future__ import annotations
+
+import random
+
+from imference_engine.tools import media
+from imference_engine.tools.errors import INVALID_INPUT, ToolError, classify
+from imference_engine.tools.impl.erase import context_box, dilate
+from imference_engine.tools.progress import LOADING, RUNNING
+from imference_engine.tools.runner import ToolOutput
+
+VARY_STRENGTH = {"subtle": 0.35, "strong": 0.65}
+WORK_LONG_SIDE = 1024   # generation resolution for the processed region
+OUTPAINT_STRENGTH = 0.85  # high enough to invent content, low enough to keep the layout
+MULT = 64               # every backend accepts multiples of 64
+
+
+def _model(engine, name: str) -> str:
+    names = engine.registered_models() if hasattr(engine, "registered_models") else []
+    if not names or name in names:
+        return name
+    if len(names) == 1:
+        return names[0]
+    raise ToolError(INVALID_INPUT, f"model {name!r} is not loaded (have {names})", field="model")
+
+
+def _work_size(w: int, h: int, long_side: int = WORK_LONG_SIDE) -> tuple:
+    s = long_side / max(w, h)
+    return max(MULT, round(w * s / MULT) * MULT), max(MULT, round(h * s / MULT) * MULT)
+
+
+def _generate(ctx, params, source, strength: float):
+    engine = ctx.engine
+    seed = params.get("seed")
+    if seed is None:
+        seed = random.randint(0, 2**32 - 1)
+    ctx.progress(RUNNING, 0.05)
+    try:
+        res = engine.generate(model=_model(engine, params["model"]), prompt=params.get("prompt") or "",
+                              negative_prompt=params.get("negative_prompt") or None,
+                              source_image=source, strength=strength, seed=seed, batch=1)
+    except ToolError:
+        raise
+    except Exception as e:
+        raise classify(e) from e
+    img = res.images[0] if res.images else None
+    if img is None:
+        err = res.errors[0].error if res.errors else "generation returned no image"
+        raise classify(RuntimeError(err))
+    ctx.runtime = "engine"
+    ctx.progress(RUNNING, 0.95)
+    return img.convert("RGB"), seed
+
+
+def prefill(img, mask):
+    """Replace masked pixels with a heavily blurred version of their
+    surroundings, so img2img does not just redraw the erased object."""
+    from PIL import Image, ImageFilter
+
+    rgb = img.convert("RGB")
+    # Blur the image with the masked area excluded: average of (img * keep)
+    # blurred / keep blurred (normalized convolution).
+    import numpy as np
+    keep = 1.0 - np.asarray(mask, dtype=np.float32) / 255.0
+    a = np.asarray(rgb, dtype=np.float32)
+    r = max(8, max(img.size) // 16)
+
+    def blur(x):
+        im = Image.fromarray(np.clip(x, 0, 255).astype(np.uint8)) if x.ndim == 3 else \
+            Image.fromarray(np.clip(x * 255, 0, 255).astype(np.uint8), "L")
+        return np.asarray(im.filter(ImageFilter.GaussianBlur(r)), dtype=np.float32)
+
+    num = blur(a * keep[..., None])
+    den = blur(keep) / 255.0
+    fill = num / np.maximum(den[..., None], 1e-3)
+    out = np.where(keep[..., None] > 0.5, a, fill)
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
+
+
+def _inpaint_core(ctx, params, rgb, mask, strength: float, feather: int):
+    from PIL import Image, ImageFilter
+
+    bbox = mask.getbbox()
+    if bbox is None:
+        raise ToolError(INVALID_INPUT, "the mask is empty: paint the area to repaint", field="mask")
+    box = context_box(bbox, rgb.size, margin=0.5, min_side=384)
+    crop, mcrop = rgb.crop(box), mask.crop(box)
+    ws = _work_size(*crop.size)
+    src = prefill(crop, mcrop).resize(ws, Image.LANCZOS)
+    ctx.progress(LOADING, 0.0)
+    gen, seed = _generate(ctx, params, src, strength)
+    gen = gen.resize(crop.size, Image.LANCZOS)
+    soft = dilate(mcrop, max(1, feather // 2)).filter(ImageFilter.GaussianBlur(max(1, feather / 2)))
+    patch = crop.copy()
+    patch.paste(gen, (0, 0), soft)
+    out = rgb.copy()
+    out.paste(patch, box[:2])
+    return out, seed
+
+
+def vary(ctx, inputs, params):
+    from PIL import Image
+
+    src = media.load_image(inputs["image"], ctx.manifest.inputs["image"], mode="RGB")
+    ws = _work_size(*src.size, long_side=min(WORK_LONG_SIDE, max(512, max(src.size))))
+    gen, seed = _generate(ctx, params, src.resize(ws, Image.LANCZOS), VARY_STRENGTH[params["strength"]])
+    out = gen.resize(src.size, Image.LANCZOS)
+    o = ToolOutput(name="image", type="image", format="png", image=out)
+    o.data = {"seed": seed}
+    return [o]
+
+
+def inpaint(ctx, inputs, params):
+    src = media.load_image(inputs["image"], ctx.manifest.inputs["image"])
+    alpha = src.getchannel("A") if src.mode == "RGBA" else None
+    rgb = src.convert("RGB")
+    mask = media.load_mask(inputs["mask"], ctx.manifest.inputs["mask"], rgb.size).point(lambda v: 255 if v >= 128 else 0)
+    out, seed = _inpaint_core(ctx, params, rgb, mask, params["strength"], params["feather"])
+    if alpha is not None:
+        out.putalpha(alpha)
+    o = ToolOutput(name="image", type="image", format="png", image=out)
+    o.data = {"seed": seed}
+    return [o]
+
+
+def outpaint(ctx, inputs, params):
+    from PIL import Image, ImageDraw, ImageFilter
+
+    src = media.load_image(inputs["image"], ctx.manifest.inputs["image"], mode="RGB")
+    l, r, t, b = params["left"], params["right"], params["top"], params["bottom"]
+    if not (l or r or t or b):
+        raise ToolError(INVALID_INPUT, "set at least one of left/right/top/bottom", field="left")
+    W, H = src.width + l + r, src.height + t + b
+    if W * H > 16_000_000:
+        raise ToolError(INVALID_INPUT, f"expanded canvas {W}x{H} is over 16 MP", field="left")
+    # Seed the new area with the stretched edges, then blur: a color-correct
+    # starting point the model can turn into content.
+    canvas = src.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(max(W, H) // 24))
+    canvas.paste(src, (l, t))
+    mask = Image.new("L", (W, H), 255)
+    overlap = 8  # repaint a thin band of the original so the seam blends
+    ImageDraw.Draw(mask).rectangle((l + (overlap if l else 0), t + (overlap if t else 0),
+                                    l + src.width - 1 - (overlap if r else 0),
+                                    t + src.height - 1 - (overlap if b else 0)), fill=0)
+    # Process the whole canvas at work resolution (the model needs the
+    # original as context to continue it), composite only the new area.
+    ws = _work_size(W, H)
+    ctx.progress(LOADING, 0.0)
+    gen, seed = _generate(ctx, params, canvas.resize(ws, Image.LANCZOS), OUTPAINT_STRENGTH)
+    gen = gen.resize((W, H), Image.LANCZOS)
+    soft = mask.filter(ImageFilter.GaussianBlur(overlap / 2))
+    out = canvas.copy()
+    out.paste(gen, (0, 0), soft)
+    o = ToolOutput(name="image", type="image", format="png", image=out)
+    o.data = {"seed": seed}
+    return [o]

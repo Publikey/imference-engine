@@ -1,0 +1,107 @@
+{
+  "id": "remove-background",
+  "version": "1.0.0",
+  "name": "Remove background",
+  "category": "image",
+  "mcp_name": "remove_background",
+  "description": "Cut out the subject: transparent PNG, a mask, or the subject on a solid color.",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 16,
+      "max_mb": 30,
+      "description": "Source image"
+    }
+  },
+  "params": {
+    "model": {
+      "type": "enum",
+      "values": [
+        "birefnet-lite",
+        "isnet",
+        "u2netp"
+      ],
+      "default": "birefnet-lite",
+      "description": "birefnet-lite: best edges. isnet: general use. u2netp: tiny and fast (CPU)."
+    },
+    "output": {
+      "type": "enum",
+      "values": [
+        "png-alpha",
+        "mask",
+        "color"
+      ],
+      "default": "png-alpha"
+    },
+    "background": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "default": "#ffffff",
+      "description": "Background for output=color."
+    },
+    "threshold": {
+      "type": "float",
+      "min": 0,
+      "max": 1,
+      "description": "Hard cut at this level (default: soft alpha)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image",
+      "format": "png"
+    }
+  },
+  "weights": [
+    {
+      "name": "model",
+      "path": "rembg/birefnet-general-lite.onnx",
+      "size_mb": 214,
+      "sha256": "",
+      "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
+      "when": {
+        "model": "birefnet-lite"
+      }
+    },
+    {
+      "name": "model",
+      "path": "rembg/isnet-general-use.onnx",
+      "size_mb": 171,
+      "sha256": "",
+      "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx",
+      "when": {
+        "model": "isnet"
+      }
+    },
+    {
+      "name": "model",
+      "path": "rembg/u2netp.onnx",
+      "size_mb": 4.6,
+      "sha256": "",
+      "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+      "when": {
+        "model": "u2netp"
+      }
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 3
+  },
+  "license": {
+    "spdx": "MIT",
+    "source": "https://github.com/ZhengPeng7/BiRefNet/blob/main/LICENSE (isnet/u2net: Apache-2.0)",
+    "verified": true
+  }
+}

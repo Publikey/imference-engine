@@ -1,0 +1,91 @@
+{
+  "id": "upscale",
+  "version": "1.0.0",
+  "name": "Upscale",
+  "category": "image",
+  "mcp_name": "upscale",
+  "description": "Upscale 2x or 4x with Real-ESRGAN (sharp details, no hallucinated content).",
+  "inputs": {
+    "image": {
+      "type": "image",
+      "required": true,
+      "max_megapixels": 4,
+      "max_mb": 30,
+      "description": "Source image (at most 4 MP; the output is up to 64 MP)"
+    }
+  },
+  "params": {
+    "scale": {
+      "type": "enum",
+      "values": [
+        2,
+        4
+      ],
+      "default": 4
+    },
+    "model": {
+      "type": "enum",
+      "values": [
+        "realesrgan-x4plus",
+        "realesrgan-x4plus-anime"
+      ],
+      "default": "realesrgan-x4plus",
+      "description": "x4plus for photos and renders, anime for illustrations."
+    },
+    "tile": {
+      "type": "int",
+      "min": 0,
+      "max": 1024,
+      "default": 256,
+      "description": "Tile size (0 = whole image; lower uses less memory)."
+    }
+  },
+  "outputs": {
+    "image": {
+      "type": "image",
+      "format": "png"
+    }
+  },
+  "weights": [
+    {
+      "name": "model",
+      "path": "realesrgan/RealESRGAN_x4plus.onnx",
+      "size_mb": 67,
+      "sha256": "",
+      "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+      "when": {
+        "model": "realesrgan-x4plus"
+      }
+    },
+    {
+      "name": "model",
+      "path": "realesrgan/RealESRGAN_x4plus_anime_6B.onnx",
+      "size_mb": 18,
+      "sha256": "",
+      "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+      "when": {
+        "model": "realesrgan-x4plus-anime"
+      }
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "slow_on_cpu": true,
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 4
+  },
+  "license": {
+    "spdx": "BSD-3-Clause",
+    "source": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    "verified": true
+  }
+}

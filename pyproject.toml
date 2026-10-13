@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imference-engine"
-version = "0.4.5"
+version = "0.5.0"
 description = "Unified Diffusers-based inference engine: SDXL, SD 1.5, Z-Image, FLUX, Chroma, Qwen-Image, Anima, and Wan video behind one API."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -214,6 +214,24 @@ krea2 = [
 # union of the per-backend image extras. Prefer the specific extra.
 runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2]"]
 azure = ["azure-storage-blob>=12"]
+# Editing tools (imference_engine.tools): Pillow utilities + the ONNX light
+# models (upscale, background removal, eraser, click-select, faces, RIFE).
+# CPU onnxruntime by default; GPU hosts swap in onnxruntime-gpu (CUDA) or
+# onnxruntime-directml (Windows) — same API, picked up automatically.
+# imageio-ffmpeg bundles an ffmpeg binary for the video utilities when the
+# host has none on PATH. No torch needed.
+tools = [
+    "Pillow>=10",
+    "numpy",
+    "onnxruntime>=1.18",
+    "imageio-ffmpeg>=0.5",
+]
+# Describe (Florence-2) runs through transformers: tools + torch.
+tools-torch = [
+    "imference-engine[tools]",
+    "torch>=2.6",
+    "transformers>=4.56",
+]
 # R2 / S3-compatible CDN staging (validation/stage_r2.py — upload base components
 # to the mirror). boto3 talks to Cloudflare R2's S3 API.
 stage = ["boto3>=1.34"]
@@ -276,6 +294,9 @@ minimax-h3 = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+
+[tool.setuptools.package-data]
+"imference_engine.tools" = ["manifests/*.json"]
 
 [tool.setuptools.packages.find]
 include = ["imference_engine*"]

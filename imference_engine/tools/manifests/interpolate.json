@@ -1,0 +1,62 @@
+{
+  "id": "interpolate",
+  "version": "1.0.0",
+  "name": "Smooth motion",
+  "category": "video",
+  "mcp_name": "interpolate_frames",
+  "description": "Multiply a video's frame rate with RIFE frame interpolation (2x or 4x).",
+  "inputs": {
+    "video": {
+      "type": "video",
+      "required": true,
+      "max_mb": 200,
+      "max_seconds": 60,
+      "description": "Source video or GIF"
+    }
+  },
+  "params": {
+    "factor": {
+      "type": "enum",
+      "values": [
+        2,
+        4
+      ],
+      "default": 2
+    }
+  },
+  "outputs": {
+    "video": {
+      "type": "video",
+      "format": "mp4"
+    }
+  },
+  "weights": [
+    {
+      "name": "model",
+      "path": "rife/rife-v4.6.onnx",
+      "size_mb": 21,
+      "sha256": "",
+      "source": "https://github.com/hzwer/Practical-RIFE (v4.6, exported to ONNX)"
+    }
+  ],
+  "runtimes": {
+    "local": [
+      "cpu",
+      "cuda",
+      "mps",
+      "rocm",
+      "directml"
+    ],
+    "cloud_queue": "tools-light",
+    "slow_on_cpu": true,
+    "min_ram_gb": 4
+  },
+  "cost": {
+    "credits": 6
+  },
+  "license": {
+    "spdx": "MIT",
+    "source": "https://github.com/hzwer/Practical-RIFE/blob/main/LICENSE",
+    "verified": true
+  }
+}
