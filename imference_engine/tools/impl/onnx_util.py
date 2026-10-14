@@ -56,11 +56,38 @@ def providers_for(device: str = "auto") -> list:
     return wanted + ["CPUExecutionProvider"]
 
 
+_GPU_PROVIDERS = ("CUDAExecutionProvider", "TensorrtExecutionProvider")
+_DLLS_PREPARED = False
+
+
+def _prepare_cuda_dlls(ort) -> None:
+    """Make cuBLAS / cuDNN loadable for the CUDA provider. onnxruntime-gpu does
+    not ship them: importing a CUDA torch first loads its copies (ORT then
+    reuses them), and ``preload_dlls`` (ORT >= 1.21) picks up the nvidia-* pip
+    wheels otherwise. Without this the CUDA provider silently falls back to CPU."""
+    global _DLLS_PREPARED
+    if _DLLS_PREPARED:
+        return
+    _DLLS_PREPARED = True
+    try:
+        import torch  # noqa: F401
+    except Exception:  # noqa: BLE001 — no torch: rely on preload_dlls / PATH
+        pass
+    preload = getattr(ort, "preload_dlls", None)
+    if preload is not None:
+        try:
+            preload()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("onnxruntime.preload_dlls failed: %s", e)
+
+
 def session(path, device: str = "auto"):
     """Cached InferenceSession for ``path`` on ``device``. Returns (session, label)."""
     ort = _ort()
     path = str(Path(path))
     provs = providers_for(device)
+    if any(p in _GPU_PROVIDERS for p in provs):
+        _prepare_cuda_dlls(ort)
     key = (path, tuple(provs))
     with _LOCK:
         hit = _SESSIONS.get(key)
@@ -78,6 +105,10 @@ def session(path, device: str = "auto"):
             if "INVALID_PROTOBUF" in msg or "Protobuf parsing failed" in msg or "No graph" in msg:
                 raise ToolError("weights_missing", f"corrupt weight file {os.path.basename(path)}: delete it to re-download") from e
             raise
+        if provs[0] != "CPUExecutionProvider" and sess.get_providers()[0] == "CPUExecutionProvider":
+            logger.warning("%s: %s could not be created, running on CPU (onnxruntime %s; the GPU build "
+                           "must match the installed CUDA/cuDNN)", os.path.basename(path), provs[0],
+                           getattr(ort, "__version__", "?"))
         label = "onnx:" + sess.get_providers()[0]
         _SESSIONS[key] = (sess, label)
         logger.info("Loaded %s on %s", os.path.basename(path), sess.get_providers())
