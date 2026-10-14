@@ -49,3 +49,69 @@ def test_registered_and_model_backend():
     engine.register_model("edit", backend="qwenimage-edit", weights_path="/x.safetensors")
     assert engine.model_backend("edit") == "qwenimage-edit"
     assert engine.model_backend("nope") is None
+
+
+# ---------------------------------------------------------------- GGUF lite build
+
+def test_lite_settings_from_env(monkeypatch):
+    from imference_engine.qwenimage import edit_lite
+
+    monkeypatch.delenv("QWEN_EDIT_LIGHTNING", raising=False)
+    assert edit_lite.lightning_setting() == "4"
+    monkeypatch.setenv("QWEN_EDIT_LIGHTNING", "none")
+    assert edit_lite.lightning_setting() == "none"
+    monkeypatch.setenv("QWEN_EDIT_ENCODER", "bf16")
+    assert edit_lite.encoder_mode() == "bf16"
+
+
+def test_lite_base_skips_encoder_and_transformer_weights():
+    from imference_engine.qwenimage.edit_lite import LITE_BASE_PATTERNS
+
+    assert "text_encoder/*" not in LITE_BASE_PATTERNS and "transformer/*" not in LITE_BASE_PATTERNS
+    assert {"text_encoder/config.json", "transformer/config.json", "processor/*", "vae/*"} <= set(LITE_BASE_PATTERNS)
+
+
+def test_gguf_weights_take_the_lite_path(monkeypatch):
+    from imference_engine.qwenimage import edit_lite
+
+    seen = {}
+
+    def fake(path, base, **kw):
+        seen.update(path=path, base=base, **kw)
+        return "PIPE"
+
+    monkeypatch.setattr(edit_lite, "load_lite_pipeline", fake)
+    be = QwenImageEditBackend(cache_dir="/c", cdn_base="https://cdn")
+    assert be.load_pipeline(local_path="/m/qwen-image-edit-2511-Q4_K_M.GGUF") == "PIPE"
+    assert seen["base"] == "Qwen/Qwen-Image-Edit-2511" and seen["cache_dir"] == "/c"
+    assert seen["full_base_patterns"] == QwenImageEditBackend.BASE_PATTERNS
+
+
+def test_prefetch_uses_lite_patterns_with_nf4(monkeypatch):
+    from imference_engine.qwenimage import edit_lite
+    from imference_engine.runtime import offline
+
+    calls = []
+    monkeypatch.setattr(offline, "local_repo_dir", lambda repo, pats, *a, **k: calls.append((repo, pats)))
+    monkeypatch.setattr(edit_lite, "encoder_mode", lambda: "nf4")
+    QwenImageEditBackend().prefetch_base()
+    monkeypatch.setattr(edit_lite, "encoder_mode", lambda: "bf16")
+    QwenImageEditBackend().prefetch_base()
+    assert calls == [("Qwen/Qwen-Image-Edit-2511", edit_lite.LITE_BASE_PATTERNS),
+                     ("Qwen/Qwen-Image-Edit-2511", QwenImageEditBackend.BASE_PATTERNS)]
+
+
+def test_text_encoder_weights_present_or_local_need_no_download(tmp_path, monkeypatch):
+    import json
+
+    from imference_engine.qwenimage.edit_lite import ensure_text_encoder_weights
+
+    te = tmp_path / "text_encoder"
+    te.mkdir()
+    (te / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {"a": "s1.safetensors"}}))
+    (te / "s1.safetensors").write_bytes(b"x")
+    import huggingface_hub
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: pytest.fail("downloaded"))
+    ensure_text_encoder_weights("Qwen/Qwen-Image-Edit-2511", str(tmp_path), cdn_base=None)
+    (te / "s1.safetensors").unlink()
+    ensure_text_encoder_weights(str(tmp_path), str(tmp_path), cdn_base=None)  # local base dir: as-is

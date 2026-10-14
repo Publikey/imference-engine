@@ -172,6 +172,13 @@ qwenimage = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# Qwen-Image-Edit, GGUF lite build (Desktop + cloud): GGUF transformer +
+# NF4 encoder (bitsandbytes; CUDA only — elsewhere the encoder stays bf16).
+qwenimage-edit = [
+    "imference-engine[qwenimage]",
+    "gguf>=0.10",
+    "bitsandbytes>=0.45; platform_system != 'Darwin'",
+]
 # Anima — Modular Diffusers pipeline (Cosmos DiT + Qwen3 encoder). Needs the same
 # diffusers 0.40 stack (AnimaModularPipeline landed in 0.39.0) + transformers>=5.4
 # for Qwen3. Modular-only; see imference_engine/anima/README.md.

@@ -20,8 +20,16 @@ Weights, same two layouts as Qwen-Image:
   processor, tokenizer, VAE, scheduler) from ``base_model`` (default
   ``Qwen/Qwen-Image-Edit-2511``).
 
+- an unsloth ``.gguf`` (Q4_K_M: the Desktop AND cloud build) -> the
+  low-memory recipe in ``edit_lite.py``: GGUF transformer + Lightning 4-step
+  LoRA (adapter) + NF4 encoder loaded for the encode phase only. Catalog rows
+  for it set ``num_steps=4`` / ``guidance_scale=1.0`` (the Lightning recipe).
+  Env: ``QWEN_EDIT_LIGHTNING`` (4 | none), ``QWEN_EDIT_ENCODER`` (auto | nf4 | bf16).
+
 VRAM: same 20B transformer as Qwen-Image — run with ``enable_offload=True``
-(``offload_mode="group"`` fits ~5 GB of VRAM, PCIe-bound).
+(``offload_mode="group"``). bf16: ~5 GB of VRAM, PCIe-bound. GGUF Q4_K_M +
+NF4 encoder: 6.5 GB peak, ~52 s per edit on an RTX 4070 Laptop (8 GB), with
+~24 GB of host RAM while loading.
 """
 from __future__ import annotations
 
@@ -66,6 +74,10 @@ class QwenImageEditBackend(QwenImageBackend):
         import torch
         from diffusers import QwenImageEditPlusPipeline
 
+        if local_path.lower().endswith(".gguf") and not os.path.isdir(local_path):
+            from imference_engine.qwenimage.edit_lite import load_lite_pipeline
+            return load_lite_pipeline(local_path, base_model or DEFAULT_BASE, cache_dir=self._cache_dir,
+                                      cdn_base=self._cdn_base, full_base_patterns=self.BASE_PATTERNS)
         if local_path.endswith(".safetensors") and not os.path.isdir(local_path):
             return self._load_single_file(local_path, base_model or DEFAULT_BASE)
 
@@ -83,8 +95,12 @@ class QwenImageEditBackend(QwenImageBackend):
 
         from imference_engine.runtime.offline import local_repo_dir
 
+        from imference_engine.qwenimage.edit_lite import ensure_text_encoder_weights
+
         base_dir = local_repo_dir(base_repo, self.BASE_PATTERNS, self._cache_dir, namespace="image",
                                   cdn_base=self._cdn_base)
+        # A lite (GGUF) pull of the same base skips the bf16 encoder shards.
+        ensure_text_encoder_weights(base_repo, base_dir, cdn_base=self._cdn_base)
         logger.info(f"Loading Qwen-Image-Edit shared components from {base_dir} (base={base_repo})")
         transformer = QwenImageTransformer2DModel.from_single_file(
             local_path, config=os.path.join(base_dir, "transformer"),
@@ -93,8 +109,13 @@ class QwenImageEditBackend(QwenImageBackend):
             base_dir, transformer=transformer, local_files_only=True, dtype=torch.bfloat16)
 
     def prefetch_base(self, base_model: Optional[str] = None) -> None:
+        from imference_engine.qwenimage.edit_lite import LITE_BASE_PATTERNS, encoder_mode
         from imference_engine.runtime.offline import local_repo_dir
-        local_repo_dir(base_model or DEFAULT_BASE, self.BASE_PATTERNS, self._cache_dir,
+
+        # With the NF4 encoder (the GGUF build) the 16.6 GB bf16 encoder shards
+        # are not needed; a bf16 checkpoint fetches them on load.
+        patterns = LITE_BASE_PATTERNS if encoder_mode() == "nf4" else self.BASE_PATTERNS
+        local_repo_dir(base_model or DEFAULT_BASE, patterns, self._cache_dir,
                        namespace="image", cdn_base=self._cdn_base)
         logger.info("Qwen-Image-Edit base-components warmed (base=%s)", base_model or DEFAULT_BASE)
 
