@@ -67,7 +67,8 @@
   },
   "license": {
     "spdx": "Apache-2.0",
-    "source": "https://github.com/TencentARC/GFPGAN/blob/master/LICENSE (StyleGAN2 parts: check)",
-    "verified": false
+    "source": "https://github.com/TencentARC/GFPGAN/blob/master/LICENSE (StyleGAN2 parts: NVIDIA Source Code License; DFDNet parts: CC BY-NC-SA 4.0; ONNX from facefusion-assets, no license)",
+    "verified": false,
+    "cloud_override": "2026-10-14: owner accepted the license risk and enabled the cloud runtime"
   }
 }

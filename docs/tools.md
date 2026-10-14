@@ -19,7 +19,7 @@ Each tool is a JSON manifest in `imference_engine/tools/manifests/<id>.json`:
 | `weights` | `[{name, path, size_mb, sha256, source, when: {param: value}}]` — `path` is relative to the tools mirror |
 | `runtimes` | `{local: [cpu, cuda, mps, rocm, directml], cloud_queue: tools-cpu\|tools-light\|generation\|null, slow_on_cpu, min_ram_gb, min_vram_gb, needs_engine}` |
 | `cost.credits` | price per run in credits (1 credit = $0.001). `0` on `generation` tools = the price of the selected model |
-| `license` | `{spdx, source, verified}` — a tool reaches a cloud queue only when `verified` and permissive (`cloud_allowed`) |
+| `license` | `{spdx, source, verified, cloud_override?}` — a tool reaches a cloud queue only when `verified` and permissive, or when `cloud_override` records an owner decision to accept the risk (`cloud_allowed`) |
 | `available` | `false` = declared, not implemented (hidden everywhere) |
 
 `python -m imference_engine.tools export` prints the public catalog

@@ -105,7 +105,15 @@ def test_unknown_tool():
 def test_for_queue_applies_license_gate():
     light = {t.id for t in catalog.for_queue("tools-light")}
     assert "upscale" in light and "remove-background" in light
-    assert "restore-faces" not in light       # license not verified -> local only
+    assert "restore-faces" in light           # unverified license, but cloud_override set
+    # Without the override an unverified (or non-permissive) license stays local.
+    doc = json.loads(json.dumps(catalog.get("restore-faces").to_dict()))
+    doc["license"].pop("cloud_override")
+    assert not parse_manifest(doc).cloud_allowed
+    doc["license"].update(verified=True, spdx="CC-BY-NC-4.0")
+    assert not parse_manifest(doc).cloud_allowed
+    doc["license"]["spdx"] = "Apache-2.0"
+    assert parse_manifest(doc).cloud_allowed
     cpu = {t.id for t in catalog.for_queue("tools-cpu")}
     assert {"resize", "crop", "convert", "strip-metadata", "video-trim"} <= cpu
     assert not light & cpu

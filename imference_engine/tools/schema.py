@@ -256,9 +256,16 @@ class License:
     spdx: str
     source: str = ""
     verified: bool = False
+    # Owner decision to serve the tool in the cloud although the license is
+    # not verified / not permissive (the risk is accepted, recorded here
+    # instead of faking ``verified``). The text says who decided and why.
+    cloud_override: str = ""
 
     def to_dict(self) -> dict:
-        return {"spdx": self.spdx, "source": self.source, "verified": self.verified}
+        d = {"spdx": self.spdx, "source": self.source, "verified": self.verified}
+        if self.cloud_override:
+            d["cloud_override"] = self.cloud_override
+        return d
 
 
 @dataclass
@@ -330,9 +337,13 @@ class ToolManifest:
 
     @property
     def cloud_allowed(self) -> bool:
-        """A tool reaches a cloud queue only with a verified permissive license."""
-        return (self.runtimes.cloud_queue is not None and self.license.verified
-                and self.license.spdx in PERMISSIVE_SPDX)
+        """A tool reaches a cloud queue only with a verified permissive license,
+        or an explicit owner override (``license.cloud_override``)."""
+        if self.runtimes.cloud_queue is None:
+            return False
+        if self.license.cloud_override:
+            return True
+        return self.license.verified and self.license.spdx in PERMISSIVE_SPDX
 
     # -- serialization ----------------------------------------------------
 
@@ -459,7 +470,8 @@ def parse_manifest(doc: Any, *, origin: str = "<manifest>") -> ToolManifest:
     lic = req("license", dict)
     if not lic.get("spdx"):
         raise ManifestError(f"{ctx}: license.spdx is required")
-    license_ = License(spdx=lic["spdx"], source=lic.get("source", ""), verified=bool(lic.get("verified", False)))
+    license_ = License(spdx=lic["spdx"], source=lic.get("source", ""), verified=bool(lic.get("verified", False)),
+                       cloud_override=str(lic.get("cloud_override") or ""))
 
     cost = doc.get("cost", {}) or {}
     return ToolManifest(
