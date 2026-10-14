@@ -34,8 +34,8 @@
     {
       "name": "model",
       "path": "florence2/florence-2-base.tar",
-      "size_mb": 465,
-      "sha256": "",
+      "size_mb": 468.6,
+      "sha256": "97f8444475993143b0dd66e591795138245be41fce8b11feb8f5c9c2710ae3cb",
       "source": "https://huggingface.co/florence-community/Florence-2-base"
     }
   ],

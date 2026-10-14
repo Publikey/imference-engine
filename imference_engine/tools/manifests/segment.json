@@ -38,15 +38,15 @@
     {
       "name": "encoder",
       "path": "mobilesam/mobile_sam_image_encoder.onnx",
-      "size_mb": 28,
-      "sha256": "",
+      "size_mb": 28.2,
+      "sha256": "580f5fb648ea1062c0aabc26217aed56921985f03f0cbbd852bba81d760cc749",
       "source": "https://huggingface.co/Acly/MobileSAM/resolve/main/mobile_sam_image_encoder.onnx"
     },
     {
       "name": "decoder",
       "path": "mobilesam/sam_mask_decoder_single.onnx",
-      "size_mb": 16,
-      "sha256": "",
+      "size_mb": 16.5,
+      "sha256": "93915fc7c993ab9d59ab8c9ccd3bce37f7509c81ab4150a74abd4d2abbd8570d",
       "source": "https://huggingface.co/Acly/MobileSAM/resolve/main/sam_mask_decoder_single.onnx"
     }
   ],

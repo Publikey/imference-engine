@@ -167,3 +167,26 @@ def rife_mean(path: Path) -> Path:
         helper.make_tensor_value_info("timestep", T, [1, 1, "h", "w"])],
         [helper.make_tensor_value_info("output", T, [1, 3, "h", "w"])])
     return _save(helper.make_model(g, opset_imports=_opset()), path)
+
+
+def yunet_static(path: Path) -> Path:
+    """YuNet 2023mar contract with its FIXED [1,3,640,640] input: constant
+    outputs, one face at stride-32 cell (row 1, col 2), centre (80, 48) in
+    graph pixels, 32x32 box."""
+    from onnx import TensorProto, helper, numpy_helper
+    import numpy as np
+
+    T = TensorProto.FLOAT
+    n = (640 // 32) ** 2
+    score = np.zeros((1, n, 1), np.float32)
+    score[0, 22] = 1.0
+    bbox = np.zeros((1, n, 4), np.float32)
+    bbox[0, 22] = [0.5, 0.5, 0.0, 0.0]
+    kps = np.zeros((1, n, 10), np.float32)
+    kps[0, 22] = [0.5, 0.5] * 5
+    consts = {"cls_32": score, "obj_32": score, "bbox_32": bbox, "kps_32": kps}
+    nodes = [helper.make_node("Constant", [], [k], value=numpy_helper.from_array(v, k + "_v"))
+             for k, v in consts.items()]
+    g = helper.make_graph(nodes, "yunet", [helper.make_tensor_value_info("input", T, [1, 3, 640, 640])],
+                          [helper.make_tensor_value_info(k, T, list(v.shape)) for k, v in consts.items()])
+    return _save(helper.make_model(g, opset_imports=_opset()), path)

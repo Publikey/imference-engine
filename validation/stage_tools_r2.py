@@ -10,15 +10,19 @@ verifies every download).
     export R2_ENDPOINT=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=...
     python validation/stage_tools_r2.py --prefix tools --update-manifests
     python validation/stage_tools_r2.py --tools upscale,remove-background --no-upload
-    python validation/stage_tools_r2.py --source rife/rife-v4.6.onnx=/path/rife46.onnx
+    python validation/stage_tools_r2.py --source rife/rife-v4.9.onnx=/path/rife49.onnx
 
 Then set ``TOOLS_MODEL_CDN=https://<cdn host>/<prefix>`` on workers / Desktop
 (or rely on the ``$IMAGE_MODEL_CDN/tools`` fallback by using prefix
 ``<image prefix>/tools``).
 
-Sources that are not a direct file (RIFE "exported to ONNX") need
-``--source <path>=<url or local file>``: there is no single official ONNX
-export, and the converter for RIFE is out of scope here.
+Sources that are not a direct file need ``--source <path>=<url or local file>``
+(every current manifest points at a direct file or a convertible .pth).
+
+The Real-ESRGAN .onnx files are CONVERTED here, and the export is not
+byte-stable across torch versions: upload the exact files whose sha256 the
+manifests carry (``--work`` keeps them), or re-run with ``--update-manifests``
+and commit the new hashes together with the upload.
 """
 from __future__ import annotations
 
@@ -189,7 +193,7 @@ def main() -> int:
         s3 = r2_client()
 
     for mf in sorted(MANIFESTS.glob("*.json")):
-        doc = json.loads(mf.read_text())
+        doc = json.loads(mf.read_text(encoding="utf-8"))
         if not doc.get("weights") or (wanted and doc["id"] not in wanted):
             continue
         print(f"[{doc['id']}]", flush=True)
@@ -216,7 +220,7 @@ def main() -> int:
                 w["sha256"], w["size_mb"] = digest, round(size / 1e6, 1)
                 changed = True
         if changed:
-            mf.write_text(json.dumps(doc, indent=2) + "\n")
+            mf.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8", newline="\n")
             print(f"  updated {mf.name}", flush=True)
     return 0
 

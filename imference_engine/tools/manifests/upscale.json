@@ -50,8 +50,8 @@
     {
       "name": "model",
       "path": "realesrgan/RealESRGAN_x4plus.onnx",
-      "size_mb": 67,
-      "sha256": "",
+      "size_mb": 67.1,
+      "sha256": "5c586662929cbc686c1a5c38d9c060dbdb4ea5863a1f7672b8c0761e6b89c033",
       "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
       "when": {
         "model": "realesrgan-x4plus"
@@ -60,8 +60,8 @@
     {
       "name": "model",
       "path": "realesrgan/RealESRGAN_x4plus_anime_6B.onnx",
-      "size_mb": 18,
-      "sha256": "",
+      "size_mb": 17.9,
+      "sha256": "80c1d814684a40a601939ecd76caf60a40c82ce2e34a5bb3f09a598a4b2b8318",
       "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
       "when": {
         "model": "realesrgan-x4plus-anime"

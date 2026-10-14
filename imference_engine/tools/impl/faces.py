@@ -63,12 +63,19 @@ def detect_yunet(sess, img, score_thr: float = 0.7, nms_thr: float = 0.3, top_k:
     from PIL import Image
 
     W, H = img.size
-    s = 640 / max(W, H) if max(W, H) > 640 else 1.0
-    w, h = int(W * s), int(H * s)
-    pw, ph = (w + 31) // 32 * 32, (h + 31) // 32 * 32
+    inp = sess.get_inputs()[0]
+    fh, fw = inp.shape[2:4]
+    if isinstance(fh, int) and isinstance(fw, int) and fh > 0 and fw > 0:
+        # Static graph (the official 2023mar export is 640x640): fit, then pad to it.
+        s = min(fw / W, fh / H, 1.0)
+        w, h = int(W * s), int(H * s)
+        pw, ph = fw, fh
+    else:
+        s = 640 / max(W, H) if max(W, H) > 640 else 1.0
+        w, h = int(W * s), int(H * s)
+        pw, ph = (w + 31) // 32 * 32, (h + 31) // 32 * 32
     canvas = np.zeros((ph, pw, 3), dtype=np.float32)
     canvas[:h, :w] = np.asarray(img.convert("RGB").resize((w, h), Image.BILINEAR), dtype=np.float32)[:, :, ::-1]
-    inp = sess.get_inputs()[0]
     outs = dict(zip([o.name for o in sess.get_outputs()], sess.run(None, {inp.name: canvas.transpose(2, 0, 1)[None]})))
     dets = []
     for stride in (8, 16, 32):

@@ -33,10 +33,10 @@
   "weights": [
     {
       "name": "model",
-      "path": "rife/rife-v4.6.onnx",
-      "size_mb": 21,
-      "sha256": "",
-      "source": "https://github.com/hzwer/Practical-RIFE (v4.6, exported to ONNX)"
+      "path": "rife/rife-v4.9.onnx",
+      "size_mb": 21.5,
+      "sha256": "76e4cef9ab42fa7dd4e8f6e4aba47462051e3faa969e4bca6479784fbab0ac6f",
+      "source": "https://huggingface.co/yuvraj108c/rife-onnx/resolve/main/rife49_ensemble_True_scale_1_sim.onnx"
     }
   ],
   "runtimes": {

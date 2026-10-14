@@ -57,8 +57,8 @@
     {
       "name": "model",
       "path": "rembg/birefnet-general-lite.onnx",
-      "size_mb": 214,
-      "sha256": "",
+      "size_mb": 224.0,
+      "sha256": "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333",
       "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx",
       "when": {
         "model": "birefnet-lite"
@@ -67,8 +67,8 @@
     {
       "name": "model",
       "path": "rembg/isnet-general-use.onnx",
-      "size_mb": 171,
-      "sha256": "",
+      "size_mb": 178.6,
+      "sha256": "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a",
       "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx",
       "when": {
         "model": "isnet"
@@ -78,7 +78,7 @@
       "name": "model",
       "path": "rembg/u2netp.onnx",
       "size_mb": 4.6,
-      "sha256": "",
+      "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
       "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
       "when": {
         "model": "u2netp"

@@ -59,7 +59,12 @@ def cache(tmp_path, monkeypatch):
 def put_weight(cache: Path, tool: str, name: str, builder, *args, params=None, **kw):
     m = catalog.get(tool)
     w = [w for w in m.weights_for(m.validate_params(params or _min_params(tool))) if w.name == name][0]
-    return builder(cache / w.path, *args, **kw)
+    out = builder(cache / w.path, *args, **kw)
+    if w.sha256:
+        # The synthetic graph stands in for the real file: stamp it as already
+        # verified against the manifest hash (see weights._verified).
+        (cache / (w.path + ".sha256")).write_text(w.sha256)
+    return out
 
 
 def _min_params(tool):
@@ -449,6 +454,20 @@ def test_restore_faces_math_and_identity(tmp_path, cache):
     out = np.asarray(faces.restore_face(sess, crop)).astype(int)
     assert np.abs(out - np.asarray(crop)).max() <= 1
 
+
+
+@needs_ort
+def test_yunet_static_input_is_fit_and_padded(tmp_path):
+    """The official YuNet export takes a fixed 640x640 input: any image size
+    must be scaled to fit, padded, and the detections mapped back."""
+    from imference_engine.tools.impl import faces, onnx_util
+
+    sess, _ = onnx_util.session(_fx().yunet_static(tmp_path / "y.onnx"), "cpu")
+    for size, s in (((1280, 960), 0.5), ((300, 200), 1.0)):
+        dets = faces.detect_yunet(sess, Image.new("RGB", size))
+        assert len(dets) == 1
+        x0, y0, x1, y1 = dets[0][1]
+        assert np.allclose([(x0 + x1) / 2, (y0 + y1) / 2, x1 - x0], [80 / s, 48 / s, 32 / s])
 
 @needs_ort
 @needs_ffmpeg
