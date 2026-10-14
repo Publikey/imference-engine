@@ -277,9 +277,16 @@ class Engine(BaseEngine):
         omitted, the model carries no opinion and generate() resolves against
         the engine defaults + request only. The catalog YAML loader populates
         this from a ``models.yml``; until then callers register per model.
+        Without ``defaults``, the backend may infer them from the weights
+        (``weights_defaults``: e.g. a Qwen-Image-Edit GGUF is the Lightning
+        4-step build, so 4 steps / CFG 1.0).
         """
         if not self._loaded:
             raise RuntimeError("Call Engine.load() before register_model")
+        if defaults is None:
+            be = self._backends.get(backend)
+            hook = getattr(be, "weights_defaults", None)
+            defaults = hook(str(weights_path)) if hook is not None else None
         self._models.register(
             RegisteredModel(
                 name=name,

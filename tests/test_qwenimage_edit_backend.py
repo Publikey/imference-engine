@@ -115,3 +115,20 @@ def test_text_encoder_weights_present_or_local_need_no_download(tmp_path, monkey
     ensure_text_encoder_weights("Qwen/Qwen-Image-Edit-2511", str(tmp_path), cdn_base=None)
     (te / "s1.safetensors").unlink()
     ensure_text_encoder_weights(str(tmp_path), str(tmp_path), cdn_base=None)  # local base dir: as-is
+
+
+def test_gguf_registration_gets_the_lightning_recipe(monkeypatch):
+    from imference_engine import Engine, RuntimeConfig
+    from imference_engine.catalog.defaults import GenerationDefaults
+
+    monkeypatch.delenv("QWEN_EDIT_LIGHTNING", raising=False)
+    engine = Engine(runtime=RuntimeConfig(device="cpu")).load()
+    engine.register_model("lite", backend="qwenimage-edit", weights_path="/m/qwen-image-edit-2511-Q4_K_M.gguf")
+    engine.register_model("bf16", backend="qwenimage-edit", weights_path="/m/edit.safetensors")
+    engine.register_model("row", backend="qwenimage-edit", weights_path="/m/x.gguf",
+                          defaults=GenerationDefaults(num_steps=8))
+    d = {n: engine._models.config_for(n).defaults for n in ("lite", "bf16", "row")}
+    assert (d["lite"].num_steps, d["lite"].guidance_scale) == (4, 1.0)
+    assert d["bf16"].num_steps is None and d["row"].num_steps == 8
+    monkeypatch.setenv("QWEN_EDIT_LIGHTNING", "none")
+    assert QwenImageEditBackend().weights_defaults("/m/x.gguf") is None

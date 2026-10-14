@@ -70,6 +70,15 @@ class QwenImageEditBackend(QwenImageBackend):
         # override per catalog row (e.g. 8 steps / cfg 1.0).
         return GenerationDefaults(num_steps=40, guidance_scale=4.0)
 
+    def weights_defaults(self, weights_path: str) -> Optional[GenerationDefaults]:
+        """A GGUF is the lite build with the Lightning 4-step LoRA: its recipe
+        (4 steps, CFG 1.0) unless a catalog row says otherwise."""
+        from imference_engine.qwenimage.edit_lite import lightning_setting
+
+        if weights_path.lower().endswith(".gguf") and lightning_setting() != "none":
+            return GenerationDefaults(num_steps=4, guidance_scale=1.0)
+        return None
+
     def load_pipeline(self, *, local_path: str, base_model: Optional[str] = None) -> Any:
         import torch
         from diffusers import QwenImageEditPlusPipeline
