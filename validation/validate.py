@@ -81,6 +81,23 @@ def resolve_weights(engine: str, entry: dict, cache_dir: Path) -> str:
     return hf_hub_download(entry["repo"], filename, local_dir=str(dest))
 
 
+def load_source_image(spec: str, width: int, height: int):
+    """Source image for edit-only engines: a path, or ``synthetic`` — a fixed,
+    download-free scene (red ball on grass under a blue sky) whose expected
+    edit is obvious at a glance."""
+    from PIL import Image, ImageDraw
+
+    if spec != "synthetic":
+        return Image.open(spec).convert("RGB").resize((width, height))
+    img = Image.new("RGB", (width, height), (120, 170, 230))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, height * 2 // 3, width, height], fill=(70, 140, 60))
+    r = min(width, height) // 6
+    cx, cy = width // 2, height * 2 // 3 - r // 2
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(210, 30, 30))
+    return img
+
+
 def run_one(engine: str, entry: dict, args) -> dict:
     """Load one engine's base model, render, save. Returns a result record."""
     from imference_engine import Engine, RuntimeConfig
@@ -123,6 +140,9 @@ def run_one(engine: str, entry: dict, args) -> dict:
         # (no stable public URL to pin) — add ad hoc when validating LoRAs.
         if entry.get("loras"):
             gen_kwargs["loras"] = entry["loras"]
+        if entry.get("source_image"):
+            gen_kwargs["source_image"] = load_source_image(
+                entry["source_image"], gen_kwargs["width"], gen_kwargs["height"])
 
         result = eng.generate(**gen_kwargs)
 

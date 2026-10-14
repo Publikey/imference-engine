@@ -18,6 +18,8 @@
 #   offload      : enable_model_cpu_offload (set true for the 8-20B models)
 #   prompt / negative_prompt / width / height / num_steps / guidance_scale / seed
 #   backend_options: engine-specific (e.g. Z-Image shift)
+#   source_image : edit-only engines (qwenimage-edit) — a local image path, or
+#                  `synthetic` for a built-in test scene (red ball on grass)
 #
 # STATUS: all 7 entries validated end-to-end on diffusers 0.39 (pins now on
 # 0.40.0 — re-run validate.py before releasing) (RTX PRO 5000
@@ -105,6 +107,25 @@ qwenimage:
   base_model: Qwen/Qwen-Image
   offload: true
   prompt: 'a bookstore window with a sign that reads "Imference Engine"'
+  negative_prompt: " "
+  width: 1024
+  height: 1024
+  num_steps: 40
+  guidance_scale: 4.0
+  seed: 42
+
+qwenimage-edit:
+  # Instruction editing — no text-to-image mode, so the harness feeds a source
+  # image. Repo mode pulls the official diffusers repo (~58 GB; or point
+  # weights_local at a transformer-only .safetensors + base_model). NOT yet
+  # validated on GPU.
+  mode: repo
+  repo: Qwen/Qwen-Image-Edit-2511
+  filename: null
+  base_model: null
+  offload: true
+  source_image: synthetic
+  prompt: "make the red ball blue, keep everything else unchanged"
   negative_prompt: " "
   width: 1024
   height: 1024

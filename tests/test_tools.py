@@ -27,7 +27,19 @@ try:
 except ImportError:
     HAS_ORT = False
 needs_ort = pytest.mark.skipif(not HAS_ORT, reason="onnx/onnxruntime not installed")
-needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+
+
+def _ffmpeg():
+    """The binary the tools themselves use (PATH or imageio-ffmpeg), or None."""
+    from imference_engine.tools.media import ffmpeg_bin
+    try:
+        return ffmpeg_bin()
+    except ToolError:
+        return None
+
+
+FFMPEG = _ffmpeg()
+needs_ffmpeg = pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed")
 
 
 # ----------------------------------------------------------------- fixtures
@@ -311,10 +323,10 @@ def test_needs_engine_without_engine(tmp_path):
 
 @pytest.fixture
 def clip(tmp_path):
-    if shutil.which("ffmpeg") is None:
+    if FFMPEG is None:
         pytest.skip("ffmpeg not installed")
     p = tmp_path / "clip.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=96x64:rate=10",
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=96x64:rate=10",
                     "-t", "2", "-pix_fmt", "yuv420p", str(p)], check=True)
     return p
 
