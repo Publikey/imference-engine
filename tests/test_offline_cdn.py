@@ -177,3 +177,32 @@ def test_local_repo_dir_cdn_idempotent_offline(cdn_server, tmp_path):
         cdn_base="http://127.0.0.1:1/never",
     )
     assert os.path.isfile(os.path.join(d, "model_index.json"))
+
+
+def test_local_repo_dir_cdn_pulls_only_the_patterns(cdn_server, tmp_path):
+    """The manifest lists the whole mirrored repo; a caller needing a subset
+    (e.g. a Qwen-Image-Edit GGUF build skipping the bf16 encoder) gets only
+    that subset, marked complete for that pattern set only."""
+    cache = tmp_path / "image-tree"
+    d = local_repo_dir(REPO, ["model_index.json", "scheduler/*"], str(cache), namespace="image",
+                       cdn_base=cdn_server)
+    assert os.path.isfile(os.path.join(d, "scheduler", "scheduler_config.json"))
+    assert not os.path.exists(os.path.join(d, "tokenizer"))
+    assert not os.path.exists(os.path.join(d, ".cdn_complete"))
+    # Same subset again: complete, no server needed.
+    local_repo_dir(REPO, ["scheduler/*", "model_index.json"], str(cache), namespace="image",
+                   cdn_base="http://127.0.0.1:1/never")
+    # A wider set is not covered by the subset marker: it completes the tree.
+    local_repo_dir(REPO, ["*"], str(cache), namespace="image", cdn_base=cdn_server)
+    assert os.path.isfile(os.path.join(d, "tokenizer", "vocab.json"))
+    assert os.path.isfile(os.path.join(d, ".cdn_complete"))
+    # A full pull covers any subset afterwards, offline.
+    local_repo_dir(REPO, ["tokenizer/*"], str(cache), namespace="image",
+                   cdn_base="http://127.0.0.1:1/never")
+
+
+def test_patterns_matching_everything_mark_a_full_pull(cdn_server, tmp_path):
+    cache = tmp_path / "image-tree"
+    d = local_repo_dir(REPO, ["model_index.json", "scheduler/*", "tokenizer/*"], str(cache),
+                       namespace="image", cdn_base=cdn_server)
+    assert os.path.isfile(os.path.join(d, ".cdn_complete"))

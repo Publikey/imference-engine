@@ -82,9 +82,9 @@ def local_repo_dir(
         # tree, and short-circuiting on the sentinel would then load a broken repo
         # (missing shards/index). Without the marker, re-run _cdn_snapshot, which
         # is idempotent (skips already-complete files, re-fetches the rest).
-        if not os.path.exists(os.path.join(d, _CDN_COMPLETE)):
+        if not _cdn_complete(d, patterns):
             try:
-                _cdn_snapshot(cdn_base, repo, d)
+                _cdn_snapshot(cdn_base, repo, d, patterns)
             except Exception as e:  # noqa: BLE001
                 # CDN gap (repo not mirrored -> 404 on its manifest) or any other
                 # CDN failure: fall back to HuggingFace so a hole in the mirror
@@ -96,7 +96,7 @@ def local_repo_dir(
                     "CDN fetch failed for %s (%s); falling back to HuggingFace", repo, e)
                 from huggingface_hub import snapshot_download
                 snapshot_download(repo, allow_patterns=patterns, local_dir=d)
-                open(os.path.join(d, _CDN_COMPLETE), "w").close()
+                open(os.path.join(d, _cdn_marker(patterns)), "w").close()
         return d
     # Fast path: our own completed pull left the marker -> fully populated, skip.
     if os.path.exists(os.path.join(d, _HF_COMPLETE)):
@@ -155,7 +155,23 @@ def _cdn_threads() -> int:
                or os.environ.get("WAN_CDN_THREADS") or "8")
 
 
-def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str) -> None:
+def _cdn_marker(patterns: Optional[list]) -> str:
+    """Completion marker for a pull restricted to ``patterns`` (None = all)."""
+    if not patterns or "*" in patterns:
+        return _CDN_COMPLETE
+    import hashlib
+    key = hashlib.sha1("|".join(sorted(patterns)).encode()).hexdigest()[:10]
+    return f"{_CDN_COMPLETE}-{key}"
+
+
+def _cdn_complete(dest_dir: str, patterns: Optional[list]) -> bool:
+    """A full pull (``.cdn_complete``) covers every pattern set; a filtered pull
+    only its own. Keeps trees pulled before filtering existed valid offline."""
+    return (os.path.exists(os.path.join(dest_dir, _CDN_COMPLETE))
+            or os.path.exists(os.path.join(dest_dir, _cdn_marker(patterns))))
+
+
+def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str, patterns: Optional[list] = None) -> None:
     """Populate a flat local repo dir from a CDN mirror via its manifest.
 
     Reads ``<cdn_base>/<repo>/.manifest.json`` (a JSON list of repo-relative file
@@ -174,6 +190,14 @@ def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str) -> None:
     logger.info("  CDN manifest %s", manifest_url)
     with urlopen(Request(manifest_url, headers={"User-Agent": "imference-engine"})) as r:
         files = json.load(r)
+    # Only what the caller needs (the manifest lists the whole mirrored repo:
+    # e.g. a Qwen-Image-Edit GGUF build skips the 16.6 GB bf16 encoder shards).
+    if patterns and "*" not in patterns:
+        from fnmatch import fnmatchcase
+        wanted = [f for f in files if any(fnmatchcase(f, p) for p in patterns)]
+        if len(wanted) == len(files):
+            patterns = None  # nothing filtered out: a full pull
+        files = wanted
 
     threads = _cdn_threads()
     for rel in files:
@@ -183,7 +207,8 @@ def _cdn_snapshot(cdn_base: str, repo: str, dest_dir: str) -> None:
         download_parallel(f"{base}/{rel}", dest, threads)
     # Mark complete ONLY after every file landed — a killed pull leaves no marker,
     # so the next call re-enters here and finishes the partial tree.
-    open(os.path.join(dest_dir, _CDN_COMPLETE), "w").close()
+    os.makedirs(dest_dir, exist_ok=True)
+    open(os.path.join(dest_dir, _cdn_marker(patterns)), "w").close()
 
 
 def cdn_download(
