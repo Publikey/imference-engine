@@ -70,28 +70,39 @@ def _generate(ctx, params, source, strength: float):
 
 
 def prefill(img, mask):
-    """Replace masked pixels with a heavily blurred version of their
-    surroundings, so img2img does not just redraw the erased object."""
-    from PIL import Image, ImageFilter
+    """Replace masked pixels with a smooth fill from their surroundings, so
+    img2img does not just redraw the erased object.
 
-    rgb = img.convert("RGB")
-    # Blur the image with the masked area excluded: average of (img * keep)
-    # blurred / keep blurred (normalized convolution).
+    Push-pull in float: average the kept pixels down a 2x pyramid, then fill
+    each level's holes from the coarser one on the way back up. Any hole size
+    gets the colours of its border (a fixed-radius blur leaves the centre of a
+    large mask with no weight — it came out black)."""
+    from PIL import Image
     import numpy as np
-    keep = 1.0 - np.asarray(mask, dtype=np.float32) / 255.0
-    a = np.asarray(rgb, dtype=np.float32)
-    r = max(8, max(img.size) // 16)
 
-    def blur(x):
-        im = Image.fromarray(np.clip(x, 0, 255).astype(np.uint8)) if x.ndim == 3 else \
-            Image.fromarray(np.clip(x * 255, 0, 255).astype(np.uint8), "L")
-        return np.asarray(im.filter(ImageFilter.GaussianBlur(r)), dtype=np.float32)
+    a = np.asarray(img.convert("RGB"), dtype=np.float32)
+    keep = (np.asarray(mask, dtype=np.float32) < 128).astype(np.float32)[..., None]
+    if keep.min() > 0:
+        return img.convert("RGB")
 
-    num = blur(a * keep[..., None])
-    den = blur(keep) / 255.0
-    fill = num / np.maximum(den[..., None], 1e-3)
-    out = np.where(keep[..., None] > 0.5, a, fill)
-    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGB")
+    def half(x):
+        x = np.pad(x, ((0, x.shape[0] % 2), (0, x.shape[1] % 2), (0, 0)), mode="edge")
+        return x.reshape(x.shape[0] // 2, 2, x.shape[1] // 2, 2, -1).mean(axis=(1, 3))
+
+    def up(x, shape):
+        return np.stack([np.asarray(Image.fromarray(x[..., c], "F").resize((shape[1], shape[0]), Image.BILINEAR))
+                         for c in range(x.shape[2])], axis=-1)
+
+    levels = [(a * keep, keep)]                       # premultiplied colour, weight in [0, 1]
+    while min(levels[-1][1].shape[:2]) > 1:
+        p, w = levels[-1]
+        levels.append((half(p), half(w)))
+    p, w = levels[-1]
+    col = np.where(w > 0, p / np.maximum(w, 1e-6), 127.5)   # all masked: neutral grey
+    for p, w in reversed(levels[:-1]):
+        col = p + (1.0 - w) * up(col, p.shape)
+    out = np.where(keep > 0.5, a, col)
+    return Image.fromarray(np.clip(out + 0.5, 0, 255).astype(np.uint8), "RGB")
 
 
 def _inpaint_core(ctx, params, rgb, mask, strength: float, feather: int):

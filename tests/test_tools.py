@@ -528,6 +528,25 @@ def test_inpaint_composites_only_mask(tmp_path):
     assert eng.calls[0]["strength"] == 0.9
 
 
+
+def test_prefill_fills_large_holes_from_their_border():
+    """A mask covering most of the image must still get the surrounding
+    colours, never black (the old fixed-radius blur left the centre empty)."""
+    from imference_engine.tools.impl.generation import prefill
+
+    src = Image.new("RGB", (400, 300), (200, 100, 50))
+    mask = Image.new("L", (400, 300), 0)
+    mask.paste(255, (20, 20, 380, 280))
+    out = np.asarray(prefill(src, mask)).astype(int)
+    assert np.abs(out - [200, 100, 50]).max() <= 2
+    # two-colour border: the fill blends them, kept pixels are untouched
+    arr = np.zeros((300, 400, 3), np.uint8)
+    arr[:, :200], arr[:, 200:] = (255, 0, 0), (0, 0, 255)
+    out = np.asarray(prefill(Image.fromarray(arr), mask)).astype(int)
+    assert np.array_equal(out[:20], arr[:20])
+    assert out[150, 40, 0] > out[150, 360, 0] and out[150, 360, 2] > out[150, 40, 2]
+    assert out[20:280, 20:380].sum(axis=2).min() > 100
+
 def test_outpaint_canvas(tmp_path):
     eng = FakeEngine()
     rng = np.random.default_rng(4)
