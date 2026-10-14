@@ -1,0 +1,510 @@
+[
+  {
+    "preset": {
+      "name": "q4-l4-disk",
+      "transformer": "gguf:Q4_K_M",
+      "encoder": "nf4",
+      "lightning": "4",
+      "offload": "group-disk",
+      "unload_encoder": true,
+      "vae_tiling": true,
+      "steps": null,
+      "cfg": null,
+      "fuse_lora": true,
+      "description": "Last resort for 8 GB cards: Q4_K_M (13.2 GB). Community: quality drops at Q4.",
+      "extra": {},
+      "effective_steps": 4,
+      "effective_cfg": 1.0
+    },
+    "cases": [
+      {
+        "id": "color",
+        "seconds": 81.62,
+        "path": "out\\q4-l4-disk\\color.png"
+      },
+      {
+        "id": "remove",
+        "seconds": 76.64,
+        "path": "out\\q4-l4-disk\\remove.png"
+      },
+      {
+        "id": "style",
+        "seconds": 86.79,
+        "path": "out\\q4-l4-disk\\style.png"
+      },
+      {
+        "id": "add",
+        "seconds": 74.74,
+        "path": "out\\q4-l4-disk\\add.png"
+      }
+    ],
+    "error": null,
+    "total_seconds": 364.9,
+    "memory": {
+      "ram_peak_gb": 21.18,
+      "vram_peak_gb": 6.47,
+      "vram_reserved_peak_gb": 7.42,
+      "stages": [
+        {
+          "name": "load_transformer",
+          "seconds": 18.39,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 21.18
+        },
+        {
+          "name": "load_pipeline",
+          "seconds": 1.06,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 8.21
+        },
+        {
+          "name": "load_lora",
+          "seconds": 2.54,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 9.86
+        },
+        {
+          "name": "setup_offload",
+          "seconds": 12.05,
+          "vram_peak_gb": 0.25,
+          "ram_peak_gb": 9.35
+        },
+        {
+          "name": "encode",
+          "seconds": 10.34,
+          "vram_peak_gb": 6.42,
+          "ram_peak_gb": 7.31
+        },
+        {
+          "name": "denoise",
+          "seconds": 71.03,
+          "vram_peak_gb": 2.01,
+          "ram_peak_gb": 2.81
+        },
+        {
+          "name": "encode",
+          "seconds": 8.48,
+          "vram_peak_gb": 6.45,
+          "ram_peak_gb": 7.88
+        },
+        {
+          "name": "denoise",
+          "seconds": 67.98,
+          "vram_peak_gb": 2.01,
+          "ram_peak_gb": 2.37
+        },
+        {
+          "name": "encode",
+          "seconds": 20.02,
+          "vram_peak_gb": 6.46,
+          "ram_peak_gb": 7.9
+        },
+        {
+          "name": "denoise",
+          "seconds": 66.67,
+          "vram_peak_gb": 2.02,
+          "ram_peak_gb": 2.39
+        },
+        {
+          "name": "encode",
+          "seconds": 8.21,
+          "vram_peak_gb": 6.47,
+          "ram_peak_gb": 7.9
+        },
+        {
+          "name": "denoise",
+          "seconds": 66.34,
+          "vram_peak_gb": 2.02,
+          "ram_peak_gb": 2.37
+        }
+      ]
+    },
+    "notes": {
+      "gguf_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--unsloth--Qwen-Image-Edit-2511-GGUF\\snapshots\\0d33d9692b4b26212297240d87b0d4719aa4fd06\\qwen-image-edit-2511-Q4_K_M.gguf",
+      "lightning_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--lightx2v--Qwen-Image-Edit-2511-Lightning\\snapshots\\d74eba145674fd7e31b949324e148e21e7118abd\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "lora": "unfused (quantized transformer)",
+      "encoder_cache": "hit"
+    }
+  },
+  {
+    "preset": {
+      "name": "q5-l4-disk",
+      "transformer": "gguf:Q5_K_M",
+      "encoder": "nf4",
+      "lightning": "4",
+      "offload": "group-disk",
+      "unload_encoder": true,
+      "vae_tiling": true,
+      "steps": null,
+      "cfg": null,
+      "fuse_lora": true,
+      "description": "16 GB RAM machines: Q5_K_M with group offload to disk.",
+      "extra": {},
+      "effective_steps": 4,
+      "effective_cfg": 1.0
+    },
+    "cases": [
+      {
+        "id": "color",
+        "seconds": 83.51,
+        "path": "out\\q5-l4-disk\\color.png"
+      },
+      {
+        "id": "remove",
+        "seconds": 79.6,
+        "path": "out\\q5-l4-disk\\remove.png"
+      },
+      {
+        "id": "style",
+        "seconds": 77.83,
+        "path": "out\\q5-l4-disk\\style.png"
+      },
+      {
+        "id": "add",
+        "seconds": 76.45,
+        "path": "out\\q5-l4-disk\\add.png"
+      }
+    ],
+    "error": null,
+    "total_seconds": 380.8,
+    "memory": {
+      "ram_peak_gb": 20.56,
+      "vram_peak_gb": 6.47,
+      "vram_reserved_peak_gb": 7.31,
+      "stages": [
+        {
+          "name": "load_transformer",
+          "seconds": 26.85,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 20.56
+        },
+        {
+          "name": "load_pipeline",
+          "seconds": 1.88,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 9.76
+        },
+        {
+          "name": "load_lora",
+          "seconds": 2.57,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 11.47
+        },
+        {
+          "name": "setup_offload",
+          "seconds": 16.2,
+          "vram_peak_gb": 0.25,
+          "ram_peak_gb": 10.92
+        },
+        {
+          "name": "encode",
+          "seconds": 9.38,
+          "vram_peak_gb": 6.42,
+          "ram_peak_gb": 7.26
+        },
+        {
+          "name": "denoise",
+          "seconds": 73.92,
+          "vram_peak_gb": 2.04,
+          "ram_peak_gb": 2.82
+        },
+        {
+          "name": "encode",
+          "seconds": 8.55,
+          "vram_peak_gb": 6.45,
+          "ram_peak_gb": 7.86
+        },
+        {
+          "name": "denoise",
+          "seconds": 70.89,
+          "vram_peak_gb": 2.04,
+          "ram_peak_gb": 2.4
+        },
+        {
+          "name": "encode",
+          "seconds": 7.9,
+          "vram_peak_gb": 6.46,
+          "ram_peak_gb": 7.95
+        },
+        {
+          "name": "denoise",
+          "seconds": 69.83,
+          "vram_peak_gb": 2.05,
+          "ram_peak_gb": 2.35
+        },
+        {
+          "name": "encode",
+          "seconds": 7.96,
+          "vram_peak_gb": 6.47,
+          "ram_peak_gb": 7.86
+        },
+        {
+          "name": "denoise",
+          "seconds": 68.36,
+          "vram_peak_gb": 2.05,
+          "ram_peak_gb": 2.42
+        }
+      ]
+    },
+    "notes": {
+      "gguf_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--unsloth--Qwen-Image-Edit-2511-GGUF\\snapshots\\0d33d9692b4b26212297240d87b0d4719aa4fd06\\qwen-image-edit-2511-Q5_K_M.gguf",
+      "lightning_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--lightx2v--Qwen-Image-Edit-2511-Lightning\\snapshots\\d74eba145674fd7e31b949324e148e21e7118abd\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "lora": "unfused (quantized transformer)",
+      "encoder_cache": "hit"
+    }
+  },
+  {
+    "preset": {
+      "name": "q4-l4",
+      "transformer": "gguf:Q4_K_M",
+      "encoder": "nf4",
+      "lightning": "4",
+      "offload": "group",
+      "unload_encoder": true,
+      "vae_tiling": true,
+      "steps": null,
+      "cfg": null,
+      "fuse_lora": true,
+      "description": "Last resort for 8 GB cards: Q4_K_M (13.2 GB). Community: quality drops at Q4.",
+      "extra": {},
+      "effective_steps": 4,
+      "effective_cfg": 1.0
+    },
+    "cases": [
+      {
+        "id": "color",
+        "seconds": 55.29,
+        "path": "out\\q4-l4\\color.png"
+      },
+      {
+        "id": "remove",
+        "seconds": 48.12,
+        "path": "out\\q4-l4\\remove.png"
+      },
+      {
+        "id": "style",
+        "seconds": 54.5,
+        "path": "out\\q4-l4\\style.png"
+      },
+      {
+        "id": "add",
+        "seconds": 57.46,
+        "path": "out\\q4-l4\\add.png"
+      }
+    ],
+    "error": null,
+    "total_seconds": 249.6,
+    "memory": {
+      "ram_peak_gb": 22.44,
+      "vram_peak_gb": 6.47,
+      "vram_reserved_peak_gb": 7.42,
+      "stages": [
+        {
+          "name": "load_transformer",
+          "seconds": 18.4,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 21.36
+        },
+        {
+          "name": "load_pipeline",
+          "seconds": 1.18,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 8.87
+        },
+        {
+          "name": "load_lora",
+          "seconds": 3.23,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 10.53
+        },
+        {
+          "name": "setup_offload",
+          "seconds": 0.6,
+          "vram_peak_gb": 0.25,
+          "ram_peak_gb": 9.98
+        },
+        {
+          "name": "encode",
+          "seconds": 9.07,
+          "vram_peak_gb": 6.42,
+          "ram_peak_gb": 15.61
+        },
+        {
+          "name": "denoise",
+          "seconds": 46.08,
+          "vram_peak_gb": 2.01,
+          "ram_peak_gb": 16.6
+        },
+        {
+          "name": "encode",
+          "seconds": 5.06,
+          "vram_peak_gb": 6.45,
+          "ram_peak_gb": 22.44
+        },
+        {
+          "name": "denoise",
+          "seconds": 42.92,
+          "vram_peak_gb": 2.01,
+          "ram_peak_gb": 16.78
+        },
+        {
+          "name": "encode",
+          "seconds": 10.77,
+          "vram_peak_gb": 6.46,
+          "ram_peak_gb": 22.38
+        },
+        {
+          "name": "denoise",
+          "seconds": 43.63,
+          "vram_peak_gb": 2.02,
+          "ram_peak_gb": 16.59
+        },
+        {
+          "name": "encode",
+          "seconds": 14.44,
+          "vram_peak_gb": 6.47,
+          "ram_peak_gb": 22.1
+        },
+        {
+          "name": "denoise",
+          "seconds": 42.9,
+          "vram_peak_gb": 2.02,
+          "ram_peak_gb": 15.34
+        }
+      ]
+    },
+    "notes": {
+      "gguf_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--unsloth--Qwen-Image-Edit-2511-GGUF\\snapshots\\0d33d9692b4b26212297240d87b0d4719aa4fd06\\qwen-image-edit-2511-Q4_K_M.gguf",
+      "lightning_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--lightx2v--Qwen-Image-Edit-2511-Lightning\\snapshots\\d74eba145674fd7e31b949324e148e21e7118abd\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "lora": "unfused (quantized transformer)",
+      "encoder_cache": "hit"
+    }
+  },
+  {
+    "preset": {
+      "name": "q5-l4",
+      "transformer": "gguf:Q5_K_M",
+      "encoder": "nf4",
+      "lightning": "4",
+      "offload": "group",
+      "unload_encoder": true,
+      "vae_tiling": true,
+      "steps": null,
+      "cfg": null,
+      "fuse_lora": true,
+      "description": "Recommended 12 GB VRAM / 24 GB RAM: Q5_K_M (15 GB) + Lightning 4 + NF4 encoder.",
+      "extra": {},
+      "effective_steps": 4,
+      "effective_cfg": 1.0
+    },
+    "cases": [
+      {
+        "id": "color",
+        "seconds": 57.65,
+        "path": "out\\q5-l4\\color.png"
+      },
+      {
+        "id": "remove",
+        "seconds": 51.98,
+        "path": "out\\q5-l4\\remove.png"
+      },
+      {
+        "id": "style",
+        "seconds": 49.7,
+        "path": "out\\q5-l4\\style.png"
+      },
+      {
+        "id": "add",
+        "seconds": 49.74,
+        "path": "out\\q5-l4\\add.png"
+      }
+    ],
+    "error": null,
+    "total_seconds": 242.8,
+    "memory": {
+      "ram_peak_gb": 23.81,
+      "vram_peak_gb": 6.47,
+      "vram_reserved_peak_gb": 7.31,
+      "stages": [
+        {
+          "name": "load_transformer",
+          "seconds": 18.95,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 22.96
+        },
+        {
+          "name": "load_pipeline",
+          "seconds": 1.0,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 8.5
+        },
+        {
+          "name": "load_lora",
+          "seconds": 2.3,
+          "vram_peak_gb": 0.0,
+          "ram_peak_gb": 10.15
+        },
+        {
+          "name": "setup_offload",
+          "seconds": 0.57,
+          "vram_peak_gb": 0.25,
+          "ram_peak_gb": 9.61
+        },
+        {
+          "name": "encode",
+          "seconds": 8.5,
+          "vram_peak_gb": 6.42,
+          "ram_peak_gb": 15.13
+        },
+        {
+          "name": "denoise",
+          "seconds": 49.02,
+          "vram_peak_gb": 2.04,
+          "ram_peak_gb": 17.93
+        },
+        {
+          "name": "encode",
+          "seconds": 6.9,
+          "vram_peak_gb": 6.45,
+          "ram_peak_gb": 23.81
+        },
+        {
+          "name": "denoise",
+          "seconds": 44.96,
+          "vram_peak_gb": 2.04,
+          "ram_peak_gb": 18.07
+        },
+        {
+          "name": "encode",
+          "seconds": 4.72,
+          "vram_peak_gb": 6.46,
+          "ram_peak_gb": 23.72
+        },
+        {
+          "name": "denoise",
+          "seconds": 44.89,
+          "vram_peak_gb": 2.05,
+          "ram_peak_gb": 17.46
+        },
+        {
+          "name": "encode",
+          "seconds": 4.62,
+          "vram_peak_gb": 6.47,
+          "ram_peak_gb": 23.33
+        },
+        {
+          "name": "denoise",
+          "seconds": 45.0,
+          "vram_peak_gb": 2.05,
+          "ram_peak_gb": 17.54
+        }
+      ]
+    },
+    "notes": {
+      "gguf_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--unsloth--Qwen-Image-Edit-2511-GGUF\\snapshots\\0d33d9692b4b26212297240d87b0d4719aa4fd06\\qwen-image-edit-2511-Q5_K_M.gguf",
+      "lightning_file": "C:\\Users\\joul1\\.cache\\huggingface\\hub\\models--lightx2v--Qwen-Image-Edit-2511-Lightning\\snapshots\\d74eba145674fd7e31b949324e148e21e7118abd\\Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "lora": "unfused (quantized transformer)",
+      "encoder_cache": "hit"
+    }
+  }
+]

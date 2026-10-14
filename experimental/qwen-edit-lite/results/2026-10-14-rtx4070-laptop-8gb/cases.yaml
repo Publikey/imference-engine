@@ -1,0 +1,13 @@
+# qwen-edit-lite bench on an RTX 4070 Laptop (8 GB) / 32 GB RAM — OpenCV sample images.
+- id: color
+  image: butterfly.jpg
+  instruction: Make the butterfly's wings bright blue and white instead of black and white, keep everything else unchanged.
+- id: remove
+  image: messi5.jpg
+  instruction: Remove the yellow ball and the watermark logo in the bottom right corner, fill the grass naturally.
+- id: style
+  image: lena.jpg
+  instruction: Turn this photo into a watercolor painting.
+- id: add
+  image: fruits.jpg
+  instruction: Add a small red ladybug sitting on the lime.

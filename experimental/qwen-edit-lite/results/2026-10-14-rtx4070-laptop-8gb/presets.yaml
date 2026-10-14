@@ -1,0 +1,3 @@
+- base: q4-l4
+  name: q4-l4-disk
+  offload: group-disk
