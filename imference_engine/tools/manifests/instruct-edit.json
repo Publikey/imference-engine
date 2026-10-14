@@ -46,13 +46,13 @@
       "type": "int",
       "min": 1,
       "max": 80,
-      "description": "Denoising steps (default: the model's recipe, 40 for 2511)."
+      "description": "Denoising steps (default: the model's recipe, 4 for the Lightning build of qwen-image-edit-2511)."
     },
     "guidance": {
       "type": "float",
       "min": 0,
       "max": 10,
-      "description": "True CFG scale (default: the model's recipe, 4.0)."
+      "description": "True CFG scale (default: the model's recipe, 1.0 for the Lightning build)."
     },
     "keep_size": {
       "type": "bool",
