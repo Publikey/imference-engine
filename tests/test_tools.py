@@ -653,3 +653,14 @@ def test_instruct_edit_rejects_non_edit_model_and_vary_rejects_edit_model(tmp_pa
     with pytest.raises(ToolError) as e:
         run_tool("instruct-edit", {"image": str(p)}, {"model": "m"}, engine=FakeEditEngine())
     assert e.value.field == "instruction"
+
+
+def test_public_export_lists_weight_files_per_variant():
+    """Clients size the download of the chosen variant (and check their cache)."""
+    rb = [t for t in catalog.export()["tools"] if t["id"] == "remove-background"][0]
+    files = {w["when"]["model"]: w for w in rb["weight_files"]}
+    assert set(files) == {"birefnet-lite", "isnet", "u2netp"}
+    assert all(w["path"] and w["size_mb"] > 0 and "sha256" not in w and "source" not in w for w in files.values())
+    assert abs(sum(w["size_mb"] for w in files.values()) - rb["weights_mb"]) < 0.2
+    up = [t for t in catalog.export()["tools"] if t["id"] == "resize"][0]
+    assert up["weight_files"] == [] and up["weights_mb"] == 0

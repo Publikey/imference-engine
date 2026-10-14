@@ -366,10 +366,17 @@ class ToolManifest:
         }
 
     def public_dict(self) -> dict:
-        """What ``GET /tools`` / the MCP server publish: no weight paths."""
+        """What ``GET /tools`` / the MCP server publish: no sources or hashes.
+        ``weight_files`` lists each file's CDN-relative path, size and the
+        param value it is fetched for (``when``), so a client can tell what
+        the chosen variant downloads (and whether it is already cached)."""
         d = self.to_dict()
         d.pop("weights")
         d["weights_mb"] = round(sum(w.size_mb for w in self.weights), 1)
+        d["weight_files"] = [
+            {"path": w.path, "size_mb": w.size_mb, **({"when": dict(w.when)} if w.when else {})}
+            for w in self.weights
+        ]
         return d
 
 

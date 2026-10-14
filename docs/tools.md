@@ -23,8 +23,9 @@ Each tool is a JSON manifest in `imference_engine/tools/manifests/<id>.json`:
 | `available` | `false` = declared, not implemented (hidden everywhere) |
 
 `python -m imference_engine.tools export` prints the public catalog
-(`{"version": 1, "tools": [...]}`, no weight paths, plus `weights_mb` and
-`cloud_available`). The API, Desktop and MCP ship a copy of that JSON and must
+(`{"version": 1, "tools": [...]}`, no weight sources or hashes, plus
+`weights_mb`, `weight_files` (CDN-relative `path`, `size_mb`, and the param
+value it is fetched for, `when`) and `cloud_available`). The API, Desktop and MCP ship a copy of that JSON and must
 re-export it when manifests change.
 
 ### Param validation (identical on every surface)
