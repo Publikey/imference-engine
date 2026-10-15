@@ -2,7 +2,7 @@
 
     from imference_engine.tools import catalog
     catalog.get("remove-background")      # -> ToolManifest
-    catalog.for_queue("tools-light")      # tools a cloud worker of that queue serves
+    catalog.for_queue("tools-gpu")      # tools a cloud worker of that queue serves
     catalog.export()                      # JSON-able list for GET /tools / MCP
 
 Unavailable tools (``available: false``, e.g. declared but not implemented

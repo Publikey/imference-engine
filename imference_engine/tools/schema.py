@@ -31,7 +31,7 @@ PARAM_TYPES = ("int", "float", "bool", "string", "enum", "points")
 INPUT_TYPES = ("image", "mask", "video")
 OUTPUT_TYPES = ("image", "mask", "video", "text", "json")
 LOCAL_RUNTIMES = ("cpu", "cuda", "mps", "rocm", "directml")
-CLOUD_QUEUES = ("tools-cpu", "tools-light", "generation")
+CLOUD_QUEUES = ("tools-cpu", "tools-gpu", "generation")
 CATEGORIES = ("image", "video", "generation")
 
 # Licenses a tool may ship to a cloud queue with. Anything else (or an

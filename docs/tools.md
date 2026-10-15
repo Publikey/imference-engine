@@ -17,7 +17,7 @@ Each tool is a JSON manifest in `imference_engine/tools/manifests/<id>.json`:
 | `params` | `{name: {type: int\|float\|bool\|string\|enum\|points, default, required, min, max, values, max_length, pattern, max_items, description}}` |
 | `outputs` | `{name: {type: image\|mask\|video\|text\|json, format}}` |
 | `weights` | `[{name, path, size_mb, sha256, source, when: {param: value}}]` — `path` is relative to the tools mirror |
-| `runtimes` | `{local: [cpu, cuda, mps, rocm, directml], cloud_queue: tools-cpu\|tools-light\|generation\|null, slow_on_cpu, min_ram_gb, min_vram_gb, needs_engine}` |
+| `runtimes` | `{local: [cpu, cuda, mps, rocm, directml], cloud_queue: tools-cpu\|tools-gpu\|generation\|null, slow_on_cpu, min_ram_gb, min_vram_gb, needs_engine}` |
 | `cost.credits` | price per run in credits (1 credit = $0.001). `0` on `generation` tools = the price of the selected model |
 | `license` | `{spdx, source, verified, cloud_override?}` — a tool reaches a cloud queue only when `verified` and permissive, or when `cloud_override` records an owner decision to accept the risk (`cloud_allowed`) |
 | `available` | `false` = declared, not implemented (hidden everywhere) |
@@ -69,7 +69,7 @@ Weights: `TOOLS_MODEL_CACHE` (default `$HF_HOME/tools` or
 `~/.cache/imference/tools`), mirror `TOOLS_MODEL_CDN` (fallback
 `$IMAGE_MODEL_CDN/tools`). `validation/stage_tools_r2.py` builds the mirror.
 
-## Cloud: runqy task (queues `tools-cpu`, `tools-light`)
+## Cloud: runqy task (queues `tools-cpu`, `tools-gpu`)
 
 Enqueued by the API (`POST <RUNQY_ENDPOINT>` envelope `{queue, data, timeout}`)
 with `timeout: 0` — the per-queue `active_timeout` rules:

@@ -46,7 +46,7 @@
       "mps",
       "rocm"
     ],
-    "cloud_queue": "tools-light",
+    "cloud_queue": "tools-gpu",
     "slow_on_cpu": true,
     "min_ram_gb": 4
   },

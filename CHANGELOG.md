@@ -5,7 +5,7 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [0.5.0] — unreleased (pre-release tag `v0.5.0.dev1` for staging)
+## [0.5.0] — unreleased (pre-release tags `v0.5.0.dev1`, `v0.5.0.dev2` for staging; dev2 renames the cloud queue `tools-light` to `tools-gpu`)
 
 ### Added
 

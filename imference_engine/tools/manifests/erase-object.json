@@ -53,7 +53,7 @@
       "rocm",
       "directml"
     ],
-    "cloud_queue": "tools-light",
+    "cloud_queue": "tools-gpu",
     "min_ram_gb": 4
   },
   "cost": {
