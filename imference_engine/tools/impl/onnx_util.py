@@ -130,6 +130,20 @@ def loaded() -> list:
         return [os.path.basename(k[0]) for k in _SESSIONS]
 
 
+def loaded_detail() -> list:
+    """The warm sessions: [{"name", "bytes" (file size), "runtime"}]."""
+    with _LOCK:
+        items = [(k[0], v[1]) for k, v in _SESSIONS.items()]
+    out = []
+    for path, label in items:
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        out.append({"name": os.path.basename(path), "bytes": size, "runtime": label})
+    return out
+
+
 def input_hw(sess, default: int):
     """Static (H, W) of the first input, or (default, default) when dynamic."""
     shape = sess.get_inputs()[0].shape

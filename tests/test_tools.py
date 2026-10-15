@@ -664,3 +664,19 @@ def test_public_export_lists_weight_files_per_variant():
     assert abs(sum(w["size_mb"] for w in files.values()) - rb["weights_mb"]) < 0.2
     up = [t for t in catalog.export()["tools"] if t["id"] == "resize"][0]
     assert up["weight_files"] == [] and up["weights_mb"] == 0
+
+
+@needs_ort
+def test_loaded_lists_warm_sessions(tmp_path, cache):
+    from imference_engine import tools as T
+
+    T.release()
+    assert T.loaded() == []
+    p = img(tmp_path, (64, 48))
+    put_weight(cache, "upscale", "model", _fx().upscale_x4)
+    run_tool("upscale", {"image": str(p)}, {"scale": 2}, output_dir=str(tmp_path / "o"))
+    warm = T.loaded()
+    assert len(warm) == 1 and warm[0]["name"].endswith(".onnx") and warm[0]["bytes"] > 0
+    assert warm[0]["runtime"].startswith("onnx:")
+    T.release()
+    assert T.loaded() == []

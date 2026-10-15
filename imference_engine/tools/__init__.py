@@ -14,7 +14,7 @@ from imference_engine.tools.errors import ToolError
 from imference_engine.tools.runner import ToolOutput, ToolResult, run_tool
 from imference_engine.tools.schema import ToolManifest
 
-__all__ = ["catalog", "run_tool", "ToolError", "ToolResult", "ToolOutput", "ToolManifest", "release"]
+__all__ = ["catalog", "run_tool", "ToolError", "ToolResult", "ToolOutput", "ToolManifest", "release", "loaded"]
 
 
 def release() -> int:
@@ -27,3 +27,16 @@ def release() -> int:
     except Exception:
         pass
     return n
+
+
+def loaded() -> list:
+    """What the tools keep warm (ONNX sessions, Florence-2), for a host's
+    status view: [{"name", "bytes", "runtime"}]."""
+    from imference_engine.tools.impl import onnx_util
+    out = onnx_util.loaded_detail()
+    try:
+        from imference_engine.tools.impl import describe
+        out += describe.loaded_detail()
+    except Exception:  # noqa: BLE001 — no transformers: nothing warm there
+        pass
+    return out

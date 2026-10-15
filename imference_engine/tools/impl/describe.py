@@ -78,6 +78,20 @@ def load(tar_path: Path, device: str):
         return _MODEL[key]
 
 
+def loaded_detail() -> list:
+    """Florence-2 when warm: [{"name", "bytes" (parameters), "runtime"}]."""
+    with _LOCK:
+        items = list(_MODEL.values())
+    out = []
+    for _proc, model, dev, _dtype in items:
+        try:
+            size = sum(p.numel() * p.element_size() for p in model.parameters())
+        except Exception:  # noqa: BLE001
+            size = 0
+        out.append({"name": "Florence-2", "bytes": int(size), "runtime": f"torch:{dev}"})
+    return out
+
+
 def release() -> None:
     with _LOCK:
         _MODEL.clear()
