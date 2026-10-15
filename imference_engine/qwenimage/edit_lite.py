@@ -28,6 +28,8 @@ import json
 import logging
 import math
 import os
+import threading
+from contextlib import contextmanager
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -124,11 +126,73 @@ def denoise_reserve_bytes(height: Optional[int], width: Optional[int]) -> int:
     return int(gb * (1 << 30))
 
 
+MEGAPIXEL = 1024 * 1024  # diffusers' edit target area (VAE_IMAGE_SIZE)
+
+
+def edit_area_bounds() -> tuple:
+    """(min, max) work area in pixels, from ``QWEN_EDIT_MIN_MP`` (default 0.5)
+    and ``QWEN_EDIT_MAX_MP`` (default 1.0), 1 MP = 1024x1024 px."""
+    def env_f(name: str, default: float) -> float:
+        try:
+            v = float(os.environ.get(name, default))
+            return v if v > 0 else default
+        except ValueError:
+            return default
+
+    lo = env_f("QWEN_EDIT_MIN_MP", 0.5)
+    hi = env_f("QWEN_EDIT_MAX_MP", 1.0)
+    return int(min(lo, hi) * MEGAPIXEL), int(hi * MEGAPIXEL)
+
+
+def edit_dimensions(width: int, height: int) -> Optional[tuple]:
+    """(width, height) to edit an input of this size at, or None to keep
+    diffusers' default (~1 MP, whatever the input).
+
+    The input's own area, clamped to ``edit_area_bounds``: a small input is
+    denoised (and VAE-conditioned) at its size instead of being blown up to
+    1 MP, which is where the time goes (the transformer cost grows with the
+    token count). Same rounding as diffusers (multiples of 32)."""
+    if not width or not height:
+        return None
+    lo, hi = edit_area_bounds()
+    area = max(lo, min(hi, width * height))
+    if area >= MEGAPIXEL:
+        return None
+    ratio = width / height
+    w = math.sqrt(area * ratio)
+    return max(32, round(w / 32) * 32), max(32, round(w / ratio / 32) * 32)
+
+
+_VAE_AREA_LOCK = threading.Lock()
+
+
+@contextmanager
+def _vae_condition_area(area: Optional[int]):
+    """EditPlus VAE-encodes the condition images at a module constant
+    (``VAE_IMAGE_SIZE``, 1 MP), not at the output size: set it to the output
+    area for the call so the reference tokens shrink with the output."""
+    if not area:
+        yield
+        return
+    from diffusers.pipelines.qwenimage import pipeline_qwenimage_edit_plus as mod
+
+    with _VAE_AREA_LOCK:
+        saved = mod.VAE_IMAGE_SIZE
+        mod.VAE_IMAGE_SIZE = area
+        try:
+            yield
+        finally:
+            mod.VAE_IMAGE_SIZE = saved
+
+
 def _pipeline_class():
     from diffusers import QwenImageEditPlusPipeline
 
     class QwenImageEditLitePipeline(QwenImageEditPlusPipeline):
         """EditPlus whose text encoder is loaded on demand for the encode phase.
+
+        An explicit ``height``/``width`` under 1 MP (``edit_dimensions``) also
+        shrinks the VAE condition images to that area.
 
         ``_encoder_loader`` returns a ready encoder (NF4, on the GPU). It is
         registered when ``encode_prompt`` first needs it. In ``prepare_latents``
@@ -186,8 +250,11 @@ def _pipeline_class():
             except Exception:  # noqa: BLE001
                 peak = None
             ok = False
+            h, w = kwargs.get("height"), kwargs.get("width")
+            area = h * w if h and w and h * w < MEGAPIXEL else None
             try:
-                out = super().__call__(*args, **kwargs)
+                with _vae_condition_area(area):
+                    out = super().__call__(*args, **kwargs)
                 ok = True
                 return out
             finally:

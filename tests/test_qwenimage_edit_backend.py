@@ -163,7 +163,6 @@ def test_keep_encoder_decision(monkeypatch):
     object.__setattr__(pipe, "_encoder_loader", None)
     assert pipe._keep_encoder(1024, 1024) is False
 
-    import types
     import torch
     object.__setattr__(pipe, "_encoder_loader", lambda: None)
     monkeypatch.setattr(cls, "text_encoder", object(), raising=False)
@@ -207,3 +206,63 @@ def test_prefetch_lite_extras_fetches_lora_and_nf4(monkeypatch, tmp_path):
     monkeypatch.setenv("QWEN_EDIT_LIGHTNING", "none")
     edit_lite.prefetch_lite_extras(cache_dir=str(tmp_path), cdn_base=None)
     assert calls == []
+
+
+def test_edit_dimensions_follow_small_inputs(monkeypatch):
+    from imference_engine.qwenimage import edit_lite
+
+    monkeypatch.delenv("QWEN_EDIT_MIN_MP", raising=False)
+    monkeypatch.delenv("QWEN_EDIT_MAX_MP", raising=False)
+    # >= 1 MP: diffusers' default sizing is kept untouched.
+    assert edit_lite.edit_dimensions(1024, 1024) is None
+    assert edit_lite.edit_dimensions(3000, 2000) is None
+    # Small inputs are floored at 0.5 MP, keep their ratio, multiples of 32.
+    w, h = edit_lite.edit_dimensions(512, 512)
+    assert (w, h) == (736, 736)
+    w, h = edit_lite.edit_dimensions(548, 342)
+    assert w % 32 == 0 and h % 32 == 0 and abs(w / h - 548 / 342) < 0.1
+    assert 0.45 * edit_lite.MEGAPIXEL < w * h < 0.55 * edit_lite.MEGAPIXEL
+    # Between the bounds: the input's own area.
+    w, h = edit_lite.edit_dimensions(896, 896)
+    assert (w, h) == (896, 896)
+    monkeypatch.setenv("QWEN_EDIT_MIN_MP", "0.25")
+    assert edit_lite.edit_dimensions(512, 512) == (512, 512)
+    monkeypatch.setenv("QWEN_EDIT_MIN_MP", "1")
+    assert edit_lite.edit_dimensions(512, 512) is None
+    assert edit_lite.edit_dimensions(0, 512) is None
+
+
+def test_inference_kwargs_size_small_inputs(monkeypatch):
+    from PIL import Image
+
+    monkeypatch.delenv("QWEN_EDIT_MIN_MP", raising=False)
+    monkeypatch.delenv("QWEN_EDIT_MAX_MP", raising=False)
+    be = QwenImageEditBackend()
+    small, big = Image.new("RGB", (512, 512)), Image.new("RGB", (1600, 1200))
+    kw = be.build_inference_kwargs(width=1, height=1, num_steps=4, guidance_scale=1.0, clip_skip=None,
+                                   chunk_size=1, generator=None, image=small)
+    assert (kw["width"], kw["height"]) == (736, 736)
+    kw = be.build_inference_kwargs(width=1, height=1, num_steps=4, guidance_scale=1.0, clip_skip=None,
+                                   chunk_size=1, generator=None, image=big)
+    assert "width" not in kw and "height" not in kw
+    # diffusers sizes on the last image: so do we.
+    kw = be.build_inference_kwargs(width=1, height=1, num_steps=4, guidance_scale=1.0, clip_skip=None,
+                                   chunk_size=1, generator=None, image=[big, small])
+    assert (kw["width"], kw["height"]) == (736, 736)
+
+
+def test_vae_condition_area_is_scoped():
+    pytest.importorskip("diffusers.pipelines.qwenimage.pipeline_qwenimage_edit_plus")
+    from diffusers.pipelines.qwenimage import pipeline_qwenimage_edit_plus as mod
+    from imference_engine.qwenimage import edit_lite
+
+    before = mod.VAE_IMAGE_SIZE
+    with edit_lite._vae_condition_area(736 * 736):
+        assert mod.VAE_IMAGE_SIZE == 736 * 736
+    assert mod.VAE_IMAGE_SIZE == before
+    with pytest.raises(RuntimeError):
+        with edit_lite._vae_condition_area(512 * 512):
+            raise RuntimeError("boom")
+    assert mod.VAE_IMAGE_SIZE == before
+    with edit_lite._vae_condition_area(None):
+        assert mod.VAE_IMAGE_SIZE == before

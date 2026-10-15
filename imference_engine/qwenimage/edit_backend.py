@@ -26,6 +26,10 @@ Weights, same two layouts as Qwen-Image:
   for it set ``num_steps=4`` / ``guidance_scale=1.0`` (the Lightning recipe).
   Env: ``QWEN_EDIT_LIGHTNING`` (4 | none), ``QWEN_EDIT_ENCODER`` (auto | nf4 | bf16).
 
+Work size: an input under 1 MP is edited at its own area, floored at
+``QWEN_EDIT_MIN_MP`` (default 0.5; 1 MP = 1024x1024) — diffusers otherwise
+blows every input up to ~1 MP. ``QWEN_EDIT_MAX_MP`` (default 1.0) caps it.
+
 VRAM: same 20B transformer as Qwen-Image — run with ``enable_offload=True``
 (``offload_mode="group"``). bf16: ~5 GB of VRAM, PCIe-bound. GGUF Q4_K_M +
 NF4 encoder: 6.5 GB peak, ~52 s per edit on an RTX 4070 Laptop (8 GB), with
@@ -39,6 +43,7 @@ from typing import Any, ClassVar, Optional
 
 from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.qwenimage.backend import QwenImageBackend
+from imference_engine.qwenimage.edit_lite import edit_dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +145,7 @@ class QwenImageEditBackend(QwenImageBackend):
         self,
         *,
         width: int,  # noqa: ARG002 — the output size follows the input image
-        height: int,  # noqa: ARG002
+        height: int,  # noqa: ARG002 (QWEN_EDIT_MIN_MP / QWEN_EDIT_MAX_MP)
         num_steps: int,
         guidance_scale: float,
         clip_skip: Optional[int],  # noqa: ARG002
@@ -154,10 +159,17 @@ class QwenImageEditBackend(QwenImageBackend):
         # A list = the main image followed by reference images (EditPlus takes
         # up to 3: "put the jacket from image 2 on the person in image 1").
         images = list(image) if isinstance(image, (list, tuple)) else [image]
-        return {
+        kwargs = {
             "image": images,
             "num_inference_steps": num_steps,
             "true_cfg_scale": guidance_scale,
             "generator": generator,
             "num_images_per_prompt": chunk_size,
         }
+        # A small input is edited at its own size (>= QWEN_EDIT_MIN_MP) rather
+        # than blown up to ~1 MP. diffusers sizes the output on the LAST image.
+        size = getattr(images[-1], "size", None)
+        dims = edit_dimensions(*size) if isinstance(size, tuple) and len(size) == 2 else None
+        if dims is not None:
+            kwargs["width"], kwargs["height"] = dims
+        return kwargs
