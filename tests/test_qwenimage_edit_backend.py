@@ -132,3 +132,50 @@ def test_gguf_registration_gets_the_lightning_recipe(monkeypatch):
     assert d["bf16"].num_steps is None and d["row"].num_steps == 8
     monkeypatch.setenv("QWEN_EDIT_LIGHTNING", "none")
     assert QwenImageEditBackend().weights_defaults("/m/x.gguf") is None
+
+
+def test_keep_encoder_setting_and_reserve(monkeypatch):
+    from imference_engine.qwenimage import edit_lite
+
+    monkeypatch.delenv("QWEN_EDIT_KEEP_ENCODER", raising=False)
+    assert edit_lite.keep_encoder_setting() == "auto"
+    for v, want in (("1", "1"), ("always", "1"), ("0", "0"), ("off", "0"), ("weird", "auto")):
+        monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", v)
+        assert edit_lite.keep_encoder_setting() == want
+    monkeypatch.delenv("QWEN_EDIT_DENOISE_RESERVE_GB", raising=False)
+    monkeypatch.delenv("QWEN_EDIT_RESERVE_GB_PER_MP", raising=False)
+    one_mp = edit_lite.denoise_reserve_bytes(1000, 1000)
+    four_mp = edit_lite.denoise_reserve_bytes(2000, 2000)
+    assert one_mp == int(4.0 * (1 << 30))
+    assert four_mp > one_mp
+    monkeypatch.setenv("QWEN_EDIT_DENOISE_RESERVE_GB", "1")
+    monkeypatch.setenv("QWEN_EDIT_RESERVE_GB_PER_MP", "0")
+    assert edit_lite.denoise_reserve_bytes(None, None) == 1 << 30
+
+
+def test_keep_encoder_decision(monkeypatch):
+    """auto keeps the encoder only when the free VRAM covers the reserve; a
+    pipeline without the on-demand loader never keeps anything."""
+    from imference_engine.qwenimage import edit_lite
+
+    cls = edit_lite._pipeline_class()
+    pipe = cls.__new__(cls)
+    object.__setattr__(pipe, "_encoder_loader", None)
+    assert pipe._keep_encoder(1024, 1024) is False
+
+    import types
+    import torch
+    object.__setattr__(pipe, "_encoder_loader", lambda: None)
+    monkeypatch.setattr(cls, "text_encoder", object(), raising=False)
+    monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", "auto")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda *a: 0)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda *a: 0)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda *a: (10 << 30, 24 << 30))
+    assert pipe._keep_encoder(1024, 1024) is True
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda *a: (2 << 30, 24 << 30))
+    assert pipe._keep_encoder(1024, 1024) is False
+    monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", "1")
+    assert pipe._keep_encoder(1024, 1024) is True
+    monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", "0")
+    assert pipe._keep_encoder(1024, 1024) is False

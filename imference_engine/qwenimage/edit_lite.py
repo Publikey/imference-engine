@@ -10,8 +10,11 @@ visually identical) and chosen for Desktop AND cloud:
   absorb a fused delta), with lightx2v's scheduler — 4 steps, CFG 1.0;
 - encoder: the 7B Qwen2.5-VL in NF4 (bitsandbytes, ~5.6 GB instead of 16.6 GB),
   quantized once and cached on disk (or pulled pre-quantized from the CDN),
-  loaded for the encode phase only and freed before denoising, so the encoder
-  and the transformer are never resident together.
+  loaded for the encode phase and freed before denoising when VRAM is short
+  (8-16 GB cards: the encoder and the transformer are never resident
+  together). On a card with room for both (24 GB class, transformer resident)
+  it stays loaded between edits, which saves reloading ~6 GB per edit
+  (``QWEN_EDIT_KEEP_ENCODER``).
 
 ``QwenImageEditLitePipeline`` does the two phases inside one ``pipe(...)``
 call, so the engine's generate loop, offload wiring and residency are untouched.
@@ -93,16 +96,45 @@ def encoder_mode() -> str:
     return "bf16"
 
 
+def keep_encoder_setting() -> str:
+    """``QWEN_EDIT_KEEP_ENCODER``: auto (default) | 1 | 0. auto keeps the NF4
+    encoder loaded across edits when the free VRAM left at denoise time covers
+    the denoise reserve (``denoise_reserve_bytes``); 1 always keeps it, 0 always
+    frees it (the original two-phase behaviour)."""
+    v = os.environ.get("QWEN_EDIT_KEEP_ENCODER", "auto").strip().lower()
+    if v in ("1", "true", "on", "yes", "always"):
+        return "1"
+    if v in ("0", "false", "off", "no", "never"):
+        return "0"
+    return "auto"
+
+
+def denoise_reserve_bytes(height: Optional[int], width: Optional[int]) -> int:
+    """VRAM the denoise + VAE decode need on top of the resident weights:
+    ``QWEN_EDIT_DENOISE_RESERVE_GB`` (default 2.5) plus
+    ``QWEN_EDIT_RESERVE_GB_PER_MP`` (default 1.5) per output megapixel."""
+    def env_f(name: str, default: float) -> float:
+        try:
+            return float(os.environ.get(name, default))
+        except ValueError:
+            return default
+
+    mp = (height or 1024) * (width or 1024) / 1e6
+    gb = env_f("QWEN_EDIT_DENOISE_RESERVE_GB", 2.5) + env_f("QWEN_EDIT_RESERVE_GB_PER_MP", 1.5) * mp
+    return int(gb * (1 << 30))
+
+
 def _pipeline_class():
     from diffusers import QwenImageEditPlusPipeline
 
     class QwenImageEditLitePipeline(QwenImageEditPlusPipeline):
-        """EditPlus whose text encoder is loaded for the encode phase only.
+        """EditPlus whose text encoder is loaded on demand for the encode phase.
 
         ``_encoder_loader`` returns a ready encoder (NF4, on the GPU). It is
-        registered while ``encode_prompt`` runs and released in
-        ``prepare_latents`` — the first step after encoding — so the denoise
-        loop never shares VRAM with it.
+        registered when ``encode_prompt`` first needs it. In ``prepare_latents``
+        (the first step after encoding) it is released unless the free VRAM
+        covers the denoise reserve (``QWEN_EDIT_KEEP_ENCODER``): then it stays
+        loaded and the next edit skips the reload.
         """
 
         _encoder_loader: Optional[Callable[[], Any]] = None
@@ -116,14 +148,56 @@ def _pipeline_class():
             return embeds.to(target), mask.to(target)
 
         def prepare_latents(self, *args, **kwargs):
-            self.release_encoder()
+            height = kwargs.get("height", args[3] if len(args) > 3 else None)
+            width = kwargs.get("width", args[4] if len(args) > 4 else None)
+            if not self._keep_encoder(height, width):
+                self.release_encoder()
             return super().prepare_latents(*args, **kwargs)
 
-        def __call__(self, *args, **kwargs):
+        def _keep_encoder(self, height, width) -> bool:
+            if self._encoder_loader is None or self.text_encoder is None:
+                return False
+            setting = keep_encoder_setting()
+            if setting != "auto":
+                return setting == "1"
             try:
-                return super().__call__(*args, **kwargs)
+                import torch
+                if not torch.cuda.is_available():
+                    return False
+                free, _ = torch.cuda.mem_get_info()
+                # Memory torch already holds but isn't using (the encode
+                # activations' cache) is free for the denoise too.
+                free += max(0, torch.cuda.memory_reserved() - torch.cuda.memory_allocated())
+            except Exception:  # noqa: BLE001 — unknown: be safe, free it
+                return False
+            need = denoise_reserve_bytes(height, width)
+            keep = free >= need
+            logger.info("Qwen-Image-Edit: %.1f GiB free, denoise needs ~%.1f GiB -> encoder %s",
+                        free / (1 << 30), need / (1 << 30), "kept" if keep else "released")
+            return keep
+
+        def __call__(self, *args, **kwargs):
+            peak = None
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.reset_peak_memory_stats()
+                    peak = torch.cuda
+            except Exception:  # noqa: BLE001
+                peak = None
+            ok = False
+            try:
+                out = super().__call__(*args, **kwargs)
+                ok = True
+                return out
             finally:
-                self.release_encoder()
+                # A failed call (OOM...) never leaves the encoder behind.
+                if not ok or keep_encoder_setting() == "0":
+                    self.release_encoder()
+                if peak is not None:
+                    logger.info("Qwen-Image-Edit: peak VRAM %.2f GiB (encoder %s)",
+                                peak.max_memory_allocated() / (1 << 30),
+                                "resident" if self.text_encoder is not None else "freed")
 
         def release_encoder(self) -> None:
             if self._encoder_loader is None or self.text_encoder is None:

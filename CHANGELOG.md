@@ -5,7 +5,7 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [0.5.0] — unreleased (pre-release tags `v0.5.0.dev1`, `v0.5.0.dev2` for staging; dev2 renames the cloud queue `tools-light` to `tools-gpu`)
+## [0.5.0] — unreleased (pre-release tags `v0.5.0.dev1`, `v0.5.0.dev2`, `v0.5.0.dev3` for staging; dev2 renames the cloud queue `tools-light` to `tools-gpu`, dev3 keeps the NF4 encoder loaded between Qwen-Image-Edit edits when VRAM allows)
 
 ### Added
 
