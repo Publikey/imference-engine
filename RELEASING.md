@@ -34,3 +34,11 @@ worker's vault — `start.sh` reinstalls that ref on boot.
 Semver. Bump **minor** for new features / model recipes, **patch** for fixes,
 **major** for breaking API or dependency-combo changes (e.g. the `[wan]` /
 `[runtime]` diffusers pins). Tag must equal the `pyproject`/`__init__` version.
+
+## Pre-releases (staging)
+
+To ship a release to staging workers / test desktop builds before the official
+tag, tag a PEP 440 pre-release from `main`: version `X.Y.Z.devN` in both files,
+tag `vX.Y.Z.devN` (same flow as above). `start.sh` compares
+`importlib.metadata.version()` to the tag minus the `v`, so the two must match
+exactly. Then cut `vX.Y.Z` once validated (bump both files back to `X.Y.Z`).
