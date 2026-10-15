@@ -179,3 +179,31 @@ def test_keep_encoder_decision(monkeypatch):
     assert pipe._keep_encoder(1024, 1024) is True
     monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", "0")
     assert pipe._keep_encoder(1024, 1024) is False
+
+
+def test_prefetch_lite_extras_fetches_lora_and_nf4(monkeypatch, tmp_path):
+    from imference_engine.qwenimage import edit_lite
+    from imference_engine.runtime import offline
+
+    calls = []
+    monkeypatch.setattr(offline, "fetch", lambda repo, f, cdn, cache, namespace=None: calls.append(("fetch", repo, f)))
+    monkeypatch.setattr(offline, "_cdn_snapshot", lambda cdn, repo, dest: calls.append(("snap", repo, dest)))
+    monkeypatch.setattr(edit_lite, "encoder_mode", lambda: "nf4")
+    monkeypatch.delenv("QWEN_EDIT_LIGHTNING", raising=False)
+    edit_lite.prefetch_lite_extras(cache_dir=str(tmp_path), cdn_base="https://cdn.example/image")
+    assert ("fetch", edit_lite.LIGHTNING_REPO, edit_lite.LIGHTNING_FILE) in calls
+    assert any(c[0] == "snap" and c[1] == edit_lite.NF4_ENCODER_REPO for c in calls)
+
+    # Already on disk -> no second snapshot; no CDN -> nothing to pull.
+    calls.clear()
+    d = edit_lite.nf4_encoder_dir(str(tmp_path))
+    import os
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, "config.json"), "w").close()
+    open(os.path.join(d, "model.safetensors"), "w").close()
+    edit_lite.prefetch_lite_extras(cache_dir=str(tmp_path), cdn_base="https://cdn.example/image")
+    assert not any(c[0] == "snap" for c in calls)
+    calls.clear()
+    monkeypatch.setenv("QWEN_EDIT_LIGHTNING", "none")
+    edit_lite.prefetch_lite_extras(cache_dir=str(tmp_path), cdn_base=None)
+    assert calls == []

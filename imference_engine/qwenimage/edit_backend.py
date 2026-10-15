@@ -126,6 +126,10 @@ class QwenImageEditBackend(QwenImageBackend):
         patterns = LITE_BASE_PATTERNS if encoder_mode() == "nf4" else self.BASE_PATTERNS
         local_repo_dir(base_model or DEFAULT_BASE, patterns, self._cache_dir,
                        namespace="image", cdn_base=self._cdn_base)
+        # The lite build's extras too (Lightning LoRA, NF4 encoder ~6 GB), so
+        # a fresh pod's first edit doesn't pay for them.
+        from imference_engine.qwenimage.edit_lite import prefetch_lite_extras
+        prefetch_lite_extras(cache_dir=self._cache_dir, cdn_base=self._cdn_base)
         logger.info("Qwen-Image-Edit base-components warmed (base=%s)", base_model or DEFAULT_BASE)
 
     def make_img2img(self, t2i_pipe: Any) -> Any:

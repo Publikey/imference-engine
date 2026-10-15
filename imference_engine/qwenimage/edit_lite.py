@@ -264,17 +264,47 @@ def ensure_text_encoder_weights(base_repo: str, base_dir: str, *, cdn_base: Opti
     snapshot_download(base_repo, allow_patterns=["text_encoder/*"], local_dir=base_dir)
 
 
+def nf4_encoder_dir(cache_dir: Optional[str]) -> str:
+    from imference_engine.runtime.offline import flat_root
+
+    return os.path.join(flat_root(cache_dir, namespace="image"), NF4_ENCODER_REPO)
+
+
+def nf4_encoder_ready(cached: str) -> bool:
+    return os.path.isfile(os.path.join(cached, "config.json")) and any(
+        n.endswith(".safetensors") for n in os.listdir(cached))
+
+
+def prefetch_lite_extras(*, cache_dir: Optional[str], cdn_base: Optional[str]) -> None:
+    """Download (no load) what the lite build fetches on its first edit: the
+    Lightning LoRA and, in NF4 mode, the pre-quantized encoder from the CDN.
+    For a worker warm at deploy time. Best-effort: a miss stays lazy."""
+    from imference_engine.runtime.offline import fetch
+
+    if lightning_setting() != "none":
+        try:
+            fetch(LIGHTNING_REPO, LIGHTNING_FILE, cdn_base, cache_dir, namespace="image")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("prefetch: Lightning LoRA not fetched (%s); lazy on first edit", e)
+    if encoder_mode() == "nf4" and cdn_base:
+        cached = nf4_encoder_dir(cache_dir)
+        if os.path.isdir(cached) and nf4_encoder_ready(cached):
+            return
+        try:
+            from imference_engine.runtime.offline import _cdn_snapshot
+            _cdn_snapshot(cdn_base, NF4_ENCODER_REPO, cached)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("prefetch: NF4 encoder not fetched (%s); lazy on first edit", e)
+
+
 def nf4_encoder_loader(base_repo: str, base_dir: str, *, cache_dir: Optional[str],
                        cdn_base: Optional[str]) -> Callable[[], Any]:
     """A loader for the NF4 encoder: the cached quantized copy, else the CDN
     copy, else quantize the bf16 encoder once and cache it."""
-    from imference_engine.runtime.offline import flat_root
-
-    cached = os.path.join(flat_root(cache_dir, namespace="image"), NF4_ENCODER_REPO)
+    cached = nf4_encoder_dir(cache_dir)
 
     def ready() -> bool:
-        return os.path.isfile(os.path.join(cached, "config.json")) and any(
-            n.endswith(".safetensors") for n in os.listdir(cached))
+        return os.path.isdir(cached) and nf4_encoder_ready(cached)
 
     def load():
         import torch
