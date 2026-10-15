@@ -22,7 +22,6 @@ from imference_engine.tools.impl.erase import context_box, dilate
 from imference_engine.tools.progress import LOADING, RUNNING
 from imference_engine.tools.runner import ToolOutput
 
-VARY_STRENGTH = {"subtle": 0.35, "strong": 0.65}
 WORK_LONG_SIDE = 1024   # generation resolution for the processed region
 OUTPAINT_STRENGTH = 0.85  # high enough to invent content, low enough to keep the layout
 MULT = 64               # every backend accepts multiples of 64
@@ -131,7 +130,7 @@ def vary(ctx, inputs, params):
 
     src = media.load_image(inputs["image"], ctx.manifest.inputs["image"], mode="RGB")
     ws = _work_size(*src.size, long_side=min(WORK_LONG_SIDE, max(512, max(src.size))))
-    gen, seed = _generate(ctx, params, src.resize(ws, Image.LANCZOS), VARY_STRENGTH[params["strength"]])
+    gen, seed = _generate(ctx, params, src.resize(ws, Image.LANCZOS), float(params["strength"]))
     out = gen.resize(src.size, Image.LANCZOS)
     o = ToolOutput(name="image", type="image", format="png", image=out)
     o.data = {"seed": seed}

@@ -512,7 +512,7 @@ class FakeEngine:
 def test_vary_uses_strength_and_seed(tmp_path):
     eng = FakeEngine()
     p = img(tmp_path, (300, 200))
-    r = run_tool("vary", {"image": str(p)}, {"model": "any", "strength": "strong", "seed": 7, "prompt": "cat"}, engine=eng)
+    r = run_tool("vary", {"image": str(p)}, {"model": "any", "strength": 0.65, "seed": 7, "prompt": "cat"}, engine=eng)
     kw = eng.calls[0]
     assert kw["model"] == "local" and kw["strength"] == 0.65 and kw["seed"] == 7 and kw["prompt"] == "cat"
     assert kw["source_image"].size[0] % 64 == 0
