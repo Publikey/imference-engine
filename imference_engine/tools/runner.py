@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from imference_engine.tools import catalog as _catalog
 from imference_engine.tools import weights as _weights
-from imference_engine.tools.errors import UNSUPPORTED_RUNTIME, ToolError, classify
+from imference_engine.tools.errors import OOM, UNSUPPORTED_RUNTIME, ToolError, classify
 from imference_engine.tools.progress import ENCODING, Progress, ProgressFn
 
 logger = logging.getLogger(__name__)
@@ -145,13 +145,16 @@ def run_tool(
                          engine=engine, timeout=timeout,
                          deadline=(time.monotonic() + timeout) if timeout else None)
         try:
-            outputs = impl(ctx, inputs, clean)
-        except ToolError:
-            raise
-        except Exception as e:  # runtime failure -> typed error (oom, internal, ...)
-            err = classify(e)
-            logger.exception("tool %s failed: %s", tool_id, err)
-            raise err from e
+            outputs = _run_impl(impl, ctx, inputs, clean, tool_id)
+        except ToolError as err:
+            # Out of GPU memory on a light tool: the warm sessions of the other
+            # tools hold it (a cloud worker keeps them all). Free them and
+            # retry once; generation tools share the engine's model, untouched.
+            if err.code != OOM or manifest.runtimes.needs_engine or str(device).startswith("cpu"):
+                raise
+            freed = _free_tool_memory()
+            logger.warning("tool %s ran out of memory: released %d warm session(s), retrying once", tool_id, freed)
+            outputs = _run_impl(impl, ctx, inputs, clean, tool_id)
 
         progress(ENCODING, 0.0)
         out_dir = Path(output_dir) if output_dir else None
@@ -166,6 +169,31 @@ def run_tool(
     finally:
         import shutil
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _run_impl(impl, ctx, inputs, clean, tool_id):
+    """The implementation, any runtime failure typed (oom, internal, ...)."""
+    try:
+        return impl(ctx, inputs, clean)
+    except ToolError:
+        raise
+    except Exception as e:
+        err = classify(e)
+        logger.exception("tool %s failed: %s", tool_id, err)
+        raise err from e
+
+
+def _free_tool_memory() -> int:
+    """Drop the warm tool sessions (ONNX, Florence-2) and torch's cache."""
+    from imference_engine import tools
+    n = tools.release()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001 — no torch, or no CUDA
+        pass
+    return n
 
 
 def _finalize(o: ToolOutput, out_dir: Optional[Path], stem: str, work: Path) -> None:

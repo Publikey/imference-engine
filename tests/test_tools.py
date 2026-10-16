@@ -690,3 +690,53 @@ def test_loaded_lists_warm_sessions(tmp_path, cache):
     assert warm[0]["runtime"].startswith("onnx:")
     T.release()
     assert T.loaded() == []
+
+
+# ------------------------------------------------------------------ GPU memory
+
+def test_cuda_provider_options(monkeypatch):
+    from imference_engine.tools.impl import onnx_util
+    monkeypatch.delenv("ORT_CUDA_MEM_LIMIT_MB", raising=False)
+    opts = onnx_util.cuda_provider_options()
+    assert opts == {"arena_extend_strategy": "kSameAsRequested", "cudnn_conv_algo_search": "HEURISTIC"}
+    monkeypatch.setenv("ORT_CUDA_MEM_LIMIT_MB", "2048")
+    assert onnx_util.cuda_provider_options()["gpu_mem_limit"] == str(2048 * 1024 * 1024)
+    provs = onnx_util._with_options(["CUDAExecutionProvider", "CPUExecutionProvider"])
+    assert provs[0][0] == "CUDAExecutionProvider" and provs[1] == "CPUExecutionProvider"
+
+
+def test_oom_releases_warm_sessions_and_retries_once(tmp_path, monkeypatch):
+    """A light tool out of GPU memory frees the other tools' warm sessions and
+    runs again; a second OOM is reported, and CPU runs are not retried."""
+    from imference_engine.tools import runner
+    from imference_engine.tools import impl as impl_mod
+
+    p = tmp_path / "a.png"
+    Image.new("RGB", (32, 32), (10, 20, 30)).save(p)
+    calls, freed = [], []
+
+    def flaky(ctx, inputs, params):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("BFCArena: Failed to allocate memory for requested buffer of size 67108864")
+        return [runner.ToolOutput(name="image", type="image", format="png", image=Image.new("RGB", (8, 8)))]
+
+    monkeypatch.setattr(impl_mod, "get_impl", lambda tool_id: flaky)
+    monkeypatch.setattr(runner, "_free_tool_memory", lambda: freed.append(1) or 3)
+    r = run_tool("resize", {"image": str(p)}, {"width": 8}, device="cuda")
+    assert len(calls) == 2 and freed == [1] and r.outputs[0].image.size == (8, 8)
+
+    calls.clear(); freed.clear()
+    def always_oom(ctx, inputs, params):
+        calls.append(1)
+        raise RuntimeError("CUDA out of memory")
+
+    monkeypatch.setattr(impl_mod, "get_impl", lambda tool_id: always_oom)
+    with pytest.raises(ToolError) as e:
+        run_tool("resize", {"image": str(p)}, {"width": 8}, device="cuda")
+    assert e.value.code == "oom" and freed == [1] and len(calls) == 2
+
+    freed.clear()
+    with pytest.raises(ToolError):
+        run_tool("resize", {"image": str(p)}, {"width": 8}, device="cpu")
+    assert freed == []

@@ -57,6 +57,30 @@ def providers_for(device: str = "auto") -> list:
 
 
 _GPU_PROVIDERS = ("CUDAExecutionProvider", "TensorrtExecutionProvider")
+
+
+def cuda_provider_options() -> dict:
+    """CUDA provider options for the tool sessions. Many sessions share one GPU
+    (a cloud worker warms every tool), so each must stay lean:
+
+    - arena_extend_strategy kSameAsRequested: the default doubles the arena on
+      every extension and never gives memory back; a few large runs (upscale
+      tiles, BiRefNet at 1024) then starve the next session ("Failed to
+      allocate memory for requested buffer").
+    - cudnn_conv_algo_search HEURISTIC: EXHAUSTIVE benchmarks every algorithm
+      with its own workspace, the biggest allocation of a first run.
+    - gpu_mem_limit (ORT_CUDA_MEM_LIMIT_MB): optional cap per session.
+    """
+    opts = {"arena_extend_strategy": "kSameAsRequested", "cudnn_conv_algo_search": "HEURISTIC"}
+    limit = os.environ.get("ORT_CUDA_MEM_LIMIT_MB", "").strip()
+    if limit.isdigit() and int(limit) > 0:
+        opts["gpu_mem_limit"] = str(int(limit) * 1024 * 1024)
+    return opts
+
+
+def _with_options(provs: list) -> list:
+    """The providers list with the CUDA options attached."""
+    return [(p, cuda_provider_options()) if p == "CUDAExecutionProvider" else p for p in provs]
 _DLLS_PREPARED = False
 
 
@@ -99,7 +123,7 @@ def session(path, device: str = "auto"):
             opts.intra_op_num_threads = int(threads)
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         try:
-            sess = ort.InferenceSession(path, sess_options=opts, providers=provs)
+            sess = ort.InferenceSession(path, sess_options=opts, providers=_with_options(provs))
         except Exception as e:
             msg = str(e)
             if "INVALID_PROTOBUF" in msg or "Protobuf parsing failed" in msg or "No graph" in msg:
