@@ -111,7 +111,9 @@ default `ephemeral`, 24 h lifecycle rule). The worker logs `tool_id`,
 ## Cloud: generation tools (`vary`, `inpaint`, `outpaint`, `instruct-edit`)
 
 They run on the existing image workers of the selected model (its normal
-queue). The API enqueues a normal generation request for the model plus:
+queue).
+`inpaint` is disabled (`available: false`, not in the catalog) until it gets a
+per-step latent-blend implementation; the example below shows the payload shape. The API enqueues a normal generation request for the model plus:
 
 ```json
 {"id": "...", "webhook_url": "...", "model_name": "<model>", "prompt": "...",

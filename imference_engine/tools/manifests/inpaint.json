@@ -81,5 +81,7 @@
     "source": "license of the selected model",
     "verified": true
   },
-  "weights": []
+  "weights": [],
+  "$comment": "Disabled 2026-10-16: img2img on a pre-filled crop does not repaint the mask convincingly (pasted-in subjects, anima paints skin). Re-enable with a per-step latent-blend inpaint.",
+  "available": false
 }

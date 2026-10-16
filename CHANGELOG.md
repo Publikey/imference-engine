@@ -5,6 +5,16 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Changed
+
+- **`inpaint` tool disabled** (`available: false`): img2img on a pre-filled
+  crop does not repaint the mask convincingly (prod tests on sdxl, zimage and
+  anima: subjects pasted into the box, hard edges, anima paints skin). The
+  tool is hidden from the catalog, the export and `run_tool`; the
+  implementation stays for a per-step latent-blend inpaint.
+
 ## [0.5.0] — 2026-10-16 (staged as `v0.5.0.dev1`…`v0.5.0.dev5`: dev2 renamed the cloud queue `tools-light` to `tools-gpu`, dev3 keeps the NF4 encoder loaded between Qwen-Image-Edit edits when VRAM allows, dev4 warms the Lightning LoRA and the NF4 encoder with the base, dev5 edits small Qwen-Image-Edit inputs at their own size (0.5-1 MP) instead of ~1 MP)
 
 ### Added

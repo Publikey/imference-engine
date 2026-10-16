@@ -519,7 +519,17 @@ def test_vary_uses_strength_and_seed(tmp_path):
     assert r.outputs[0].image.size == (300, 200) and r.outputs[0].data == {"seed": 7}
 
 
+def test_inpaint_is_disabled():
+    assert "inpaint" not in catalog.builtin().ids()
+    with pytest.raises(ToolError):
+        run_tool("inpaint", {"image": "x.png", "mask": "m.png"}, {"model": "local"}, engine=FakeEngine())
+
+
 def test_inpaint_composites_only_mask(tmp_path):
+    # Disabled in the catalog (available: false), the implementation is kept.
+    import dataclasses
+    cat = catalog.ToolCatalog([dataclasses.replace(m, available=True) if m.id == "inpaint" else m
+                               for m in catalog.builtin().all(include_unavailable=True)])
     eng = FakeEngine()
     rng = np.random.default_rng(3)
     arr = rng.integers(0, 255, (512, 512, 3), dtype=np.uint8)
@@ -529,7 +539,7 @@ def test_inpaint_composites_only_mask(tmp_path):
     mask.paste(255, (200, 200, 260, 260))
     mask.save(mp)
     out = np.asarray(run_tool("inpaint", {"image": str(p), "mask": str(mp)},
-                              {"model": "local", "prompt": "a flower", "feather": 8}, engine=eng).outputs[0].image)
+                              {"model": "local", "prompt": "a flower", "feather": 8}, engine=eng, catalog=cat).outputs[0].image)
     assert np.array_equal(out[:150], arr[:150])
     assert out[220:240, 220:240, 2].mean() > 240
     # prefill removed the original object from what the model saw
