@@ -1,6 +1,6 @@
 {
   "id": "remove-background",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Remove background",
   "category": "image",
   "mcp_name": "remove_background",
@@ -45,12 +45,20 @@
       "min": 0,
       "max": 1,
       "description": "Hard cut at this level (default: soft alpha)."
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "webp",
+        "png"
+      ],
+      "default": "webp",
+      "description": "webp: high quality (lossy, q92), far smaller files. png: lossless. Over 16383 px a side the result is png. The mask output is always png."
     }
   },
   "outputs": {
     "image": {
-      "type": "image",
-      "format": "png"
+      "type": "image"
     }
   },
   "weights": [

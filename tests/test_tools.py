@@ -197,6 +197,9 @@ def test_classify_errors():
     assert classify(MemoryError()).code == "oom"
     assert classify(RuntimeError("CUDA out of memory. Tried to allocate")).code == "oom"
     assert classify(RuntimeError("BFCArena::AllocateRawInternal Failed to allocate memory")).code == "oom"
+    assert classify(RuntimeError("Exception during initialization: cuda_call.cc:121 CUBLAS failure 3: "
+                                 "CUBLAS_STATUS_ALLOC_FAILED ; GPU=0")).code == "oom"
+    assert classify(RuntimeError("CUDA failure 2: cudaErrorMemoryAllocation")).code == "oom"
     assert classify(TimeoutError("x")).code == "timeout"
     assert classify(ValueError("boom")).code == "internal"
     e = ToolError("oom", "x")
@@ -389,6 +392,39 @@ def test_upscale(tmp_path, cache):
 
 
 @needs_ort
+def test_upscale_big_tile_oom_falls_back_to_tiles(tmp_path, cache, monkeypatch):
+    """tile=0 (or a big tile) out of GPU memory reruns at FALLBACK_TILE with the
+    same pixels; other errors are not swallowed."""
+    from imference_engine.tools.impl import upscale as up
+
+    fx = _fx()
+    put_weight(cache, "upscale", "model", fx.upscale_x4)
+    rng = np.random.default_rng(2)
+    p = tmp_path / "n.png"
+    Image.fromarray(rng.integers(0, 255, (70, 90, 3), dtype=np.uint8)).save(p)
+    want = np.asarray(run_tool("upscale", {"image": str(p)}, {"tile": 0}).outputs[0].image)
+
+    monkeypatch.setattr(up, "FALLBACK_TILE", 32)
+    real, seen = up._infer, []
+
+    def infer(sess, name, arr, msg="BFCArena: Failed to allocate memory"):
+        seen.append(max(arr.shape[2:]))
+        if max(arr.shape[2:]) > 32 + 2 * up.PAD:
+            raise RuntimeError(msg)
+        return real(sess, name, arr)
+
+    monkeypatch.setattr(up, "_infer", infer)
+    for tile in (0, 64):
+        seen.clear()
+        got = run_tool("upscale", {"image": str(p)}, {"tile": tile}, device="cpu").outputs[0].image
+        assert np.array_equal(np.asarray(got), want) and seen[0] > 64 and max(seen[1:]) <= 64
+    monkeypatch.setattr(up, "_infer", lambda s, n, a: infer(s, n, a, msg="bad graph"))
+    with pytest.raises(ToolError) as e:
+        run_tool("upscale", {"image": str(p)}, {"tile": 0}, device="cpu")
+    assert e.value.code == "internal"
+
+
+@needs_ort
 @pytest.mark.parametrize("model,size,n_out", [("u2netp", 320, 2), ("isnet", 1024, 1), ("birefnet-lite", 1024, 3)])
 def test_remove_background(tmp_path, cache, model, size, n_out):
     fx = _fx()
@@ -405,6 +441,41 @@ def test_remove_background(tmp_path, cache, model, size, n_out):
     assert m.mode == "L" and set(np.unique(np.asarray(m))) <= {0, 255}
     c = run_tool("remove-background", {"image": str(p)}, {"model": model, "output": "color", "background": "#00ff00"}).outputs[0].image
     assert c.mode == "RGB"
+
+
+@needs_ort
+def test_ai_image_tools_write_webp_by_default(tmp_path, cache):
+    """AI image tools: lossy WebP by default (alpha kept), PNG on request, a
+    mask always PNG."""
+    fx = _fx()
+    put_weight(cache, "remove-background", "model", fx.saliency, 320, n_outputs=2, params={"model": "u2netp"})
+    put_weight(cache, "upscale", "model", fx.upscale_x4)
+    p = img(tmp_path, (40, 30), (200, 100, 50), name="s.png")
+    out = tmp_path / "o"
+
+    def run(tool, **params):
+        o = run_tool(tool, {"image": str(p)}, params, output_dir=str(out)).outputs[0]
+        return o, Image.open(o.path)
+
+    o, im = run("upscale")
+    assert o.format == "webp" and o.path.suffix == ".webp" and im.format == "WEBP" and im.size == (160, 120)
+    o, im = run("upscale", format="png")
+    assert o.format == "png" and im.format == "PNG"
+    o, im = run("remove-background", model="u2netp")
+    assert o.format == "webp" and im.mode == "RGBA"
+    o, im = run("remove-background", model="u2netp", output="mask", format="webp")
+    assert o.format == "png" and im.format == "PNG" and im.mode == "L"
+
+
+def test_webp_over_max_side_is_written_as_png(tmp_path):
+    from imference_engine.tools import media, runner
+
+    wide = runner.image_output(Image.new("RGB", (media.WEBP_MAX_SIDE + 1, 2)), "webp")
+    runner._finalize(wide, tmp_path, "wide", tmp_path)
+    assert wide.format == "png" and wide.path.suffix == ".png" and Image.open(wide.path).format == "PNG"
+    ok = runner.image_output(Image.new("RGB", (media.WEBP_MAX_SIDE, 2)), "webp")
+    runner._finalize(ok, tmp_path, "ok", tmp_path)
+    assert ok.format == "webp" and Image.open(ok.path).format == "WEBP"
 
 
 @needs_ort
@@ -722,7 +793,7 @@ def test_oom_releases_warm_sessions_and_retries_once(tmp_path, monkeypatch):
         return [runner.ToolOutput(name="image", type="image", format="png", image=Image.new("RGB", (8, 8)))]
 
     monkeypatch.setattr(impl_mod, "get_impl", lambda tool_id: flaky)
-    monkeypatch.setattr(runner, "_free_tool_memory", lambda: freed.append(1) or 3)
+    monkeypatch.setattr(runner, "_free_tool_memory", lambda err=None: freed.append(1) or 3)
     r = run_tool("resize", {"image": str(p)}, {"width": 8}, device="cuda")
     assert len(calls) == 2 and freed == [1] and r.outputs[0].image.size == (8, 8)
 
@@ -734,9 +805,42 @@ def test_oom_releases_warm_sessions_and_retries_once(tmp_path, monkeypatch):
     monkeypatch.setattr(impl_mod, "get_impl", lambda tool_id: always_oom)
     with pytest.raises(ToolError) as e:
         run_tool("resize", {"image": str(p)}, {"width": 8}, device="cuda")
-    assert e.value.code == "oom" and freed == [1] and len(calls) == 2
+    # freed again after the second OOM: a request too big even alone must not
+    # leave its reservation behind for the next request
+    assert e.value.code == "oom" and freed == [1, 1] and len(calls) == 2
 
     freed.clear()
     with pytest.raises(ToolError):
         run_tool("resize", {"image": str(p)}, {"width": 8}, device="cpu")
     assert freed == []
+
+
+def test_oom_attempt_frames_do_not_outlive_release(tmp_path, monkeypatch):
+    """What a failed attempt held (its ONNX session, through the traceback
+    frames) is gone when memory is released: before the retry, and after a
+    second OOM — else that GPU memory stays reserved for the next request."""
+    import weakref
+    from imference_engine import tools as T
+    from imference_engine.tools import impl as impl_mod
+
+    class Session:  # stands in for the InferenceSession the impl ran
+        pass
+
+    p = tmp_path / "a.png"
+    Image.new("RGB", (32, 32)).save(p)
+    held, alive_at_retry = [], []
+
+    def always_oom(ctx, inputs, params):
+        if held:
+            alive_at_retry.append(held[0]() is not None)
+        sess = Session()
+        held.append(weakref.ref(sess))
+        raise RuntimeError("CUBLAS_STATUS_ALLOC_FAILED")
+
+    monkeypatch.setattr(impl_mod, "get_impl", lambda tool_id: always_oom)
+    monkeypatch.setattr(T, "release", lambda: 0)
+    with pytest.raises(ToolError) as e:
+        run_tool("resize", {"image": str(p)}, {"width": 8}, device="cuda")
+    assert e.value.code == "oom" and len(held) == 2
+    assert alive_at_retry == [False]
+    assert held[1]() is None   # even while the caller still holds the error

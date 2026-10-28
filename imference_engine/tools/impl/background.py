@@ -10,7 +10,7 @@ from __future__ import annotations
 from imference_engine.tools import media
 from imference_engine.tools.impl import onnx_util
 from imference_engine.tools.progress import LOADING, RUNNING
-from imference_engine.tools.runner import ToolOutput
+from imference_engine.tools.runner import ToolOutput, image_output
 
 _IMAGENET = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 RECIPES = {
@@ -65,5 +65,5 @@ def run(ctx, inputs, params):
     if mode == "color":
         bg = Image.new("RGBA", src.size, params["background"])
         bg.alpha_composite(cut_out)
-        return [ToolOutput(name="image", type="image", format="png", image=bg.convert("RGB"))]
-    return [ToolOutput(name="image", type="image", format="png", image=cut_out)]
+        return [image_output(bg.convert("RGB"), params["format"])]
+    return [image_output(cut_out, params["format"])]

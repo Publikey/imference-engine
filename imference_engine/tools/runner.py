@@ -54,6 +54,14 @@ class ToolOutput:
         return d
 
 
+def image_output(image, fmt: str, name: str = "image") -> ToolOutput:
+    """An AI image tool's result in its ``format`` param: lossy WebP (the
+    default, see media.WEBP_OUTPUT) or lossless PNG."""
+    from imference_engine.tools import media
+    return ToolOutput(name=name, type="image", format=fmt, image=image,
+                      save_options=dict(media.WEBP_OUTPUT) if fmt == "webp" else {})
+
+
 @dataclass
 class ToolResult:
     tool_id: str
@@ -152,9 +160,17 @@ def run_tool(
             # retry once; generation tools share the engine's model, untouched.
             if err.code != OOM or manifest.runtimes.needs_engine or str(device).startswith("cpu"):
                 raise
-            freed = _free_tool_memory()
+            freed = _free_tool_memory(err)
             logger.warning("tool %s ran out of memory: released %d warm session(s), retrying once", tool_id, freed)
-            outputs = _run_impl(impl, ctx, inputs, clean, tool_id)
+            try:
+                outputs = _run_impl(impl, ctx, inputs, clean, tool_id)
+            except ToolError as again:
+                # Too big even alone (e.g. upscale tile=0 on 4 MP): the failed
+                # attempt's session keeps what it reserved, which would starve
+                # every next request on this worker. Give it back first.
+                if again.code == OOM:
+                    _free_tool_memory(again)
+                raise
 
         progress(ENCODING, 0.0)
         out_dir = Path(output_dir) if output_dir else None
@@ -183,8 +199,21 @@ def _run_impl(impl, ctx, inputs, clean, tool_id):
         raise err from e
 
 
-def _free_tool_memory() -> int:
-    """Drop the warm tool sessions (ONNX, Florence-2) and torch's cache."""
+def _free_tool_memory(err: Optional[BaseException] = None) -> int:
+    """Drop the warm tool sessions (ONNX, Florence-2) and torch's cache.
+
+    ``err`` is the OOM being handled: its traceback chain (already logged by
+    ``_run_impl``) keeps the failed attempt's frames — and the session in
+    their locals — alive, so release() alone would not give that memory back.
+    Clearing the frames' locals works whoever else still holds the traceback.
+    """
+    import traceback
+    seen = set()
+    while err is not None and id(err) not in seen:
+        seen.add(id(err))
+        if err.__traceback__ is not None:
+            traceback.clear_frames(err.__traceback__)   # skips the frames still running
+        err = err.__cause__ or err.__context__
     from imference_engine import tools
     n = tools.release()
     try:
@@ -202,6 +231,8 @@ def _finalize(o: ToolOutput, out_dir: Optional[Path], stem: str, work: Path) -> 
     if o.image is not None:
         o.width, o.height = o.image.size
         if not o.format:
+            o.format = "png"
+        if o.format == "webp" and max(o.image.size) > media.WEBP_MAX_SIDE:
             o.format = "png"
         if out_dir is not None:
             o.path = media.save_image(o.image, out_dir / (stem + media.ext_for(o.format)), o.format, **o.save_options)

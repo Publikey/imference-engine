@@ -1,6 +1,6 @@
 {
   "id": "restore-faces",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Restore faces",
   "category": "image",
   "mcp_name": "restore_faces",
@@ -27,12 +27,20 @@
       "min": 1,
       "max": 20,
       "default": 10
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "webp",
+        "png"
+      ],
+      "default": "webp",
+      "description": "webp: high quality (lossy, q92), far smaller files. png: lossless. Over 16383 px a side the result is png."
     }
   },
   "outputs": {
     "image": {
-      "type": "image",
-      "format": "png"
+      "type": "image"
     }
   },
   "weights": [

@@ -124,8 +124,17 @@ def flatten(img, background: str = "#ffffff"):
     return img.convert("RGB") if img.mode != "RGB" else img
 
 
+# WebP cannot encode a side over 16383 px (x4 of a wide 4 MP image is): such
+# outputs are written as PNG instead (runner._finalize).
+WEBP_MAX_SIDE = 16383
+# The AI image tools' output (upscale, erase, ...): lossy WebP q92 at method 2
+# is ~15-50x smaller than PNG and the fastest encode (64 MP: 1.8 s vs 4.9 s at
+# method 4, same size within 10%).
+WEBP_OUTPUT = {"quality": 92, "method": 2}
+
+
 def save_image(img, path: Path, fmt: str, *, quality: int = 92, lossless: bool = False,
-               background: str = "#ffffff", keep_metadata: bool = False) -> Path:
+               method: int = 4, background: str = "#ffffff", keep_metadata: bool = False) -> Path:
     """Write ``img`` as ``fmt``. Metadata is dropped unless ``keep_metadata``
     (tools produce new pixels; carrying the old prompt/EXIF along is a leak)."""
     path = Path(path)
@@ -137,11 +146,12 @@ def save_image(img, path: Path, fmt: str, *, quality: int = 92, lossless: bool =
     elif fmt == "webp":
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA" if "A" in img.mode or "transparency" in img.info else "RGB")
-        kwargs = {"quality": quality, "lossless": lossless, "method": 4}
+        kwargs = {"quality": quality, "lossless": lossless, "method": method}
     elif fmt == "png":
         if img.mode not in ("RGB", "RGBA", "L", "LA", "P", "I", "1"):
             img = img.convert("RGBA")
-        kwargs = {"optimize": False, "compress_level": 6}
+        # Level 1: 6x faster than 6 for ~16% more bytes (64 MP: 5 s vs 31 s).
+        kwargs = {"optimize": False, "compress_level": 1}
     else:
         raise ToolError(INVALID_INPUT, f"unsupported image format {fmt!r}")
     if keep_metadata:

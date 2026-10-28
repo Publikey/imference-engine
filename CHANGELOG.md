@@ -14,6 +14,36 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   anima: subjects pasted into the box, hard edges, anima paints skin). The
   tool is hidden from the catalog, the export and `run_tool`; the
   implementation stays for a per-step latent-blend inpaint.
+- **`interpolate`: 2x only, clips up to 10 s** (was 2x / 4x, 60 s). 4x costs
+  ~3x the 2x time and a long clip held the `tools-gpu` worker for minutes
+  (RTX 4060 Ti, 24 fps, per second of video: 2x 8 s at 720p / 17 s at 1080p,
+  4x 22 s / 50 s). `factor: 4` and longer clips now answer `invalid_input` /
+  `too_large`. Re-export the catalog (API, Desktop).
+- **AI image tools write WebP by default** (upscale, erase-object,
+  restore-faces, remove-background; manifests 1.1.0): new `format` param,
+  `webp` (lossy q92, method 2, alpha kept) or `png` (lossless). Masks stay
+  PNG, and so does a result over 16383 px a side (WebP's limit). Files are
+  ~15-50x smaller and the encode faster (64 MP upscale: 1.8 s vs 31 s).
+  **Breaking** for a client that assumed `.png`: read `data[].format`.
+- **PNG written at `compress_level` 1** (was 6): 6x faster for ~16% more
+  bytes; it was half of an upscale task (64 MP: 31 s -> 5 s).
+- **`upscale`: `tile=0` (whole image) or a big tile that runs out of GPU
+  memory falls back to 256-px tiles** (same pixels) instead of failing: x4 of
+  a 4 MP image whole does not fit in 16 GB.
+
+### Fixed
+
+- **Tools GPU memory on a shared worker** (`tools-gpu` keeps every tool warm
+  on one GPU; prod: the eraser ended out of memory). CUDA sessions use
+  `kSameAsRequested` + `HEURISTIC` cuDNN search (optional
+  `ORT_CUDA_MEM_LIMIT_MB`), and a light tool that hits OOM releases the warm
+  sessions and retries once. Completed after a GPU stress run:
+  `CUBLAS_STATUS_ALLOC_FAILED` / `cudaErrorMemoryAllocation` (sessions created
+  on a full GPU) are now `oom`, not `internal`, so they retry too; a request
+  still out of memory after the retry releases what it reserved, and the
+  failed attempt's frames are cleared first (they kept its session alive past
+  `release()`). Before, one too-big request left the GPU full and every next
+  tool on the worker failed.
 
 ## [0.5.0] — 2026-10-16 (staged as `v0.5.0.dev1`…`v0.5.0.dev5`: dev2 renamed the cloud queue `tools-light` to `tools-gpu`, dev3 keeps the NF4 encoder loaded between Qwen-Image-Edit edits when VRAM allows, dev4 warms the Lightning LoRA and the NF4 encoder with the base, dev5 edits small Qwen-Image-Edit inputs at their own size (0.5-1 MP) instead of ~1 MP)
 

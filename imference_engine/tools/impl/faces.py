@@ -15,7 +15,7 @@ from __future__ import annotations
 from imference_engine.tools import media
 from imference_engine.tools.impl import onnx_util
 from imference_engine.tools.progress import LOADING, RUNNING
-from imference_engine.tools.runner import ToolOutput
+from imference_engine.tools.runner import image_output
 
 # FFHQ 5-point template (eyes, nose, mouth corners) for a 512 crop.
 TEMPLATE = (
@@ -158,4 +158,4 @@ def run(ctx, inputs, params):
     ctx.progress(RUNNING, 1.0)
     if alpha is not None:
         out.putalpha(alpha)
-    return [ToolOutput(name="image", type="image", format="png", image=out)]
+    return [image_output(out, params["format"])]

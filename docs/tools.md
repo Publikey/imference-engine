@@ -79,7 +79,7 @@ with `timeout: 0` — the per-queue `active_timeout` rules:
   "id": "<request_id>",
   "webhook_url": "https://imference.com/webhook",
   "tool_id": "remove-background",
-  "tool_version": "1.0.0",
+  "tool_version": "1.1.0",
   "inputs": {"image": "https://<signed input url>"},
   "params": {"model": "birefnet-lite", "output": "png-alpha"}
 }
@@ -93,13 +93,18 @@ Worker result (returned AND POSTed to `webhook_url`, header
 ```json
 {
   "id": "<request_id>",
-  "tool_id": "remove-background", "tool_version": "1.0.0",
+  "tool_id": "remove-background", "tool_version": "1.1.0",
   "duration_ms": 812, "runtime": "onnx:CUDAExecutionProvider",
-  "data": [{"url": "https://<blob>/tools/<uuid>.png", "seed": "", "name": "image",
-            "type": "image", "format": "png", "width": 1024, "height": 1024}],
+  "data": [{"url": "https://<blob>/tools/<uuid>.webp", "seed": "", "name": "image",
+            "type": "image", "format": "webp", "width": 1024, "height": 1024}],
   "errors": []
 }
 ```
+
+The AI image tools (upscale, erase-object, restore-faces, remove-background)
+write lossy WebP (q92) by default and lossless PNG with `"format": "png"`;
+masks are always PNG, and so is a result over 16383 px a side (WebP's limit).
+Read the format from `data[].format`, not from the manifest.
 
 Text outputs (`describe`) are uploaded as a `.txt` blob and also inlined as
 `"text"` on the data item. On failure: `"data": []` and

@@ -1,16 +1,16 @@
 {
   "id": "interpolate",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Smooth motion",
   "category": "video",
   "mcp_name": "interpolate_frames",
-  "description": "Multiply a video's frame rate with RIFE frame interpolation (2x or 4x).",
+  "description": "Double a video's frame rate with RIFE frame interpolation.",
   "inputs": {
     "video": {
       "type": "video",
       "required": true,
       "max_mb": 200,
-      "max_seconds": 60,
+      "max_seconds": 10,
       "description": "Source video or GIF"
     }
   },
@@ -18,8 +18,7 @@
     "factor": {
       "type": "enum",
       "values": [
-        2,
-        4
+        2
       ],
       "default": 2
     }

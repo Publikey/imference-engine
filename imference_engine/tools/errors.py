@@ -59,8 +59,10 @@ def classify(exc: BaseException) -> ToolError:
         return ToolError(OOM, "out of memory")
     text = f"{type(exc).__name__}: {exc}"
     low = text.lower()
+    # cuBLAS / cuDNN handles created on a full GPU fail with *_STATUS_ALLOC_FAILED
+    # (onnxruntime: "Exception during initialization ... CUBLAS_STATUS_ALLOC_FAILED").
     if ("out of memory" in low or "outofmemory" in low or "failed to allocate" in low
-            or "bfcarena" in low or "cudnn_status_alloc_failed" in low):
+            or "bfcarena" in low or "_status_alloc_failed" in low or "cudaerrormemoryallocation" in low):
         return ToolError(OOM, text[:500])
     if isinstance(exc, TimeoutError):
         return ToolError(TIMEOUT, text[:500])

@@ -1,6 +1,6 @@
 {
   "id": "upscale",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Upscale",
   "category": "image",
   "mcp_name": "upscale",
@@ -38,12 +38,20 @@
       "max": 1024,
       "default": 256,
       "description": "Tile size (0 = whole image; lower uses less memory)."
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "webp",
+        "png"
+      ],
+      "default": "webp",
+      "description": "webp: high quality (lossy, q92), far smaller files. png: lossless. Over 16383 px a side the result is png."
     }
   },
   "outputs": {
     "image": {
-      "type": "image",
-      "format": "png"
+      "type": "image"
     }
   },
   "weights": [

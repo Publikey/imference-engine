@@ -15,7 +15,7 @@ from imference_engine.tools import media
 from imference_engine.tools.errors import INVALID_INPUT, ToolError
 from imference_engine.tools.impl import onnx_util
 from imference_engine.tools.progress import LOADING, RUNNING
-from imference_engine.tools.runner import ToolOutput
+from imference_engine.tools.runner import image_output
 
 SIZE = 512
 
@@ -97,4 +97,4 @@ def run(ctx, inputs, params):
     if alpha is not None:
         out.putalpha(alpha)
     ctx.progress(RUNNING, 1.0)
-    return [ToolOutput(name="image", type="image", format="png", image=out)]
+    return [image_output(out, params["format"])]

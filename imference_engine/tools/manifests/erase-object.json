@@ -1,6 +1,6 @@
 {
   "id": "erase-object",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Magic eraser",
   "category": "image",
   "mcp_name": "erase_object",
@@ -28,12 +28,20 @@
       "max": 64,
       "default": 8,
       "description": "Grow the mask by this many pixels (catches edges and shadows)."
+    },
+    "format": {
+      "type": "enum",
+      "values": [
+        "webp",
+        "png"
+      ],
+      "default": "webp",
+      "description": "webp: high quality (lossy, q92), far smaller files. png: lossless. Over 16383 px a side the result is png."
     }
   },
   "outputs": {
     "image": {
-      "type": "image",
-      "format": "png"
+      "type": "image"
     }
   },
   "weights": [

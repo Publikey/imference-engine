@@ -5,15 +5,25 @@ Graph contract: input ``[1, 3, H, W]`` float32 RGB in [0, 1], output
 Tiles overlap by ``pad`` pixels and only their centre is kept, which removes
 the seams of naive tiling. ``scale=2`` with an x4 model renders x4 then
 Lanczos-downsamples (sharper than a native x2 model, same cost).
+
+Whole-image (``tile=0``) or large tiles that run out of GPU memory fall back
+to ``FALLBACK_TILE`` (same pixels, the seams are removed exactly): x4 of a
+4 MP image whole needs more than 16 GB.
 """
 from __future__ import annotations
 
+import logging
+
 from imference_engine.tools import media
+from imference_engine.tools.errors import OOM, classify
 from imference_engine.tools.impl import onnx_util
 from imference_engine.tools.progress import LOADING, RUNNING
-from imference_engine.tools.runner import ToolOutput
+from imference_engine.tools.runner import image_output
+
+logger = logging.getLogger(__name__)
 
 PAD = 16
+FALLBACK_TILE = 256
 
 
 def _infer(sess, name, arr):
@@ -67,7 +77,17 @@ def run(ctx, inputs, params):
     ctx.progress(LOADING, 0.0)
     sess, ctx.runtime = onnx_util.session(ctx.weights["model"], ctx.device)
     ctx.progress(RUNNING, 0.0)
-    up, s = upscale_array(sess, rgb, params["tile"], ctx.progress, ctx.check_deadline)
+    tile = params["tile"]
+    up = None
+    try:
+        up, s = upscale_array(sess, rgb, tile, ctx.progress, ctx.check_deadline)
+    except Exception as e:  # noqa: BLE001 — only OOM on a big tile falls back
+        if 0 < tile <= FALLBACK_TILE or classify(e).code != OOM:
+            raise
+        logger.warning("upscale tile=%s out of memory on %dx%d: falling back to tile=%d",
+                       tile, src.width, src.height, FALLBACK_TILE)
+    if up is None:  # outside the except: the failed attempt's buffers are freed first
+        up, s = upscale_array(sess, rgb, FALLBACK_TILE, ctx.progress, ctx.check_deadline)
     out = Image.fromarray((up * 255.0 + 0.5).astype(np.uint8), "RGB")
     want = params["scale"]
     target = (src.width * want, src.height * want)
@@ -75,4 +95,4 @@ def run(ctx, inputs, params):
         out = out.resize(target, Image.LANCZOS)
     if alpha is not None:
         out.putalpha(alpha.resize(target, Image.LANCZOS))
-    return [ToolOutput(name="image", type="image", format="png", image=out)]
+    return [image_output(out, params["format"])]
