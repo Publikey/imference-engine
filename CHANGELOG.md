@@ -5,7 +5,7 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased]
+## [0.5.1] — 2026-10-28 (staged as `v0.5.1.dev1`: the first GPU memory fix, completed after a GPU stress run)
 
 ### Changed
 
