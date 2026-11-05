@@ -116,6 +116,8 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                 jobs.put((start, min(start + chunk - 1, total - 1)))
 
             got = [0]
+            done = [0]  # chunks fully written (byte-exact)
+            n_chunks = jobs.qsize()
             lock = threading.Lock()
             write_lock = threading.Lock()  # guards the Windows lseek+write fallback
             errors: list = []
@@ -159,6 +161,20 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                                     off += len(buf)
                                     with lock:
                                         got[0] += len(buf)
+                                # r.read(amt) returns b"" (no IncompleteRead) when
+                                # the server closes a range body early. The .part
+                                # file is preallocated by ftruncate, so a short
+                                # chunk would leave a silent zero hole that still
+                                # passes the size check (prod: a fp16-fix VAE with
+                                # a zeroed 64 MB chunk -> every SDXL image flat gray).
+                                if off != end + 1:
+                                    with lock:
+                                        got[0] -= off - start
+                                    raise IOError(
+                                        f"short range {start}-{end}: got {off - start}"
+                                        f" of {end - start + 1} bytes")
+                                with lock:
+                                    done[0] += 1
                                 return True
                         except Exception as ex:  # noqa: BLE001
                             last_was_200, local_err = False, ex
@@ -205,6 +221,10 @@ def download_parallel(url: str, dest: str, threads: int = 8, *,
                 except OSError:
                     pass
                 return _download_single(url, dest, total, progress=progress)
+            # The size check alone can't catch a hole (the file was preallocated):
+            # every chunk must have landed byte-exact.
+            if done[0] != n_chunks:
+                raise IOError(f"incomplete: {done[0]} of {n_chunks} chunks written")
             if os.path.getsize(tmp) != total:
                 raise IOError(f"incomplete: {os.path.getsize(tmp)} of {total} bytes")
             os.replace(tmp, dest)
