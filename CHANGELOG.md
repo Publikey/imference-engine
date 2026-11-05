@@ -5,7 +5,7 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
-## [Unreleased]
+## [0.5.2] — 2026-11-05
 
 ### Fixed
 
