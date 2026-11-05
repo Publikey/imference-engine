@@ -5,6 +5,24 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Fixed
+
+- **`download_parallel` no longer accepts a range the server cut short.**
+  `http.client` returns `b""` (no `IncompleteRead`) when a 206 body closes
+  early; the `.part` file is preallocated, so the short chunk left a zero-filled
+  hole that passed the size check. In prod this zeroed 64 MB of the cached
+  `sdxl-vae-fp16-fix`: every SDXL image on that pod came out the same flat
+  gray, reported ok. Each chunk must now land byte-exact (else retried), and
+  all chunks must be written before the rename. Covers CDN base components,
+  LoRAs and Qwen-Edit lite. Already-corrupted files are NOT repaired: delete
+  them (check `sha256sum` against the source).
+- **A uniform (single flat color) image is failed per image** with a
+  `GenerationError` ("degenerate output") instead of being returned as a
+  success. It can only come from a decoder that ignores its input (corrupt
+  VAE / base weights, broken kernels).
+
 ## [0.5.1] — 2026-10-28 (staged as `v0.5.1.dev1`: the first GPU memory fix, completed after a GPU stress run)
 
 ### Changed

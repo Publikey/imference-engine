@@ -601,7 +601,24 @@ class Engine(BaseEngine):
                     )
                     needs_profiling = False
 
-                images.extend(produced)
+                for j, img in enumerate(produced):
+                    if self._is_uniform(img):
+                        # Never a real diffusion output: the decoder ignored its
+                        # input (corrupt VAE / base weights, broken kernels).
+                        # Fail the image instead of shipping a flat gray as ok.
+                        logger.error(
+                            "Degenerate output for seed %s: uniform image "
+                            "(check the VAE / base-component weights)",
+                            chunk_seeds[j])
+                        images.append(None)
+                        errors.append(GenerationError(
+                            error="degenerate output: uniform image "
+                                  "(corrupt VAE or base weights?)",
+                            batch_index=idx + j,
+                            seed=chunk_seeds[j],
+                        ))
+                    else:
+                        images.append(img)
                 idx += chunk_size
 
             except Exception as e:  # noqa: BLE001
@@ -631,6 +648,17 @@ class Engine(BaseEngine):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_uniform(img, max_std: float = 1.0) -> bool:
+        """True when every channel's stddev is below ``max_std`` (0-255 scale) —
+        a single flat color. Measured on a 64x64 thumbnail, so it costs ~nothing."""
+        try:
+            from PIL import ImageStat
+            thumb = img.convert("RGB").resize((64, 64))
+            return max(ImageStat.Stat(thumb).stddev) < max_std
+        except Exception:  # noqa: BLE001
+            return False
 
     @staticmethod
     def _is_oom(exc: BaseException) -> bool:
