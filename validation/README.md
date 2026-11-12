@@ -70,6 +70,7 @@ validation: diffusers 0.39, RTX PRO 5000 48 GB.
 | `chroma` | Chroma1-HD | ✅ real CFG (negative used); trends saturated at high CFG |
 | `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow. **Qwen-Image-2512 lite build** (GGUF Q4_K_M + Lightning 4/8 steps + NF4 encoder) validated 2026-11-13 on an RTX 3090: resident and model offload, img2img |
 | `anima` | Anima-Base (diffusers repo) | ✅ **Modular pipeline**; t2i only (no img2img) |
+| `qwenimage-layered` | Qwen-Image-Layered (unsloth GGUF Q4_K_M) | ✅ validated 2026-11-13 (RTX 3090 24 GB) — lite build (GGUF + NF4 encoder), 4 layers at the 640 bucket, with and without a prompt (auto caption); 20 GB, ~8 s per step. |
 | `krea2` | Krea 2 Turbo (Comfy-Org fp8_scaled) | ✅ validated 2026-08-27 (RTX PRO 4000 24 GB) — official scaled-fp8 AND a civitai plain-fp8 finetune (GonzaLomo v4.0, 82.9 s cached-base); base repo **gated** (`hf auth login`); t2i only, 8 steps, guidance 0.0 |
 | `flux2-klein` | FLUX.2 klein 4B (BFL bf16 single file) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — bf16, official scaled-fp8, GGUF Q8_0 / Q5_K_M / Q4_K_M; fp8 encoder; resident, model and group offload; reference editing; klein Base (true CFG). Apache-2.0, ungated; 4 steps, guidance 1.0. |
 | `ernie-image` | ERNIE-Image-Turbo (unsloth GGUF Q8_0) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — GGUF Q8_0 / Q5_K_M / Q4_K_M, Comfy-Org bf16 single file and the diffusers repo (model offload); fp8 encoder; resident, model and group offload. Apache-2.0, ungated; t2i only, 8 steps, guidance 1.0. |

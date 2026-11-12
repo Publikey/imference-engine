@@ -171,6 +171,7 @@ class Engine(BaseEngine):
         from imference_engine.pipelines.zimage import ZImageBackend
         from imference_engine.qwenimage.backend import QwenImageBackend
         from imference_engine.qwenimage.edit_backend import QwenImageEditBackend
+        from imference_engine.qwenimage.layered_backend import QwenImageLayeredBackend
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
         cdn_base = self._runtime.model_cdn
@@ -190,6 +191,8 @@ class Engine(BaseEngine):
             QwenImageBackend.engine: QwenImageBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             QwenImageEditBackend.engine: QwenImageEditBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            QwenImageLayeredBackend.engine: QwenImageLayeredBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
@@ -559,6 +562,9 @@ class Engine(BaseEngine):
             max_gpu_batch = 1
 
         images: list[Optional["Image"]] = []
+        # Per-image layer lists, index-aligned with `images` (backends that
+        # decompose into layers only; all None otherwise).
+        layer_groups: list[Optional[list]] = []
         errors: list[GenerationError] = []
         idx = 0
 
@@ -597,6 +603,7 @@ class Engine(BaseEngine):
                     strength=strength,
                 )
                 produced = pipe(**prompt_kwargs, **kwargs).images
+                produced, produced_layers = backend.split_output(produced)
 
                 if needs_profiling and baseline_vram is not None:
                     import torch
@@ -620,6 +627,7 @@ class Engine(BaseEngine):
                             "(check the VAE / base-component weights)",
                             chunk_seeds[j])
                         images.append(None)
+                        layer_groups.append(None)
                         errors.append(GenerationError(
                             error="degenerate output: uniform image "
                                   "(corrupt VAE or base weights?)",
@@ -628,6 +636,8 @@ class Engine(BaseEngine):
                         ))
                     else:
                         images.append(img)
+                        layer_groups.append(
+                            produced_layers[j] if produced_layers is not None else None)
                 idx += chunk_size
 
             except Exception as e:  # noqa: BLE001
@@ -645,6 +655,7 @@ class Engine(BaseEngine):
                 )
                 for j in range(chunk_size):
                     images.append(None)
+                    layer_groups.append(None)
                     errors.append(GenerationError(
                         error=str(e),
                         batch_index=idx + j,
@@ -652,7 +663,9 @@ class Engine(BaseEngine):
                     ))
                 idx += chunk_size
 
-        return MediaResult(kind="image", media=images, seeds=seeds, errors=errors)
+        return MediaResult(
+            kind="image", media=images, seeds=seeds, errors=errors,
+            layers=layer_groups if any(g is not None for g in layer_groups) else None)
 
     # ------------------------------------------------------------------
     # Internal helpers

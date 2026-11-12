@@ -97,6 +97,7 @@ _BACKENDS = {
     "flux2-klein": "imference_engine.flux2klein:Flux2KleinBackend",
     "ernie-image": "imference_engine.ernieimage:ErnieImageBackend",
     "lumina2": "imference_engine.lumina2:Lumina2Backend",
+    "qwenimage-layered": "imference_engine.qwenimage:QwenImageLayeredBackend",
 }
 
 

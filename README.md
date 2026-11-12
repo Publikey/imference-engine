@@ -232,6 +232,10 @@ are interchangeable and no engine logic leaks into them.
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
 | `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2, ERNIE-Image and Lumina-Image 2.0 excepted — t2i only). On `flux2-klein` and `qwenimage-edit` it is a reference to edit from an instruction; a list passes several references. |
 | `strength` | `float?` | `0.75` | img2img denoise strength (ignored by the reference-editing backends). |
+
+`MediaResult.layers` is set by `qwenimage-layered` only: per image, the list of RGBA
+layers it was decomposed into (`media[i]` is then the recomposed image).
+
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
 | `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
 
@@ -286,6 +290,7 @@ the complete cross-engine reference is in
 | `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8/int8 files) |
 | `flux2-klein` | flow DiT (3.9B) | **ignored** (distilled; Base honors it) | **1.0** (4 steps) | ignored (flow) | — | ✅ reference edit (no `strength`) | — | bf16 · fp8 · GGUF, picked per VRAM |
 | `ernie-image` | flow DiT (8B) | honored only if `guidance > 1` | **1.0** (Turbo, 8 steps) | ignored (flow) | `shift` | ❌ (t2i) | — | GGUF (bf16 compute), picked per VRAM |
+| `qwenimage-layered` | MMDiT (20B) | honored | 4.0 (50 steps) | ignored (flow) | `layers`, `resolution` | image → RGBA layers | — | GGUF lite build (`auto`) |
 | `lumina2` | flow DiT (2.6B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | `shift`, `cfg_trunc_ratio`, `system_prompt` | ❌ (t2i) | — | bf16 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults

@@ -55,6 +55,13 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **Qwen-Image-Layered backend** (`qwenimage-layered`): decomposes
+  `source_image` into RGBA layers. `MediaResult.layers[i]` carries the layers
+  (background first) and `media[i]` the recomposed image; backends opt in
+  through the new `PipelineBackend.split_output` hook (default: no layers).
+  `backend_options`: `layers`, `resolution`. Runs as a lite build
+  (`weights_path="auto"`: GGUF Q4_K_M + NF4 encoder, 20 GB on an RTX 3090,
+  ~8 s per step — no Lightning LoRA exists for it).
 - **Qwen-Image-2512 + a text-to-image lite build** on the `qwenimage` backend:
   a `.gguf` transformer (or `weights_path="auto"`, which fetches the 2512
   Q4_K_M) loads with lightx2v's Lightning LoRA (4 or 8 steps, CFG 1.0) and the

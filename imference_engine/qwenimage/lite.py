@@ -91,6 +91,12 @@ def lite_pipeline_class(base_cls: Any) -> Any:
             embeds, mask = super()._get_qwen_prompt_embeds(prompt, enc_device, dtype)
             return embeds.to(target), mask.to(target)
 
+        def get_image_caption(self, *args, **kwargs):
+            # Layered pipeline only: captioning calls the encoder directly.
+            if self.text_encoder is None and self._encoder_loader is not None:
+                self.register_modules(text_encoder=self._encoder_loader())
+            return super().get_image_caption(*args, **kwargs)
+
         def prepare_latents(self, *args, **kwargs):
             # First step after encoding: free the encoder unless there is room
             # to keep it next to the denoise.
@@ -122,6 +128,11 @@ def lite_pipeline_class(base_cls: Any) -> Any:
 
         def __call__(self, *args, **kwargs):
             ok = False
+            # The layered pipeline reads text_encoder.dtype before it encodes
+            # anything: have the encoder in place from the start.
+            if (hasattr(self, "get_image_caption") and self.text_encoder is None
+                    and self._encoder_loader is not None):
+                self.register_modules(text_encoder=self._encoder_loader())
             try:
                 out = super().__call__(*args, **kwargs)
                 ok = True
@@ -182,6 +193,13 @@ def load_lite_pipeline(gguf_path: str, base_repo: str, *, pipeline_cls: Any,
         patterns = (lite_base_patterns or LITE_BASE_PATTERNS) if mode == "nf4" else full_base_patterns
         base_dir = local_repo_dir(base_repo, patterns, cache_dir, namespace="image", cdn_base=cdn_base)
     transformer = edit_lite.load_gguf_transformer(gguf_path, base_dir)
+    # diffusers' GGUF loader only runs nn.Linear from a GGUF: any other layer it
+    # finds there stays raw bytes (the layered checkpoint's extra embedding
+    # table, stored bf16, comes out as uint8 with twice the width).
+    from imference_engine.core.gguf import dequantize_non_linear
+    converted = dequantize_non_linear(transformer, torch.bfloat16)
+    if converted:
+        logger.info("Qwen-Image GGUF: restored non-linear weights %s", converted)
     if mode == "nf4":
         pipe = lite_pipeline_class(pipeline_cls).from_pretrained(
             base_dir, transformer=transformer, text_encoder=None, local_files_only=True,

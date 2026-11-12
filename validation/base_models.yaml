@@ -133,6 +133,25 @@ qwenimage-edit:
   guidance_scale: 4.0
   seed: 42
 
+qwenimage-layered:
+  # Decomposes an image into RGBA layers — no text-to-image mode, so the harness
+  # feeds a source image. unsloth GGUF Q4_K_M (12.8 GB) + the NF4 encoder (lite
+  # build); base_model supplies the alpha-aware VAE, processor, tokenizer,
+  # scheduler and config. 50 steps of true CFG: minutes per image.
+  mode: single_file
+  repo: unsloth/Qwen-Image-Layered-GGUF
+  filename: qwen-image-layered-Q4_K_M.gguf
+  base_model: Qwen/Qwen-Image-Layered
+  offload: false
+  source_image: synthetic
+  prompt: "a red ball on green grass under a blue sky"
+  negative_prompt: " "
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 4.0
+  seed: 42
+
 krea2:
   mode: single_file
   # Comfy-Org repackage of the official Krea 2 Turbo — the fp8_scaled file is

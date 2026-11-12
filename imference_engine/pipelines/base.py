@@ -122,6 +122,17 @@ class PipelineBackend(Backend):
         take the output size from the source image (omit width/height).
         """
 
+    def split_output(self, produced: list) -> tuple:
+        """Turn the pipeline's ``.images`` for one chunk into ``(images, layers)``.
+
+        Default: one image per entry and no layers (``layers`` is None). A
+        backend whose pipeline returns several images per entry (Qwen-Image-
+        Layered: a list of RGBA layers) returns one representative image per
+        entry plus the per-entry layer lists, which the engine exposes as
+        ``MediaResult.layers``.
+        """
+        return produced, None
+
     @abstractmethod
     def make_generator(self, seed: int, device: str) -> Any:
         """Build a torch.Generator on the right device for this backend.
