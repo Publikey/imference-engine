@@ -167,6 +167,7 @@ class Engine(BaseEngine):
         from imference_engine.krea2.backend import Krea2Backend
         from imference_engine.longcat.backend import LongCatBackend, LongCatEditBackend
         from imference_engine.lumina2.backend import Lumina2Backend
+        from imference_engine.ovisimage.backend import OvisImageBackend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
@@ -208,6 +209,8 @@ class Engine(BaseEngine):
             LongCatBackend.engine: LongCatBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             LongCatEditBackend.engine: LongCatEditBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            OvisImageBackend.engine: OvisImageBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 

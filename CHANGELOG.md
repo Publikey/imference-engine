@@ -55,6 +55,12 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **Ovis-Image backend** (`ovis-image`, extra `[ovis-image]`, in `[runtime]`).
+  Alibaba AIDC's Apache-2.0 7B flow DiT + Ovis2.5-2B (Qwen3) encoder + FLUX VAE.
+  Text-to-image only (50 steps, CFG 5.0, negative prompt honored). No GGUF
+  loader exists for it: `ovisimage.recommend_build` picks fp8 or bf16 storage
+  and the offload mode per VRAM (19.5 GB / 13.6 GB resident, 9.6 GB with model
+  offload). Env: `OVIS_IMAGE_TRANSFORMER`, `OVIS_IMAGE_ENCODER`.
 - **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
   GPU-validated on the bf16, GGUF and model-offload builds of both backends
   (klein also under group offload and for editing). `managers/lora_inspect.py` now tells

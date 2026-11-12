@@ -87,7 +87,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2", "longcat"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2", "longcat", "ovis-image"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -106,6 +106,7 @@ _BACKENDS = {
     "qwenimage-layered": "imference_engine.qwenimage:QwenImageLayeredBackend",
     "longcat": "imference_engine.longcat:LongCatBackend",
     "longcat-edit": "imference_engine.longcat:LongCatEditBackend",
+    "ovis-image": "imference_engine.ovisimage:OvisImageBackend",
 }
 
 

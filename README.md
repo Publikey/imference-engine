@@ -20,7 +20,7 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0 · LongCat-Image, plus **Wan 2.2** text/image-to-video and
+  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0 · LongCat-Image · Ovis-Image, plus **Wan 2.2** text/image-to-video and
   **MiniMax-H3** joint video+audio — each a first-class backend, none needing
   bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` (and `runtime` = all twelve), `wan`, `minimax-h3`, `stage` (R2
+· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` · `ovis-image` (and `runtime` = all thirteen), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
 `diffusers==0.40.0` pin.
 
@@ -293,6 +293,7 @@ the complete cross-engine reference is in
 | `qwenimage-layered` | MMDiT (20B) | honored | 4.0 (50 steps) | ignored (flow) | `layers`, `resolution` | image → RGBA layers | — | GGUF lite build (`auto`) |
 | `longcat` | flow DiT (6B) | honored (real CFG) | 4.0 (50 steps) | ignored (flow) | `prompt_rewrite` | ❌ (t2i) | — | bf16 · fp8 storage, picked per VRAM |
 | `longcat-edit` | flow DiT (6B) | honored if `guidance > 1` | **1.0** (Turbo, 8 steps) | ignored (flow) | — | ✅ instruction edit (no `strength`) | — | bf16 · fp8 storage, picked per VRAM |
+| `ovis-image` | flow DiT (7B) | honored (real CFG) | 5.0 (50 steps) | ignored (flow) | — | ❌ (t2i) | — | bf16 · fp8 storage, picked per VRAM |
 | `lumina2` | flow DiT (2.6B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | `shift`, `cfg_trunc_ratio`, `system_prompt` | ❌ (t2i) | — | bf16 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
@@ -343,6 +344,12 @@ are fp8 storage of the bf16 weights: 19.6 GB resident on 24 GB, 13.1 GB / 10.3 G
 with model offload — see `longcat.recommend_build`. All checkpoints share one
 mirrored copy of the Qwen2.5-VL encoder.
 
+**Ovis-Image-7B** (Apache-2.0) is a text-rendering specialist: undistilled (50 steps
+of true CFG, about a minute and a half per image), text-to-image only. No GGUF
+path in diffusers 0.40, so the per-VRAM builds are fp8 storage: 19.5 GB with a
+bf16 transformer on 24 GB, 13.6 GB all-fp8, 9.6 GB with model offload — see
+`ovisimage.recommend_build`.
+
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
 [FLUX](imference_engine/flux/README.md) ·
@@ -354,6 +361,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [ERNIE-Image](imference_engine/ernieimage/README.md) ·
 [Lumina-Image 2.0](imference_engine/lumina2/README.md) ·
 [LongCat-Image](imference_engine/longcat/README.md) ·
+[Ovis-Image](imference_engine/ovisimage/README.md) ·
 [Wan video](imference_engine/wan/README.md) ·
 [MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
@@ -426,7 +434,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/ longcat/   # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/ longcat/ ovisimage/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager

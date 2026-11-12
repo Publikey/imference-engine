@@ -262,6 +262,22 @@ longcat-edit:
   guidance_scale: 1.0
   seed: 42
 
+ovis-image:
+  # Diffusers repo (no single-file loader for the Ovis transformer). The build
+  # table picks fp8 storage and the offload mode for the card.
+  mode: single_file
+  repo: AIDC-AI/Ovis-Image-7B
+  filename: null
+  weights_local: auto
+  base_model: AIDC-AI/Ovis-Image-7B
+  offload: false
+  prompt: 'a storefront with a neon sign that reads "OPEN 24 HOURS", rainy night'
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 5.0
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers
