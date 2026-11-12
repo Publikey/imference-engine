@@ -38,7 +38,7 @@ def test_base_checkpoint_is_a_catalog_row(tmp_path):
         "    engine: zimage\n"
         "    weights: /cache/z_image_bf16.safetensors\n"
         "    base_model: Tongyi-MAI/Z-Image\n"
-        "    defaults: {num_steps: 40, guidance_scale: 4.0}\n"
+        "    defaults: {num_steps: 40, guidance_scale: 4.0}\n",
         encoding="utf-8",
     )
     engine = Engine(catalog_path=f, runtime=RuntimeConfig(device="cpu")).load()
