@@ -32,11 +32,26 @@ edit = engine.generate(model="klein", prompt="make it night, keep the fox",
 | `strength` | ignored — the image is a condition, not a noised start |
 | `scheduler`, `shift` | ignored — flow matching, `mu` computed by the pipeline |
 | output size (edit) | the first reference's size (capped at ~1 MP by the pipeline) |
-| LoRAs | not enabled yet (`supports_loras = False`) |
+| LoRAs | `loras=[{"source": ..., "weight": ...}]` — ComfyUI (`diffusion_model.*`) and diffusers layouts, stackable, on every build |
 
 Editing uses the same pipeline and the same resident weights: the reference
 latents are appended to the token sequence, so an edit costs about 1.5x a
 text-to-image call at the same size.
+
+## LoRAs
+
+Validated on an RTX 3090 (2026-11-13) with public klein 4B LoRAs, in both key
+layouts, on the `full`, `balanced` (GGUF), `offload` and `minimal` builds, for
+text-to-image and reference editing, single and stacked. Each run checked that
+the LoRA changes the image, that a second request reuses the cached adapter
+with an identical result, and that the next request without LoRA renders the
+base image bit for bit.
+
+- Adapters are never fused: about +2 s per image on the resident builds
+  (4.9 s instead of 2.7 s on `full`), +5 s on the first request that loads one.
+- LoRAs trained on klein **Base** 4B work on the distilled 4B checkpoint.
+- A FLUX.1 LoRA is refused with a readable error (`managers/lora_inspect.py`
+  tells the two generations apart by block count and projection width).
 
 ## Weights
 

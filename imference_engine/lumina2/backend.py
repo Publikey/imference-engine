@@ -90,6 +90,10 @@ class Lumina2Backend(PipelineBackend):
 
     engine: ClassVar[str] = "lumina2"
 
+    # User LoRAs via Lumina2LoraLoaderMixin (transformer). GPU-validated
+    # 2026-11-13 on the bf16 and GGUF builds, resident and model offload.
+    supports_loras = True
+
     # Shared components from the base repo. The transformer is CONFIG-ONLY: its
     # weights come from the checkpoint.
     BASE_PATTERNS: ClassVar[list] = [

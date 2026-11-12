@@ -48,13 +48,30 @@ finetune — check it against the catalog before offering NSFW finetunes on it.
 | `backend_options={"shift": x}` | overrides the fixed flow shift (6.0) for that request |
 | `backend_options={"cfg_trunc_ratio": r}` | guidance only on the first part of the schedule (default 1.0 = every step) |
 | `backend_options={"system_prompt": "…"}` | replaces the pipeline's system prompt |
-| LoRAs | not enabled yet (`supports_loras = False`; the diffusers pipeline has a loader) |
+| LoRAs | `loras=[{"source": ..., "weight": ...}]`, stackable, on every build |
 
 Per-model recipes belong in the catalog row: base 30-50 steps / CFG 4; Neta Lumina
 30 steps / CFG 4-5.5; NetaYume 40-50 steps / CFG 4-7.
 
 `cfg_trunc_ratio=0.25` (the upstream README example) is 1.6x faster but visibly
 degrades detail and structure in our tests, so it is not the default.
+
+## LoRAs
+
+Validated on an RTX 3090 (2026-11-13) with public Lumina-Image 2.0 LoRAs
+(diffusers layout) on the `full`, `compact` (GGUF) and `offload` builds, single
+and stacked, with the same three checks as FLUX.2 klein (the LoRA
+acts, the cached adapter reproduces, the base image comes back unchanged).
+About +3 s per image (adapters are never fused).
+The `minimal` (group offload) build was not checked with a LoRA: on the test host
+it ran at 35 s per step, so the run was stopped. The same combination passed on
+FLUX.2 klein.
+
+Z-Image inherited Lumina's block names, so a Lumina LoRA and a Z-Image LoRA have
+the same key layout; `managers/lora_inspect.py` separates them by hidden size
+(2304 vs 3840) and each backend refuses the other's files. ComfyUI-layout Lumina
+LoRAs (the civitai form) go through diffusers' own converter; none was available
+to test here.
 
 ## Weights
 

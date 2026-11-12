@@ -55,6 +55,12 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
+  GPU-validated on the bf16, GGUF and model-offload builds of both backends
+  (klein also under group offload and for editing). `managers/lora_inspect.py` now tells
+  FLUX.2 klein from FLUX.1 (block count, projection width, trainer metadata)
+  and Lumina-Image 2.0 from Z-Image (hidden size) — the pairs share a key
+  layout and were previously refused as the other family.
 - **LongCat-Image backends** (`longcat`, `longcat-edit`; extra `[longcat]`, in
   `[runtime]`). Meituan's Apache-2.0 6B flow DiT + Qwen2.5-VL-7B encoder + FLUX
   VAE on the unchanged diffusers 0.40.0 pin. `longcat`: text-to-image (50 steps,

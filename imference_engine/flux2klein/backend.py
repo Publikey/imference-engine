@@ -112,6 +112,11 @@ class Flux2KleinBackend(PipelineBackend):
 
     engine: ClassVar[str] = "flux2-klein"
 
+    # User LoRAs via Flux2LoraLoaderMixin (transformer; ComfyUI
+    # `diffusion_model.*` and diffusers layouts). GPU-validated 2026-11-13 on the
+    # bf16, GGUF and fp8-encoder builds, resident and offloaded, t2i and editing.
+    supports_loras = True
+
     # Shared components from the base repo. The transformer is CONFIG-ONLY: its
     # weights come from the checkpoint (bf16 / fp8 / GGUF).
     BASE_PATTERNS: ClassVar[list] = [

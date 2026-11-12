@@ -470,7 +470,7 @@ text-to-image + reference editing, per-VRAM build selection) is validated as of
 single files, per-VRAM build selection, text-to-image) is validated the same day
 on the same card, as is the **Lumina-Image 2.0 backend** (transformer-only,
 all-in-one and GGUF files; NetaYume and Neta Lumina finetunes).
-**LoRAs: SDXL, Z-Image, Krea 2, Anima** (`loras=` on `generate`; other backends log and ignore).
+**LoRAs: SDXL, Z-Image, Krea 2, Anima, FLUX.2 klein, Lumina-Image 2.0** (`loras=` on `generate`; other backends log and ignore).
 **Not yet wired:** Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is
 untested.

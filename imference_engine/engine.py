@@ -427,8 +427,9 @@ class Engine(BaseEngine):
         a value to override at the request layer.
 
         ``loras`` stacks user LoRAs for the request on backends that support
-        them (``PipelineBackend.supports_loras`` — SDXL, Z-Image, Krea 2 and
-        Anima; other backends log a warning and ignore). Each entry:
+        them (``PipelineBackend.supports_loras`` — SDXL, Z-Image, Krea 2,
+        Anima, FLUX.2 klein and Lumina-Image 2.0; other backends log a warning
+        and ignore). Each entry:
         ``{"source": <local path | http(s) URL>, "weight": 0.8,
         "adapter_name": "style"}`` (``path``/``url`` accepted as aliases of
         ``source``). Adapters are applied WITHOUT fusing and deactivated after
