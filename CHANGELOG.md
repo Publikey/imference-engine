@@ -55,6 +55,9 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **Z-Image base** (undistilled `Tongyi-MAI/Z-Image`, true CFG) validated on the
+  existing `zimage` backend — no code change; recipe and measurements in
+  `imference_engine/zimage/README.md` (use model offload on 24 GB cards).
 - `managers/builds.py`: the build record (`ModelBuild`) and picker shared by the
   multi-build backends (pure Python).
 - `validation/stage_r2.py`: `flux2-klein`, `ernie-image` and `lumina2` staged by default; `--repo-files` is

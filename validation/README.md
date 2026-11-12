@@ -65,7 +65,7 @@ validation: diffusers 0.39, RTX PRO 5000 48 GB.
 |---|---|---|
 | `sdxl` | SDXL 1.0 base | ✅ single-file |
 | `sd15` | SD 1.5 | ✅ single-file, light (~2 GB) |
-| `zimage` | Z-Image-Turbo (Comfy-Org transformer) | ✅ 8-step turbo, shift 3.0 |
+| `zimage` | Z-Image-Turbo (Comfy-Org transformer) | ✅ 8-step turbo, shift 3.0; **Z-Image base** (undistilled, 40 steps, CFG 4.0) validated 2026-11-13 on an RTX 3090 — 13.4 GB with model offload |
 | `flux` | FLUX.1-dev | ✅ **gated** (`hf auth login`); ~24 GB → `offload: true` |
 | `chroma` | Chroma1-HD | ✅ real CFG (negative used); trends saturated at high CFG |
 | `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow |
