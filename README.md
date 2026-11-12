@@ -20,7 +20,7 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima · Krea 2 Turbo, plus **Wan 2.2** text/image-to-video and
+  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein, plus **Wan 2.2** text/image-to-video and
   **MiniMax-H3** joint video+audio — each a first-class backend, none needing
   bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-· `krea2` (and `runtime` = all eight), `wan`, `minimax-h3`, `stage` (R2
+· `krea2` · `flux2-klein` (and `runtime` = all nine), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
 `diffusers==0.40.0` pin.
 
@@ -222,7 +222,7 @@ are interchangeable and no engine logic leaks into them.
 |---|---|---|---|
 | `model` | `str` | — (required) | A registered model name. |
 | `prompt` | `str` | — (required) | Positive prompt. |
-| `negative_prompt` | `str?` | `None` | Honored by SDXL/SD1.5/Z-Image/Chroma/Qwen-Image/Anima; **ignored by FLUX** (guidance-distilled) and **by Krea 2 whenever `guidance_scale <= 0`** (the Turbo norm). |
+| `negative_prompt` | `str?` | `None` | Honored by SDXL/SD1.5/Z-Image/Chroma/Qwen-Image/Anima; **ignored by FLUX** (guidance-distilled) **by Krea 2 whenever `guidance_scale <= 0`** (the Turbo norm) and **by FLUX.2 klein 4B** (step-distilled; klein Base honors it). |
 | `width`, `height` | `int?` | `1024` | 512 for SD 1.5. |
 | `num_steps` | `int?` | `28` | |
 | `guidance_scale` | `float?` | `6.0` | Per-engine sweet spots differ (see matrix). |
@@ -230,8 +230,8 @@ are interchangeable and no engine logic leaks into them.
 | `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
 | `batch` | `int` | `1` | N independent images, one seed each. |
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
-| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2 excepted — t2i only). |
-| `strength` | `float?` | `0.75` | img2img denoise strength. |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2 excepted — t2i only). On `flux2-klein` and `qwenimage-edit` it is a reference to edit from an instruction; a list passes several references. |
+| `strength` | `float?` | `0.75` | img2img denoise strength (ignored by the reference-editing backends). |
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
 | `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
 
@@ -284,6 +284,7 @@ the complete cross-engine reference is in
 | `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `anima` | modular DiT | honored (if set) | **ignored** (Guider block) | ignored (block) | — | ❌ (t2i) | — | bf16 |
 | `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8/int8 files) |
+| `flux2-klein` | flow DiT (3.9B) | **ignored** (distilled; Base honors it) | **1.0** (4 steps) | ignored (flow) | — | ✅ reference edit (no `strength`) | — | bf16 · fp8 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
@@ -302,6 +303,14 @@ the flow-matching DiTs ignore the `scheduler` name; Z-Image/FLUX/Chroma/
 Qwen-Image take an explicit `shift` via `backend_options` (Krea 2 does not —
 its Turbo checkpoints pin a fixed mu internally).
 
+**FLUX.2 klein 4B** (Apache-2.0) is step-distilled: 4 steps, guidance fixed at
+1.0, no negative prompt. `source_image` is a reference for instruction editing
+through the same pipeline (no `strength`; the output takes the reference's
+size). `weights_path="auto"` fetches the build measured for the card's VRAM —
+bf16 on 24 GB (18.6 GB peak, 2.7 s), GGUF Q8_0 + fp8 encoder on 16 GB
+(11.1 GB), Q4_K_M on 12 GB (9.4 GB), then model / group offload down to
+2.8 GB — see `flux2klein.recommend_build`.
+
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
 [FLUX](imference_engine/flux/README.md) ·
@@ -309,6 +318,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [Qwen-Image](imference_engine/qwenimage/README.md) ·
 [Anima](imference_engine/anima/README.md) ·
 [Krea 2](imference_engine/krea2/README.md) ·
+[FLUX.2 klein](imference_engine/flux2klein/README.md) ·
 [Wan video](imference_engine/wan/README.md) ·
 [MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
@@ -381,7 +391,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/   # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager
@@ -419,6 +429,9 @@ for ComfyUI/civitai H3 int8-ConvRot single-files
 The **Krea 2 Turbo backend** (civitai/ComfyUI single-file + scaled-fp8 load
 path) is validated as of 2026-08-27 — official scaled-fp8 and a civitai
 plain-fp8 finetune both render clean on a 24 GB card.
+The **FLUX.2 klein 4B backend** (bf16, BFL scaled-fp8 and GGUF single files,
+text-to-image + reference editing, per-VRAM build selection) is validated as of
+2026-11-12 on an RTX 3090.
 **LoRAs: SDXL, Z-Image, Krea 2, Anima** (`loras=` on `generate`; other backends log and ignore).
 **Not yet wired:** Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is

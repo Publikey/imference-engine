@@ -5,6 +5,31 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Added
+
+- **FLUX.2 [klein] 4B backend** (`flux2-klein`, extra `[flux2-klein]`, in
+  `[runtime]`). Apache-2.0 3.9B flow DiT + Qwen3-4B encoder + FLUX.2 VAE on
+  the unchanged diffusers 0.40.0 pin. Text-to-image (4 steps, guidance 1.0)
+  and reference editing: `source_image` (one image or a list) is a condition
+  for an instruction, through the same resident pipe — no `strength`, output
+  at the reference's size. klein Base 4B (true CFG, negative prompt) loads
+  with `base_model=black-forest-labs/FLUX.2-klein-base-4B`.
+- **Single-file formats**: BFL bf16, BFL scaled fp8 (dequantized in memory,
+  fp8-resident), unsloth GGUF. NVFP4 is refused. The transformer config
+  always comes from the base repo (diffusers 0.40 single-file detection only
+  knows FLUX.2 [dev]).
+- **Per-machine build selection** (`imference_engine.flux2klein.recommend_build`,
+  pure Python): `weights_path="auto"` fetches the transformer build measured
+  for the card's total VRAM and sets the encoder storage — `full` (bf16,
+  ≥ 22 GiB), `balanced` (Q8_0 + fp8 encoder, ≥ 14), `compact` (Q4_K_M + fp8,
+  ≥ 11.5), `offload` (Q8_0, model offload, ≥ 7), `minimal` (Q4_K_M, group
+  offload). `build.runtime_kwargs()` gives the matching `RuntimeConfig`
+  offload fields. Env: `FLUX2_KLEIN_ENCODER`, `FLUX2_KLEIN_FP8_STORAGE`.
+- `validation/stage_r2.py`: `flux2-klein` staged by default; `--repo-files` is
+  an engine-neutral alias of `--wan-gguf` for single-file builds.
+
 ## [0.5.2] — 2026-11-05
 
 ### Fixed

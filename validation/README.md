@@ -71,6 +71,7 @@ validation: diffusers 0.39, RTX PRO 5000 48 GB.
 | `qwenimage` | Qwen-Image (Comfy-Org transformer, 40.9 GB) | ✅ 20B, `offload: true`; slow |
 | `anima` | Anima-Base (diffusers repo) | ✅ **Modular pipeline**; t2i only (no img2img) |
 | `krea2` | Krea 2 Turbo (Comfy-Org fp8_scaled) | ✅ validated 2026-08-27 (RTX PRO 4000 24 GB) — official scaled-fp8 AND a civitai plain-fp8 finetune (GonzaLomo v4.0, 82.9 s cached-base); base repo **gated** (`hf auth login`); t2i only, 8 steps, guidance 0.0 |
+| `flux2-klein` | FLUX.2 klein 4B (BFL bf16 single file) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — bf16, official scaled-fp8, GGUF Q8_0 / Q5_K_M / Q4_K_M; fp8 encoder; resident, model and group offload; reference editing; klein Base (true CFG). Apache-2.0, ungated; 4 steps, guidance 1.0. |
 
 ## Wan 2.2 (video) — separate harness
 

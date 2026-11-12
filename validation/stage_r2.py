@@ -29,6 +29,7 @@ Repo staged per engine (from base_models.yaml + the backend, single source of tr
     qwenimage  Qwen/Qwen-Image
     anima      circlestone-labs/Anima-Base-v1.0-Diffusers    (whole modular repo)
     krea2      krea/Krea-2-Turbo                             (GATED — hf auth login first)
+    flux2-klein black-forest-labs/FLUX.2-klein-4B            (Apache-2.0, ungated)
     (sdxl/zimage work too if you pass them — already mirrored in your setup)
 
 Credentials (env): R2_ENDPOINT (full S3 endpoint; R2_ENDPOINT_URL / R2_ACCOUNT_ID
@@ -49,6 +50,11 @@ Usage (on the remote instance, after ``pip install -e ".[runtime,stage]"``):
     python validation/stage_r2.py --prefix wan22 --rm \
         --wan-gguf bullerwins/Wan2.2-I2V-A14B-GGUF \
         --files wan2.2_i2v_high_noise_14B_Q8_0.gguf,wan2.2_i2v_low_noise_14B_Q8_0.gguf
+
+    # Same single-file mode for an image backend's alternative builds (the files
+    # weights_path="auto" fetches), e.g. the FLUX.2 klein fp8 build:
+    python validation/stage_r2.py --prefix image --repo-files \
+        black-forest-labs/FLUX.2-klein-4b-fp8 --files flux-2-klein-4b-fp8.safetensors
 
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
@@ -72,7 +78,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -85,6 +91,7 @@ _BACKENDS = {
     "sd15": "imference_engine.pipelines.sd15:SD15Backend",
     "sdxl": "imference_engine.pipelines.sdxl:SDXLBackend",
     "krea2": "imference_engine.krea2:Krea2Backend",
+    "flux2-klein": "imference_engine.flux2klein:Flux2KleinBackend",
 }
 
 
@@ -281,9 +288,10 @@ def main() -> int:
     ap.add_argument("--bucket", default=os.environ.get("R2_BUCKET", ""), help="R2 bucket (or env R2_BUCKET)")
     ap.add_argument("--rm", action="store_true", help="delete each local base dir after upload (disk-tight)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan + resolved repos, touch nothing")
-    ap.add_argument("--wan-gguf", default=None, metavar="REPO",
-                    help="Wan GGUF mode: upload --files of this repo to <prefix>/<repo>/<file> "
-                         "(direct files, no manifest), e.g. bullerwins/Wan2.2-I2V-A14B-GGUF")
+    ap.add_argument("--wan-gguf", "--repo-files", dest="wan_gguf", default=None, metavar="REPO",
+                    help="single-file mode: upload --files of this repo to <prefix>/<repo>/<file> "
+                         "(direct files, no manifest), e.g. bullerwins/Wan2.2-I2V-A14B-GGUF or the "
+                         "FLUX.2 klein fp8 / GGUF builds (--repo-files is the engine-neutral name)")
     ap.add_argument("--files", default="",
                     help="comma list of .gguf filenames to stage (--wan-gguf mode)")
     args = ap.parse_args()

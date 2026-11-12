@@ -151,6 +151,25 @@ krea2:
   guidance_scale: 0.0     # Krea convention: 0 = guidance off (the Turbo norm)
   seed: 42
 
+flux2-klein:
+  mode: single_file
+  # BFL's own transformer-only single file (native keys, bf16, 7.75 GB,
+  # Apache-2.0, ungated). base_model supplies the Qwen3-4B encoder + FLUX.2 VAE +
+  # tokenizer + scheduler AND the transformer config (diffusers 0.40's
+  # single-file detection only knows FLUX.2 [dev]). Swap `repo`/`filename` for
+  # black-forest-labs/FLUX.2-klein-4b-fp8 / flux-2-klein-4b-fp8.safetensors or an
+  # unsloth/FLUX.2-klein-4B-GGUF file to validate the quantized builds.
+  repo: black-forest-labs/FLUX.2-klein-4B
+  filename: flux-2-klein-4b.safetensors
+  base_model: black-forest-labs/FLUX.2-klein-4B
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 4            # step-distilled
+  guidance_scale: 1.0     # distilled: guidance is fixed, no negative prompt
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers
