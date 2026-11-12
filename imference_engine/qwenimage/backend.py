@@ -16,9 +16,19 @@ Two backend-relevant specifics:
   ``true_cfg_scale`` and passes the negative prompt through (default " ",
   matching upstream).
 
-VRAM: the 20B transformer is very heavy — run with
-``RuntimeConfig(enable_offload=True)`` (shared ModelManager path). A quantized
-build is the realistic route on <40 GB cards; quantization is not wired here yet.
+VRAM: the 20B transformer is very heavy (41 GB bf16 + a 16.6 GB encoder). bf16
+single files run with ``RuntimeConfig(enable_offload=True)``; the realistic
+route below 40 GB is the **lite build** (``lite.py``): an unsloth ``.gguf``
+transformer + lightx2v's Lightning LoRA (4 steps, CFG 1.0) + the NF4 encoder
+loaded for the encode phase only. ``weights_path="auto"`` fetches the
+Qwen-Image-2512 lite build (``builds.py``); a ``.gguf`` path selects it too.
+Lightning rows carry ``num_steps=4`` / ``guidance_scale=1.0`` (``weights_defaults``).
+Env: ``QWEN_IMAGE_LIGHTNING`` (4 | 8 | none) plus the encoder knobs shared with
+the Edit backend (``QWEN_EDIT_ENCODER``, ``QWEN_EDIT_KEEP_ENCODER``).
+
+Checkpoints: Qwen-Image and **Qwen-Image-2512** share everything but the
+transformer weights (same encoder, VAE and configs — identical sha256), so
+``base_model="Qwen/Qwen-Image"`` serves both.
 
 Qwen-Image-Edit (instruction-based editing) is a DIFFERENT pipeline with an
 image-condition call signature: see ``edit_backend.py`` (engine key
@@ -26,12 +36,15 @@ image-condition call signature: see ``edit_backend.py`` (engine key
 """
 from __future__ import annotations
 import logging
+import os
 from typing import Any, ClassVar, Optional
 
 from imference_engine.catalog.defaults import GenerationDefaults
 from imference_engine.pipelines.base import PipelineBackend
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_BASE = "Qwen/Qwen-Image"
 
 
 class QwenImageBackend(PipelineBackend):
@@ -63,6 +76,35 @@ class QwenImageBackend(PipelineBackend):
         # a catalog row bump it (or a Lightning-distilled checkpoint lower it).
         return GenerationDefaults(guidance_scale=4.0)
 
+    def weights_defaults(self, weights_path: str) -> Optional[GenerationDefaults]:
+        """A GGUF (or ``"auto"``) is the lite build with the Lightning LoRA: its
+        recipe (4 or 8 steps, CFG 1.0) unless a catalog row says otherwise."""
+        from imference_engine.qwenimage.builds import AUTO
+        from imference_engine.qwenimage.lite import lightning_steps
+
+        steps = lightning_steps()
+        if steps is not None and (weights_path == AUTO or weights_path.lower().endswith(".gguf")):
+            return GenerationDefaults(num_steps=steps, guidance_scale=1.0)
+        return None
+
+    def resolve_weights(self, weights_path: str) -> str:
+        """``"auto"`` -> the local path of the lite transformer (downloaded on
+        first use); anything else is returned as is."""
+        from imference_engine.qwenimage.builds import AUTO, recommend_build
+
+        if weights_path != AUTO:
+            return weights_path
+        from imference_engine.managers.builds import cuda_vram_gb
+        from imference_engine.runtime.offline import fetch
+
+        build = recommend_build(cuda_vram_gb())
+        logger.info("Qwen-Image auto build: %s (%s)", build.name, build.reason)
+        if build.offload:
+            logger.info(
+                "Qwen-Image build %r expects RuntimeConfig(enable_offload=True, "
+                "offload_mode=%r) on this card", build.name, build.offload)
+        return fetch(build.repo, build.filename, self._cdn_base, self._cache_dir, namespace="image")
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
@@ -73,6 +115,13 @@ class QwenImageBackend(PipelineBackend):
         import torch
         from diffusers import QwenImagePipeline
 
+        local_path = self.resolve_weights(local_path)
+        if local_path.lower().endswith(".gguf") and not os.path.isdir(local_path):
+            from imference_engine.qwenimage.lite import load_lite_pipeline
+            return load_lite_pipeline(
+                local_path, base_model or DEFAULT_BASE, pipeline_cls=QwenImagePipeline,
+                cache_dir=self._cache_dir, cdn_base=self._cdn_base,
+                full_base_patterns=self.BASE_PATTERNS)
         if base_model:
             return self._load_with_base_model(local_path, base_model)
 
@@ -86,8 +135,6 @@ class QwenImageBackend(PipelineBackend):
         """Transformer WEIGHTS from local_path + shared components (Qwen2.5-VL,
         VAE, tokenizer, scheduler) from the base repo, resolved into the flat
         offline tree (no HF hit once populated)."""
-        import os
-
         import torch
         from diffusers import QwenImagePipeline, QwenImageTransformer2DModel
 
@@ -125,13 +172,26 @@ class QwenImageBackend(PipelineBackend):
 
     def make_img2img(self, t2i_pipe: Any) -> Any:
         from diffusers import QwenImageImg2ImgPipeline
-        return QwenImageImg2ImgPipeline(
+
+        cls: Any = QwenImageImg2ImgPipeline
+        loader = getattr(t2i_pipe, "_encoder_loader", None)
+        if loader is not None:
+            # Lite build: the encoder may not be resident. The wrapper loads it
+            # for its own encode phase and always lets go of it afterwards; the
+            # resident pipe owns the decision to keep an encoder loaded.
+            from imference_engine.qwenimage.lite import lite_pipeline_class
+            cls = lite_pipeline_class(QwenImageImg2ImgPipeline)
+        pipe = cls(
             scheduler=t2i_pipe.scheduler,
             vae=t2i_pipe.vae,
             text_encoder=t2i_pipe.text_encoder,
             tokenizer=t2i_pipe.tokenizer,
             transformer=t2i_pipe.transformer,
         )
+        if loader is not None:
+            pipe._encoder_loader = loader
+            pipe._always_release = True
+        return pipe
 
     def get_compute_module(self, pipe: Any) -> Any:
         return pipe.transformer

@@ -55,6 +55,15 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **Qwen-Image-2512 + a text-to-image lite build** on the `qwenimage` backend:
+  a `.gguf` transformer (or `weights_path="auto"`, which fetches the 2512
+  Q4_K_M) loads with lightx2v's Lightning LoRA (4 or 8 steps, CFG 1.0) and the
+  NF4 encoder loaded for the encode phase — the Qwen-Image-Edit recipe, shared
+  through `qwenimage/lite.py`. 9.2 s per 1024² image and 21 GB on an RTX 3090;
+  14.9 GB with model offload. `qwenimage.builds.recommend_build` picks the
+  offload mode per VRAM. Env: `QWEN_IMAGE_LIGHTNING` (4 | 8 | none). img2img
+  works on the lite build. Qwen-Image and Qwen-Image-2512 share one base
+  (`Qwen/Qwen-Image`).
 - **Z-Image base** (undistilled `Tongyi-MAI/Z-Image`, true CFG) validated on the
   existing `zimage` backend — no code change; recipe and measurements in
   `imference_engine/zimage/README.md` (use model offload on 24 GB cards).

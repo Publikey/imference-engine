@@ -281,7 +281,7 @@ the complete cross-engine reference is in
 | `zimage` | flow DiT | honored | 1.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `flux` | flow DiT (12B) | **ignored** (distilled) | 3.5 | ignored (flow) | `shift` | ✅ | — | bf16 |
 | `chroma` | flow DiT (8.9B) | honored (real CFG) | 2.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
-| `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 | ignored (flow) | `shift` | ✅ | — | bf16 |
+| `qwenimage` | MMDiT (20B) | honored (→ `true_cfg_scale`) | 4.0 (1.0 on the Lightning lite build) | ignored (flow) | `shift` | ✅ | — | bf16 · GGUF lite build (`auto`) |
 | `anima` | modular DiT | honored (if set) | **ignored** (Guider block) | ignored (block) | — | ❌ (t2i) | — | bf16 |
 | `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8/int8 files) |
 | `flux2-klein` | flow DiT (3.9B) | **ignored** (distilled; Base honors it) | **1.0** (4 steps) | ignored (flow) | — | ✅ reference edit (no `strength`) | — | bf16 · fp8 · GGUF, picked per VRAM |
