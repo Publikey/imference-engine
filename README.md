@@ -20,7 +20,7 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0, plus **Wan 2.2** text/image-to-video and
+  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0 · LongCat-Image, plus **Wan 2.2** text/image-to-video and
   **MiniMax-H3** joint video+audio — each a first-class backend, none needing
   bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` (and `runtime` = all eleven), `wan`, `minimax-h3`, `stage` (R2
+· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` (and `runtime` = all twelve), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
 `diffusers==0.40.0` pin.
 
@@ -230,7 +230,7 @@ are interchangeable and no engine logic leaks into them.
 | `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
 | `batch` | `int` | `1` | N independent images, one seed each. |
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
-| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2, ERNIE-Image and Lumina-Image 2.0 excepted — t2i only). On `flux2-klein` and `qwenimage-edit` it is a reference to edit from an instruction; a list passes several references. |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2, ERNIE-Image and Lumina-Image 2.0 excepted — t2i only). On `flux2-klein`, `qwenimage-edit` and `longcat-edit` it is a reference to edit from an instruction; a list passes several references. |
 | `strength` | `float?` | `0.75` | img2img denoise strength (ignored by the reference-editing backends). |
 
 `MediaResult.layers` is set by `qwenimage-layered` only: per image, the list of RGBA
@@ -291,6 +291,8 @@ the complete cross-engine reference is in
 | `flux2-klein` | flow DiT (3.9B) | **ignored** (distilled; Base honors it) | **1.0** (4 steps) | ignored (flow) | — | ✅ reference edit (no `strength`) | — | bf16 · fp8 · GGUF, picked per VRAM |
 | `ernie-image` | flow DiT (8B) | honored only if `guidance > 1` | **1.0** (Turbo, 8 steps) | ignored (flow) | `shift` | ❌ (t2i) | — | GGUF (bf16 compute), picked per VRAM |
 | `qwenimage-layered` | MMDiT (20B) | honored | 4.0 (50 steps) | ignored (flow) | `layers`, `resolution` | image → RGBA layers | — | GGUF lite build (`auto`) |
+| `longcat` | flow DiT (6B) | honored (real CFG) | 4.0 (50 steps) | ignored (flow) | `prompt_rewrite` | ❌ (t2i) | — | bf16 · fp8 storage, picked per VRAM |
+| `longcat-edit` | flow DiT (6B) | honored if `guidance > 1` | **1.0** (Turbo, 8 steps) | ignored (flow) | — | ✅ instruction edit (no `strength`) | — | bf16 · fp8 storage, picked per VRAM |
 | `lumina2` | flow DiT (2.6B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | `shift`, `cfg_trunc_ratio`, `system_prompt` | ❌ (t2i) | — | bf16 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
@@ -333,6 +335,14 @@ prompt honored, text-to-image only. `weights_path="auto"`: bf16 on 16-24 GB
 peak, 33 s) — see `lumina2.recommend_build`. The Gemma Prohibited Use Policy
 applies to every image rendered through this backend.
 
+**LongCat-Image** (Apache-2.0, 6B) comes as two backends: `longcat`
+(text-to-image, undistilled — 50 steps of true CFG, over a minute per image) and
+`longcat-edit` (instruction editing, Edit-Turbo by default: 8 steps, 15 s on an
+RTX 3090). No GGUF path exists for it in diffusers 0.40, so the per-VRAM builds
+are fp8 storage of the bf16 weights: 19.6 GB resident on 24 GB, 13.1 GB / 10.3 GB
+with model offload — see `longcat.recommend_build`. All checkpoints share one
+mirrored copy of the Qwen2.5-VL encoder.
+
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
 [FLUX](imference_engine/flux/README.md) ·
@@ -343,6 +353,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [FLUX.2 klein](imference_engine/flux2klein/README.md) ·
 [ERNIE-Image](imference_engine/ernieimage/README.md) ·
 [Lumina-Image 2.0](imference_engine/lumina2/README.md) ·
+[LongCat-Image](imference_engine/longcat/README.md) ·
 [Wan video](imference_engine/wan/README.md) ·
 [MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
@@ -415,7 +426,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/   # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/ longcat/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager

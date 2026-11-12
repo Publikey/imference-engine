@@ -38,6 +38,10 @@ class ModelBuild:
     peak_vram_gb: float
     """Measured peak allocation at 1024x1024."""
     reason: str = ""
+    transformer: str = ""
+    """Transformer storage for backends whose builds share ONE weights file and
+    differ in how it is held in memory: ``"bf16"`` or ``"fp8"`` (float8 storage,
+    bf16 compute). Empty when the file itself is the choice (GGUF levels)."""
 
     def runtime_kwargs(self) -> dict:
         """The ``RuntimeConfig`` fields this build needs

@@ -55,6 +55,21 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
   it when `IMAGE_MODEL_CDN` serves it.
 - `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **LongCat-Image backends** (`longcat`, `longcat-edit`; extra `[longcat]`, in
+  `[runtime]`). Meituan's Apache-2.0 6B flow DiT + Qwen2.5-VL-7B encoder + FLUX
+  VAE on the unchanged diffusers 0.40.0 pin. `longcat`: text-to-image (50 steps,
+  CFG 4.0; `backend_options.prompt_rewrite` opt-in). `longcat-edit`: instruction
+  editing of `source_image`, LongCat-Image-Edit-Turbo by default (8 steps,
+  guidance 1.0). No GGUF loader exists for this transformer, so
+  `longcat.recommend_build` picks fp8 or bf16 STORAGE (transformer and encoder)
+  and the offload mode per VRAM: 19.6 GB resident, 13.1 / 10.3 GB with model
+  offload. A checkpoint repo contributes only its index, scheduler and
+  transformer; the 16.6 GB encoder is mirrored once (`base_model`). Env:
+  `LONGCAT_TRANSFORMER`, `LONGCAT_ENCODER`.
+- `core/fp8.py`: `apply_fp8_storage` — fp8 encoder storage that keeps
+  `model.dtype` at bf16 (pipelines cast embeddings and latents to it).
+- `validation/stage_r2.py --repo-patterns REPO --patterns …`: stage a repo with
+  explicit patterns and its own manifest.
 - **Qwen-Image-Layered backend** (`qwenimage-layered`): decomposes
   `source_image` into RGBA layers. `MediaResult.layers[i]` carries the layers
   (background first) and `media[i]` the recomposed image; backends opt in

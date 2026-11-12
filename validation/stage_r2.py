@@ -59,6 +59,12 @@ Usage (on the remote instance, after ``pip install -e ".[runtime,stage]"``):
     python validation/stage_r2.py --prefix image --repo-files \
         black-forest-labs/FLUX.2-klein-4b-fp8 --files flux-2-klein-4b-fp8.safetensors
 
+    # Explicit-pattern mode — a checkpoint repo that shares its base with another
+    # (its own manifest, no duplicate of the shared encoder):
+    python validation/stage_r2.py --prefix image --repo-patterns \\
+        meituan-longcat/LongCat-Image-Edit-Turbo \\
+        --patterns "model_index.json,scheduler/*,transformer/*"
+
 Exit code is non-zero if any selected engine failed, so it doubles as a CI gate.
 """
 from __future__ import annotations
@@ -81,7 +87,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2", "longcat"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -98,6 +104,8 @@ _BACKENDS = {
     "ernie-image": "imference_engine.ernieimage:ErnieImageBackend",
     "lumina2": "imference_engine.lumina2:Lumina2Backend",
     "qwenimage-layered": "imference_engine.qwenimage:QwenImageLayeredBackend",
+    "longcat": "imference_engine.longcat:LongCatBackend",
+    "longcat-edit": "imference_engine.longcat:LongCatEditBackend",
 }
 
 
@@ -300,7 +308,37 @@ def main() -> int:
                          "FLUX.2 klein fp8 / GGUF builds (--repo-files is the engine-neutral name)")
     ap.add_argument("--files", default="",
                     help="comma list of .gguf filenames to stage (--wan-gguf mode)")
+    ap.add_argument("--repo-patterns", default=None, metavar="REPO",
+                    help="manifest mode for an arbitrary repo: pull --patterns of this repo, "
+                         "write its .manifest.json and upload — for checkpoints that share "
+                         "their base with another repo (e.g. LongCat-Image-Edit-Turbo: "
+                         "model_index.json,scheduler/*,transformer/* without the encoder)")
+    ap.add_argument("--patterns", default="",
+                    help="comma list of glob patterns to stage (--repo-patterns mode)")
     args = ap.parse_args()
+
+    # Explicit-pattern manifest mode: one repo, the caller's patterns.
+    if args.repo_patterns:
+        patterns = [x.strip() for x in args.patterns.split(",") if x.strip()]
+        if not patterns:
+            print("error: --repo-patterns needs --patterns (comma list of globs)", file=sys.stderr)
+            return 2
+        print(f"Staging {args.repo_patterns} ({len(patterns)} patterns)  (prefix {args.prefix!r})")
+        if args.dry_run:
+            print(f"  -> key {object_key(args.prefix, args.repo_patterns, '<file>')}")
+            return 0
+        if not args.bucket:
+            print("error: set --bucket or R2_BUCKET", file=sys.stderr)
+            return 2
+        from imference_engine.runtime.offline import write_manifest
+        local_dir = populate(args.repo_patterns, patterns, args.cache_dir)
+        files = write_manifest(local_dir)
+        uploaded = upload_dir(r2_client(), args.bucket, args.prefix, args.repo_patterns,
+                              local_dir, files)
+        print(f"  [OK ] {uploaded}/{len(files) + 1} objects uploaded ({args.repo_patterns})")
+        if args.rm:
+            shutil.rmtree(local_dir, ignore_errors=True)
+        return 0
 
     # Wan GGUF mode is a separate path (single files, no base_models.yaml, wan prefix).
     if args.wan_gguf:

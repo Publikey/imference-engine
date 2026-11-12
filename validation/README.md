@@ -75,6 +75,7 @@ validation: diffusers 0.39, RTX PRO 5000 48 GB.
 | `flux2-klein` | FLUX.2 klein 4B (BFL bf16 single file) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — bf16, official scaled-fp8, GGUF Q8_0 / Q5_K_M / Q4_K_M; fp8 encoder; resident, model and group offload; reference editing; klein Base (true CFG). Apache-2.0, ungated; 4 steps, guidance 1.0. |
 | `ernie-image` | ERNIE-Image-Turbo (unsloth GGUF Q8_0) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — GGUF Q8_0 / Q5_K_M / Q4_K_M, Comfy-Org bf16 single file and the diffusers repo (model offload); fp8 encoder; resident, model and group offload. Apache-2.0, ungated; t2i only, 8 steps, guidance 1.0. |
 | `lumina2` | Lumina-Image 2.0 (Comfy-Org bf16 = official checkpoint) | ✅ validated 2026-11-12 (RTX 3090 24 GB) — bf16 single file, ComfyUI all-in-one, GGUF Q8_0 / Q5_K_M / Q4_K_M, NetaYume v4 and Neta Lumina finetunes; fp8 encoder; resident, model and group offload. Apache-2.0 + Gemma terms (encoder); t2i only, 30 steps, CFG 4. The repo's own `transformer/` folder holds different weights. |
+| `longcat` · `longcat-edit` | LongCat-Image, LongCat-Image-Edit-Turbo (diffusers repos) | ✅ validated 2026-11-13 (RTX 3090 24 GB) — bf16 and fp8 storage for transformer and encoder, resident and model offload; text-to-image (30 steps) and Turbo editing (8 steps). Apache-2.0, ungated. Group offload wired, not timed. |
 
 ## Wan 2.2 (video) — separate harness
 

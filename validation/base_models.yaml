@@ -226,6 +226,42 @@ lumina2:
   guidance_scale: 4.0
   seed: 42
 
+longcat:
+  # Diffusers repo (no single-file loader for the LongCat transformer). It is
+  # both the text-to-image checkpoint and the shared base (Qwen2.5-VL encoder,
+  # FLUX VAE, tokenizer, processor). The build table picks fp8 storage and the
+  # offload mode for the card, so `offload` here is ignored by `weights: auto`
+  # callers and only matters for this harness.
+  mode: single_file
+  repo: meituan-longcat/LongCat-Image
+  filename: null
+  weights_local: auto
+  base_model: meituan-longcat/LongCat-Image
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 4.0
+  seed: 42
+
+longcat-edit:
+  # Instruction editing (Edit-Turbo: 8 steps, guidance 1.0) — the harness feeds
+  # a source image. Only model_index / scheduler / transformer come from the
+  # checkpoint repo; the encoder + VAE are the shared LongCat-Image base.
+  mode: repo
+  repo: meituan-longcat/LongCat-Image-Edit-Turbo
+  filename: null
+  base_model: meituan-longcat/LongCat-Image
+  offload: false
+  source_image: synthetic
+  prompt: "make the red ball blue, keep everything else unchanged"
+  width: 1024
+  height: 1024
+  num_steps: 8
+  guidance_scale: 1.0
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers
