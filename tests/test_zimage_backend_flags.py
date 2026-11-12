@@ -33,18 +33,12 @@ def test_base_checkpoint_is_a_catalog_row(tmp_path):
 
     f = tmp_path / "models.yml"
     f.write_text(
-        "models:
-"
-        "  - name: z-image-base
-"
-        "    engine: zimage
-"
-        "    weights: /cache/z_image_bf16.safetensors
-"
-        "    base_model: Tongyi-MAI/Z-Image
-"
-        "    defaults: {num_steps: 40, guidance_scale: 4.0}
-",
+        "models:\n"
+        "  - name: z-image-base\n"
+        "    engine: zimage\n"
+        "    weights: /cache/z_image_bf16.safetensors\n"
+        "    base_model: Tongyi-MAI/Z-Image\n"
+        "    defaults: {num_steps: 40, guidance_scale: 4.0}\n"
         encoding="utf-8",
     )
     engine = Engine(catalog_path=f, runtime=RuntimeConfig(device="cpu")).load()
