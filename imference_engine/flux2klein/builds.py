@@ -34,41 +34,18 @@ blocks, which is what fits 4-6 GB cards.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Optional
 
-# weights_path sentinel: let the backend pick + fetch the build for this machine.
-AUTO = "auto"
+from imference_engine.managers import builds as _builds
+from imference_engine.managers.builds import AUTO, ModelBuild
+
+__all__ = ["AUTO", "BUILDS", "FALLBACK", "KleinBuild", "build_named", "recommend_build"]
 
 BF16_REPO = "black-forest-labs/FLUX.2-klein-4B"
 GGUF_REPO = "unsloth/FLUX.2-klein-4B-GGUF"
 
-
-@dataclass(frozen=True)
-class KleinBuild:
-    """One validated transformer / encoder / offload combination."""
-
-    name: str
-    repo: str
-    """Repo holding the transformer file (HuggingFace id = CDN sub-path)."""
-    filename: str
-    encoder: str
-    """Text-encoder storage: ``"bf16"`` or ``"fp8"`` (float8 storage, bf16 compute)."""
-    offload: Optional[str]
-    """``None`` (everything resident), ``"model"`` or ``"group"`` — the
-    ``RuntimeConfig.offload_mode`` to run this build with."""
-    min_vram_gb: float
-    """Smallest total VRAM (GiB) this build is recommended for."""
-    peak_vram_gb: float
-    """Measured peak allocation at 1024x1024 (RTX 3090)."""
-    reason: str = ""
-
-    def runtime_kwargs(self) -> dict:
-        """The ``RuntimeConfig`` fields this build needs
-        (``RuntimeConfig(**build.runtime_kwargs(), ...)``)."""
-        if self.offload is None:
-            return {"enable_offload": False}
-        return {"enable_offload": True, "offload_mode": self.offload}
+# The record is shared with the other multi-build backends (managers/builds.py).
+KleinBuild = ModelBuild
 
 
 # Ordered best-first; the first build whose min_vram_gb fits wins. Thresholds
@@ -93,23 +70,11 @@ FALLBACK = KleinBuild("full", BF16_REPO, "flux-2-klein-4b.safetensors", "bf16", 
                       "no CUDA VRAM reading: plain bf16 weights")
 
 
-def build_named(name: str) -> KleinBuild:
-    for b in BUILDS:
-        if b.name == name:
-            return b
-    raise KeyError(f"unknown FLUX.2 klein build {name!r}; known: {[b.name for b in BUILDS]}")
+def build_named(name: str) -> ModelBuild:
+    return _builds.build_named(BUILDS, name)
 
 
-def recommend_build(vram_gb: Optional[float]) -> KleinBuild:
-    """The best build for a card with ``vram_gb`` GiB of TOTAL VRAM.
-
-    ``None`` (no CUDA device, or the caller could not measure) returns the
-    plain bf16 build. Pass total, not free, VRAM: the thresholds already keep a
-    margin, and the choice must not flip between two loads on the same machine.
-    """
-    if vram_gb is None:
-        return FALLBACK
-    for b in BUILDS:
-        if vram_gb >= b.min_vram_gb:
-            return b
-    return BUILDS[-1]
+def recommend_build(vram_gb: Optional[float]) -> ModelBuild:
+    """The best build for a card with ``vram_gb`` GiB of TOTAL VRAM (``None`` =
+    no CUDA reading -> plain bf16). See ``managers.builds.pick_build``."""
+    return _builds.pick_build(BUILDS, vram_gb, FALLBACK)

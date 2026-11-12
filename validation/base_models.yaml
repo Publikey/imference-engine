@@ -170,6 +170,23 @@ flux2-klein:
   guidance_scale: 1.0     # distilled: guidance is fixed, no negative prompt
   seed: 42
 
+ernie-image:
+  mode: single_file
+  # unsloth GGUF Q8_0 of the Turbo transformer (8.7 GB, Apache-2.0): bf16 is
+  # 16 GB and does not fit a 24 GB card next to the 7.7 GB encoder. base_model
+  # supplies the Ministral-3-3B encoder + FLUX.2 VAE + tokenizer + scheduler and
+  # the transformer config. Text-to-image only.
+  repo: unsloth/ERNIE-Image-Turbo-GGUF
+  filename: ernie-image-turbo-Q8_0.gguf
+  base_model: baidu/ERNIE-Image-Turbo
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 8            # Turbo (DMD-distilled)
+  guidance_scale: 1.0     # no CFG on Turbo
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers

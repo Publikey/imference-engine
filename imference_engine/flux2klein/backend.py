@@ -83,13 +83,8 @@ def fp8_storage_setting() -> str:
 
 def _vram_gb() -> Optional[float]:
     """Total VRAM of the current CUDA device in GiB, None without CUDA."""
-    try:
-        import torch
-        if not torch.cuda.is_available():
-            return None
-        return torch.cuda.get_device_properties(torch.cuda.current_device()).total_memory / (1 << 30)
-    except Exception:  # noqa: BLE001 — unknown hardware: no opinion
-        return None
+    from imference_engine.managers.builds import cuda_vram_gb
+    return cuda_vram_gb()
 
 
 def _pipeline_class():

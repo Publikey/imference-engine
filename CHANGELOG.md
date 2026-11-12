@@ -27,8 +27,27 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   ≥ 11.5), `offload` (Q8_0, model offload, ≥ 7), `minimal` (Q4_K_M, group
   offload). `build.runtime_kwargs()` gives the matching `RuntimeConfig`
   offload fields. Env: `FLUX2_KLEIN_ENCODER`, `FLUX2_KLEIN_FP8_STORAGE`.
-- `validation/stage_r2.py`: `flux2-klein` staged by default; `--repo-files` is
+- **ERNIE-Image backend** (`ernie-image`, extra `[ernie-image]`, in `[runtime]`).
+  Baidu's Apache-2.0 8B flow DiT + Ministral-3-3B encoder + FLUX.2 VAE on the
+  unchanged diffusers 0.40.0 pin. Text-to-image only (8 steps, guidance 1.0 for
+  Turbo); `backend_options={"shift": x}` overrides the fixed flow shift for one
+  request. Loads unsloth GGUF, the Comfy-Org bf16 single file, or a diffusers
+  repo. The upstream prompt enhancer is never loaded (`use_pe=False` on every
+  call). `weights_path="auto"` picks among five measured builds
+  (`imference_engine.ernieimage.recommend_build`): `quality` (Q8_0, ≥ 22 GiB),
+  `balanced` (Q5_K_M + fp8 encoder, ≥ 15), `offload` (Q8_0, model offload,
+  ≥ 11.5), `compact` (Q4_K_M, model offload, ≥ 7.5), `minimal` (Q4_K_M, group
+  offload). Env: `ERNIE_IMAGE_ENCODER`.
+- `managers/builds.py`: the build record (`ModelBuild`) and picker shared by the
+  multi-build backends (pure Python).
+- `validation/stage_r2.py`: `flux2-klein` and `ernie-image` staged by default; `--repo-files` is
   an engine-neutral alias of `--wan-gguf` for single-file builds.
+
+### Fixed
+
+- **GGUF files that quantize a non-linear layer no longer crash** (ERNIE-Image):
+  diffusers 0.40 only runs `nn.Linear` quantized and left the patch-embedding
+  `Conv2d` as packed bytes. The ERNIE backend dequantizes such weights at load.
 
 ## [0.5.2] — 2026-11-05
 

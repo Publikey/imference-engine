@@ -64,7 +64,8 @@ def test_default_engines_are_all_cdn_wired():
     # for offline workers); flux2-klein's base carries the Qwen3-4B encoder +
     # FLUX.2 VAE every klein build (bf16 / fp8 / GGUF) shares.
     assert set(stage_r2.DEFAULT_ENGINES) == {
-        "flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein"}
+        "flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein",
+        "ernie-image"}
 
 
 def test_flux2_klein_stages_its_base_with_the_backend_patterns():
