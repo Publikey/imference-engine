@@ -11,7 +11,7 @@ build       offload  peak VRAM  s/image
 ==========  =======  =========  ========
 resident    none     21.0 GB     9.2
 offload     model    14.9 GB    17.2
-minimal     group    (below)    host-bound
+minimal     group     7.4 GB    host-bound
 ==========  =======  =========  ========
 
 - ``resident``: transformer and VAE stay on the card; the NF4 encoder is kept
@@ -19,8 +19,10 @@ minimal     group    (below)    host-bound
 - ``offload``: the 13.3 GB transformer is the peak, so it fits 16 GB cards;
   twice the time per image (the transformer shuttles every request).
 - ``minimal``: block-streamed transformer for 8-12 GB cards — the recipe
-  validated for Qwen-Image-Edit on an 8 GB laptop (6.5 GB peak). Its speed is
-  set by the host (CPU and RAM-to-GPU copies), not by the card.
+  validated for Qwen-Image-Edit on an 8 GB laptop (6.5 GB peak). Here: 7.4 GB
+  with the encoder kept loaded. Its speed is set by the host (CPU and
+  RAM-to-GPU copies), not by the card: 12 min per image on the heavily
+  shared test host, against ~52 s for the Edit build on a laptop.
 """
 from __future__ import annotations
 
@@ -40,7 +42,7 @@ BUILDS: tuple = (
                "GGUF Q4_K_M + Lightning + NF4 encoder, transformer resident"),
     ModelBuild("offload", GGUF_REPO, GGUF_FILE, "nf4", "model", 15.5, 14.9,
                "GGUF Q4_K_M + Lightning + NF4 encoder, model offload"),
-    ModelBuild("minimal", GGUF_REPO, GGUF_FILE, "nf4", "group", 0.0, 6.5,
+    ModelBuild("minimal", GGUF_REPO, GGUF_FILE, "nf4", "group", 0.0, 7.4,
                "GGUF Q4_K_M + Lightning + NF4 encoder, group offload"),
 )
 

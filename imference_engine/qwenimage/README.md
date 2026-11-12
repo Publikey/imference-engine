@@ -94,13 +94,13 @@ Measured on an RTX 3090, 1024x1024 (2026-11-13):
 |---|---|---|---|---|---|
 | `resident` | 22 GiB | none | 21.0 GB | 9.2 s | 17.6 s |
 | `offload` | 15.5 GiB | model | 14.9 GB | 17.2 s | — |
-| `minimal` | below | group | ~6.5 GB (Edit build, 8 GB laptop) | host-bound | — |
+| `minimal` | below | group | 7.4 GB (encoder kept) | host-bound | — |
 
 - 1328x1328 (the model's native 1:1 size) takes 14.3 s resident, 21.3 GB peak.
 - Text rendering is exact on the prompts tried, at 4 steps.
 - Group offload is functional but its speed depends on the host's CPU and memory
-  bandwidth, not on the card: on the (heavily shared) test host it took minutes per
-  step, against ~52 s per image measured for the Edit build on a laptop. Treat the
+  bandwidth, not on the card: on the (heavily shared) test host it took 12 minutes
+  per image, against ~52 s per image measured for the Edit build on a laptop. Treat the
   `minimal` build as "works, speed to be measured on the target machine".
 
 | variable | values | default |
