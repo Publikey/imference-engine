@@ -38,9 +38,26 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   `balanced` (Q5_K_M + fp8 encoder, ≥ 15), `offload` (Q8_0, model offload,
   ≥ 11.5), `compact` (Q4_K_M, model offload, ≥ 7.5), `minimal` (Q4_K_M, group
   offload). Env: `ERNIE_IMAGE_ENCODER`.
+- **Lumina-Image 2.0 backend** (`lumina2`, extra `[lumina2]`, in `[runtime]`).
+  Alpha-VLLM's Apache-2.0 2.6B flow DiT + Gemma-2-2b encoder + FLUX.1 VAE, for
+  the anime finetunes built on it (Neta Lumina, NetaYume). Text-to-image only,
+  true CFG (30 steps, guidance 4.0, negative prompt honored).
+  `backend_options`: `shift`, `cfg_trunc_ratio`, `system_prompt`. Loads
+  transformer-only single files, ComfyUI **all-in-one** files (only the
+  transformer tensors are read — diffusers cannot load them), GGUF, or a
+  diffusers repo. `weights_path="auto"` picks among five measured builds
+  (`imference_engine.lumina2.recommend_build`): `full` (bf16, ≥ 18 GiB),
+  `balanced` (bf16 + fp8 encoder, ≥ 15), `compact` (Q8_0, ≥ 11.5), `offload`
+  (Q8_0, model offload, ≥ 5.5), `minimal` (Q4_K_M, group offload). Env:
+  `LUMINA2_ENCODER`.
+- `validation/stage_lumina_slim.py` builds the mirror-only base
+  `imference/Lumina-Image-2.0-bf16` (Gemma encoder re-saved in bf16: 5.2 GB
+  instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
+  it when `IMAGE_MODEL_CDN` serves it.
+- `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
 - `managers/builds.py`: the build record (`ModelBuild`) and picker shared by the
   multi-build backends (pure Python).
-- `validation/stage_r2.py`: `flux2-klein` and `ernie-image` staged by default; `--repo-files` is
+- `validation/stage_r2.py`: `flux2-klein`, `ernie-image` and `lumina2` staged by default; `--repo-files` is
   an engine-neutral alias of `--wan-gguf` for single-file builds.
 
 ### Fixed

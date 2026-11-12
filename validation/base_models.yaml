@@ -187,6 +187,26 @@ ernie-image:
   guidance_scale: 1.0     # no CFG on Turbo
   seed: 42
 
+lumina2:
+  mode: single_file
+  # Comfy-Org bf16 repackage of the OFFICIAL checkpoint (consolidated.pth) — the
+  # weights the ComfyUI ecosystem and the anime finetunes (Neta / NetaYume) build
+  # on. NOTE: the `transformer/` folder of Alpha-VLLM/Lumina-Image-2.0 holds
+  # DIFFERENT weights (every tensor differs from consolidated.pth), so this file
+  # is the reference, not the repo's diffusers transformer. base_model supplies
+  # the Gemma-2-2b encoder + FLUX.1 VAE + tokenizer + scheduler + config.
+  repo: Comfy-Org/Lumina_Image_2.0_Repackaged
+  filename: split_files/diffusion_models/lumina_2_model_bf16.safetensors
+  base_model: Alpha-VLLM/Lumina-Image-2.0
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  negative_prompt: "blurry, low quality, deformed"
+  width: 1024
+  height: 1024
+  num_steps: 30           # undistilled, true CFG (2 passes per step)
+  guidance_scale: 4.0
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers

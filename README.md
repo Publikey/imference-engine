@@ -20,7 +20,7 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image, plus **Wan 2.2** text/image-to-video and
+  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0, plus **Wan 2.2** text/image-to-video and
   **MiniMax-H3** joint video+audio — each a first-class backend, none needing
   bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-· `krea2` · `flux2-klein` · `ernie-image` (and `runtime` = all ten), `wan`, `minimax-h3`, `stage` (R2
+· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` (and `runtime` = all eleven), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
 `diffusers==0.40.0` pin.
 
@@ -230,7 +230,7 @@ are interchangeable and no engine logic leaks into them.
 | `scheduler` | `str?` | `None` | Honored by SDXL / SD 1.5 only (see matrix). |
 | `batch` | `int` | `1` | N independent images, one seed each. |
 | `seed` | `int?` | `None` | `None` → random; batch uses `seed, seed+1, …`. |
-| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2 and ERNIE-Image excepted — t2i only). On `flux2-klein` and `qwenimage-edit` it is a reference to edit from an instruction; a list passes several references. |
+| `source_image` | `PIL.Image?` | `None` | Present ⇒ img2img (Krea 2, ERNIE-Image and Lumina-Image 2.0 excepted — t2i only). On `flux2-klein` and `qwenimage-edit` it is a reference to edit from an instruction; a list passes several references. |
 | `strength` | `float?` | `0.75` | img2img denoise strength (ignored by the reference-editing backends). |
 | `backend_options` | `dict?` | `{}` | Engine-specific, e.g. `{"shift": 3.0}` (flow-matching DiTs). |
 | `loras` | `list[dict]?` | `None` | **SDXL**: stack of `{source: <path\|url>, weight, adapter_name}` — applied unfused, deactivated per request. Other backends: logged + ignored (per-backend rollout via `supports_loras`). |
@@ -286,6 +286,7 @@ the complete cross-engine reference is in
 | `krea2` | flow DiT (12.9B) | honored only if `guidance > 0` | **0.0** (Turbo, guidance off) | ignored (flow) | — | ❌ (t2i) | — | bf16 (fp8-resident for fp8/int8 files) |
 | `flux2-klein` | flow DiT (3.9B) | **ignored** (distilled; Base honors it) | **1.0** (4 steps) | ignored (flow) | — | ✅ reference edit (no `strength`) | — | bf16 · fp8 · GGUF, picked per VRAM |
 | `ernie-image` | flow DiT (8B) | honored only if `guidance > 1` | **1.0** (Turbo, 8 steps) | ignored (flow) | `shift` | ❌ (t2i) | — | GGUF (bf16 compute), picked per VRAM |
+| `lumina2` | flow DiT (2.6B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | `shift`, `cfg_trunc_ratio`, `system_prompt` | ❌ (t2i) | — | bf16 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
 `guidance 3.5`; **Chroma** is de-distilled → true CFG, `guidance 2.0` (higher
@@ -319,6 +320,14 @@ does not fit 24 GB, so `weights_path="auto"` always picks a GGUF: Q8_0 on 24 GB
 group offload down to 2.7 GB — see `ernieimage.recommend_build`. The upstream
 prompt enhancer is not loaded.
 
+**Lumina-Image 2.0** (Apache-2.0, 2.6B; Gemma-2-2b encoder under the Gemma Terms
+of Use) is there for its anime finetunes — Neta Lumina, NetaYume — which load as
+shipped, all-in-one files included. Undistilled: 30 steps of true CFG, negative
+prompt honored, text-to-image only. `weights_path="auto"`: bf16 on 16-24 GB
+(11-13 GB peak, 28 s), GGUF Q8_0 on 12 GB, and model offload from 6 GB (3.4 GB
+peak, 33 s) — see `lumina2.recommend_build`. The Gemma Prohibited Use Policy
+applies to every image rendered through this backend.
+
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
 [FLUX](imference_engine/flux/README.md) ·
@@ -328,6 +337,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [Krea 2](imference_engine/krea2/README.md) ·
 [FLUX.2 klein](imference_engine/flux2klein/README.md) ·
 [ERNIE-Image](imference_engine/ernieimage/README.md) ·
+[Lumina-Image 2.0](imference_engine/lumina2/README.md) ·
 [Wan video](imference_engine/wan/README.md) ·
 [MiniMax-H3 video+audio](imference_engine/minimax_h3/README.md).
 
@@ -400,7 +410,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/   # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager
@@ -442,7 +452,8 @@ The **FLUX.2 klein 4B backend** (bf16, BFL scaled-fp8 and GGUF single files,
 text-to-image + reference editing, per-VRAM build selection) is validated as of
 2026-11-12 on an RTX 3090. The **ERNIE-Image-Turbo backend** (GGUF and bf16
 single files, per-VRAM build selection, text-to-image) is validated the same day
-on the same card.
+on the same card, as is the **Lumina-Image 2.0 backend** (transformer-only,
+all-in-one and GGUF files; NetaYume and Neta Lumina finetunes).
 **LoRAs: SDXL, Z-Image, Krea 2, Anima** (`loras=` on `generate`; other backends log and ignore).
 **Not yet wired:** Qwen-Image-Edit, quantized image builds, and MiniMax-H3 `ref2va`
 / int4-nvfp4 ConvRot loading (needs ComfyUI kernels). MPS (Apple Silicon) is

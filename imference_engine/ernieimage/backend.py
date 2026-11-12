@@ -52,6 +52,7 @@ import os
 from typing import Any, ClassVar, Optional
 
 from imference_engine.catalog.defaults import GenerationDefaults
+from imference_engine.core.gguf import dequantize_non_linear
 from imference_engine.ernieimage.builds import AUTO, recommend_build
 from imference_engine.pipelines.base import PipelineBackend
 
@@ -70,33 +71,6 @@ def _vram_gb() -> Optional[float]:
     """Total VRAM of the current CUDA device in GiB, None without CUDA."""
     from imference_engine.managers.builds import cuda_vram_gb
     return cuda_vram_gb()
-
-
-def dequantize_non_linear(model: Any, dtype: Any) -> list:
-    """Restore GGUF-quantized weights that sit on layers diffusers cannot run
-    quantized (anything but ``nn.Linear``) to plain ``dtype`` tensors.
-
-    Returns the names of the parameters it converted. A ``Conv2d`` weight comes
-    back from the GGUF as a flattened 2-D tensor and is reshaped to the layer's
-    kernel layout.
-    """
-    import torch
-    from diffusers.quantizers.gguf.utils import GGUFParameter, dequantize_gguf_tensor
-
-    converted = []
-    for name, module in model.named_modules():
-        if isinstance(module, torch.nn.Linear):
-            continue
-        for pname, param in list(module.named_parameters(recurse=False)):
-            if not isinstance(param, GGUFParameter) or param.dtype.is_floating_point:
-                continue
-            weight = dequantize_gguf_tensor(param).to(dtype)
-            if isinstance(module, torch.nn.Conv2d) and pname == "weight":
-                weight = weight.reshape(
-                    module.out_channels, module.in_channels // module.groups, *module.kernel_size)
-            setattr(module, pname, torch.nn.Parameter(weight, requires_grad=False))
-            converted.append(f"{name}.{pname}")
-    return converted
 
 
 class ErnieImageBackend(PipelineBackend):

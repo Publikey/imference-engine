@@ -165,6 +165,7 @@ class Engine(BaseEngine):
         from imference_engine.flux.backend import FluxBackend
         from imference_engine.flux2klein.backend import Flux2KleinBackend
         from imference_engine.krea2.backend import Krea2Backend
+        from imference_engine.lumina2.backend import Lumina2Backend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
@@ -197,6 +198,8 @@ class Engine(BaseEngine):
             Flux2KleinBackend.engine: Flux2KleinBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             ErnieImageBackend.engine: ErnieImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            Lumina2Backend.engine: Lumina2Backend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 

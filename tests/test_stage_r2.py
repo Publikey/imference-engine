@@ -65,7 +65,7 @@ def test_default_engines_are_all_cdn_wired():
     # FLUX.2 VAE every klein build (bf16 / fp8 / GGUF) shares.
     assert set(stage_r2.DEFAULT_ENGINES) == {
         "flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein",
-        "ernie-image"}
+        "ernie-image", "lumina2"}
 
 
 def test_flux2_klein_stages_its_base_with_the_backend_patterns():

@@ -31,6 +31,8 @@ Repo staged per engine (from base_models.yaml + the backend, single source of tr
     krea2      krea/Krea-2-Turbo                             (GATED — hf auth login first)
     flux2-klein black-forest-labs/FLUX.2-klein-4B            (Apache-2.0, ungated)
     ernie-image baidu/ERNIE-Image-Turbo                      (Apache-2.0, ungated; no prompt enhancer)
+    lumina2    Alpha-VLLM/Lumina-Image-2.0                   (Apache-2.0 + Gemma terms; fp32 encoder —
+               the slim bf16 base is built by validation/stage_lumina_slim.py)
     (sdxl/zimage work too if you pass them — already mirrored in your setup)
 
 Credentials (env): R2_ENDPOINT (full S3 endpoint; R2_ENDPOINT_URL / R2_ACCOUNT_ID
@@ -79,7 +81,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -94,6 +96,7 @@ _BACKENDS = {
     "krea2": "imference_engine.krea2:Krea2Backend",
     "flux2-klein": "imference_engine.flux2klein:Flux2KleinBackend",
     "ernie-image": "imference_engine.ernieimage:ErnieImageBackend",
+    "lumina2": "imference_engine.lumina2:Lumina2Backend",
 }
 
 
