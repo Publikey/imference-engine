@@ -62,21 +62,25 @@ Edit-Turbo's differs from the others.
 ## Builds per machine
 
 Measured on an RTX 3090 at 1024x1024 (2026-11-13). Text-to-image times are 30-step
-measurements scaled to the 50-step recipe.
+measurements scaled to the 50-step recipe. The edit column was re-measured from a
+CDN-only cache, each build also under a hard VRAM cap of its card size minus 0.5 GiB.
 
 | build | VRAM floor | transformer | encoder | offload | peak VRAM | t2i (50 steps) | edit Turbo (8 steps) |
 |---|---|---|---|---|---|---|---|
-| `resident` | 22 GiB | fp8 | fp8 | none | 19.6 GB | 77 s | 14.8 s |
-| `quality` | 15 GiB | bf16 | fp8 | model | 13.1 GB | 93 s | — |
-| `offload` | 11.5 GiB | fp8 | fp8 | model | 10.3 GB (10.7 edit) | 92 s | 23.6 s |
-| `minimal` | below | fp8 | fp8 | group | not timed | — | — |
+| `resident` | 22 GiB | fp8 | fp8 | none | 19.6 GB | 77 s | 13.0 s |
+| `quality` | 15 GiB | bf16 | fp8 | model | 13.1 GB (13.7 edit) | 93 s | 29.7 s |
+| `offload` | 11.5 GiB | fp8 | fp8 | model | 10.3 GB (10.7 edit) | 92 s | 26.5 s |
+| `minimal` | below | fp8 | fp8 | group | 2.8 GB (5.8 reserved) | — | 21-23 s |
 
 - **fp8 is visually identical to bf16** on the prompts tried, legible text included.
 - **Model offload costs about 10 s per image**; the encoder runs once per request.
 - Plain bf16 with model offload (the upstream recipe) peaks at 17.0 GB for
   text-to-image and 18.4 GB for editing, as the model cards say (~17-18 GB).
-- `minimal` is wired but not timed: group offload speed depends on the host, and the
-  test host was not representative. Cards under 11.5 GiB are therefore unverified.
+- `minimal` ran under a 7.5 GiB cap, as fast as model offload on a host with free CPU
+  cores. Group offload speed depends on the host: on a loaded one it took minutes.
+- **Host RAM**: the bf16 weights are read before the fp8 cast. Peak process memory was
+  37 GB (`resident`, `offload`), 25 GB (`quality`) and 46 GB (`minimal`), page cache of
+  the weight files included. Not verified on a 32 GB machine.
 - Text-to-image is slow because it is undistilled (100 transformer passes): over a
   minute per image. Editing with Turbo is the interactive use.
 

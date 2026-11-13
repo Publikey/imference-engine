@@ -9,13 +9,16 @@ mode. Measured on an RTX 3090 at 1024x1024, diffusers 0.40.0 (2026-11-13):
 ==========  ===========  =======  =======  =========  ===========  ==========
 build       transformer  encoder  offload  peak VRAM  t2i 50 step  edit Turbo
 ==========  ===========  =======  =======  =========  ===========  ==========
-resident    fp8          fp8      none     19.6 GB    77 s         14.8 s
-quality     bf16         fp8      model    13.1 GB    93 s         —
-offload     fp8          fp8      model    10.3 GB    92 s         23.6 s
-minimal     fp8          fp8      group    not timed (host-bound)
+resident    fp8          fp8      none     19.6 GB    77 s         13.0 s
+quality     bf16         fp8      model    13.7 GB    93 s         29.7 s
+offload     fp8          fp8      model    10.7 GB    92 s         26.5 s
+minimal     fp8          fp8      group     2.8 GB    —            21-23 s
 ==========  ===========  =======  =======  =========  ===========  ==========
 
-(text-to-image times are 30-step measurements scaled to the 50-step recipe.)
+(text-to-image times are 30-step measurements scaled to the 50-step recipe;
+peak VRAM is the editing peak, ~0.5 GB above text-to-image. Edit column
+re-measured from a CDN-only cache, each build also under a hard VRAM cap of
+its card size minus 0.5 GiB.)
 
 - fp8 storage is visually identical to bf16 here, text included, and model
   offload costs ~10 s per image: the encoder runs once per request.
@@ -23,8 +26,12 @@ minimal     fp8          fp8      group    not timed (host-bound)
   (18.4 GB for editing) — it only fits 24 GB cards, where fp8 resident is
   faster. So bf16 for the transformer is offered on the 16 GB tier, where it
   fits next to an fp8 encoder.
-- ``minimal`` (block-streamed transformer) is wired but was not timed: group
-  offload speed depends on the host, and the test host was not representative.
+- ``minimal`` (block-streamed transformer) reserves 5.8 GB and is as fast as
+  model offload on a host with free CPU cores; on a loaded host it degrades to
+  minutes per image.
+- Host RAM: the bf16 weights are read before the fp8 cast. Peak process RSS
+  was 37 GB (resident / offload), 25 GB (quality) and 46 GB (minimal), page
+  cache of the weight files included. NOT verified on a 32 GB machine.
 """
 from __future__ import annotations
 
@@ -42,11 +49,11 @@ REPO = "meituan-longcat/LongCat-Image"
 BUILDS: tuple = (
     ModelBuild("resident", REPO, "", "fp8", None, 22.0, 19.6,
                "fp8 transformer + fp8 encoder, all resident", transformer="fp8"),
-    ModelBuild("quality", REPO, "", "fp8", "model", 15.0, 13.1,
+    ModelBuild("quality", REPO, "", "fp8", "model", 15.0, 13.7,
                "bf16 transformer + fp8 encoder, model offload", transformer="bf16"),
-    ModelBuild("offload", REPO, "", "fp8", "model", 11.5, 10.3,
+    ModelBuild("offload", REPO, "", "fp8", "model", 11.5, 10.7,
                "fp8 transformer + fp8 encoder, model offload", transformer="fp8"),
-    ModelBuild("minimal", REPO, "", "fp8", "group", 0.0, 10.3,
+    ModelBuild("minimal", REPO, "", "fp8", "group", 0.0, 2.8,
                "fp8 transformer + fp8 encoder, group offload", transformer="fp8"),
 )
 
