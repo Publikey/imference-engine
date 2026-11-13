@@ -120,7 +120,8 @@ def lite_pipeline_class(base_cls: Any) -> Any:
                 free += max(0, torch.cuda.memory_reserved() - torch.cuda.memory_allocated())
             except Exception:  # noqa: BLE001 — unknown: be safe, free it
                 return False
-            need = edit_lite.denoise_reserve_bytes(None, None)
+            need = (edit_lite.denoise_reserve_bytes(None, None)
+                    + edit_lite.incoming_weights_bytes(self))
             keep = free >= need
             logger.info("Qwen-Image: %.1f GiB free, denoise needs ~%.1f GiB -> encoder %s",
                         free / (1 << 30), need / (1 << 30), "kept" if keep else "released")
