@@ -309,6 +309,21 @@ kandinsky5-edit:
   guidance_scale: 3.5
   seed: 42
 
+hidream:
+  # city96 GGUF of the Fast transformer; base_model supplies CLIP-L / CLIP-G /
+  # T5-XXL / VAE; the Llama-3.1-8B encoder is a separate repo (see the backend).
+  mode: single_file
+  repo: city96/HiDream-I1-Fast-gguf
+  filename: hidream-i1-fast-Q8_0.gguf
+  base_model: HiDream-ai/HiDream-I1-Fast
+  offload: true
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 16
+  guidance_scale: 0.0
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers

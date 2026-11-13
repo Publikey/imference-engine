@@ -87,7 +87,7 @@ if str(HERE.parent) not in sys.path:
     sys.path.insert(0, str(HERE.parent))
 
 # Engines that serve their base from the CDN today (route through local_repo_dir).
-DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2", "longcat", "ovis-image", "kandinsky5"]
+DEFAULT_ENGINES = ["flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein", "ernie-image", "lumina2", "longcat", "ovis-image", "kandinsky5", "hidream"]
 
 # engine -> "module:ClassName". Imported lazily and torch-free (backends import
 # torch inside methods), so we can read BASE_PATTERNS / CONFIG_PATTERNS without a
@@ -109,6 +109,7 @@ _BACKENDS = {
     "ovis-image": "imference_engine.ovisimage:OvisImageBackend",
     "kandinsky5": "imference_engine.kandinsky5:Kandinsky5Backend",
     "kandinsky5-edit": "imference_engine.kandinsky5:Kandinsky5EditBackend",
+    "hidream": "imference_engine.hidream:HiDreamBackend",
 }
 
 

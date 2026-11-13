@@ -71,6 +71,14 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 - `validation/e2e_backend.py` and `validation/e2e_lora.py`: the engine-level
   harnesses used to validate the backends added this month (one configuration
   per process, `--vram` to exercise every build tier on one card).
+- **HiDream-I1 backend — NOT GPU-validated** (`hidream`, extra `[hidream]`, in
+  `[runtime]`). MIT 17B sparse flow DiT + CLIP-L / CLIP-G / T5-XXL /
+  Llama-3.1-8B-Instruct encoders + FLUX VAE; Fast by default (16 steps, guidance
+  0), Dev and Full recipes from the file name. GGUF transformers (city96), Llama
+  and T5 stored in fp8, always offloaded. The Llama encoder comes from its own
+  repo (`HIDREAM_LLAMA_REPO`); `validation/stage_llama_encoder.py` mirrors it
+  with the Llama 3.1 licence texts. Written and unit-tested only — the pod was
+  lost before any GPU run; the build table is derived from file sizes.
 - **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
   GPU-validated on the bf16, GGUF and model-offload builds of both backends
   (klein also under group offload and for editing). `managers/lora_inspect.py` now tells
