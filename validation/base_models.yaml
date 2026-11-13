@@ -278,6 +278,37 @@ ovis-image:
   guidance_scale: 5.0
   seed: 42
 
+kandinsky5:
+  # Diffusers repo; also the shared base (Qwen2.5-VL + CLIP-L encoders, VAE).
+  mode: single_file
+  repo: kandinskylab/Kandinsky-5.0-T2I-Lite-sft-Diffusers
+  filename: null
+  weights_local: auto
+  base_model: kandinskylab/Kandinsky-5.0-T2I-Lite-sft-Diffusers
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 3.5
+  seed: 42
+
+kandinsky5-edit:
+  # Instruction editing — the harness feeds a source image. Only model_index /
+  # scheduler / transformer come from this repo; encoders + VAE are the T2I base.
+  mode: repo
+  repo: kandinskylab/Kandinsky-5.0-I2I-Lite-sft-Diffusers
+  filename: null
+  base_model: kandinskylab/Kandinsky-5.0-T2I-Lite-sft-Diffusers
+  offload: false
+  source_image: synthetic
+  prompt: "make the red ball blue, keep everything else unchanged"
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 3.5
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers

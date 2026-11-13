@@ -310,9 +310,27 @@ ovis-image = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# Kandinsky 5.0 Image Lite — 6B flow DiT + Qwen2.5-VL-7B and CLIP-L encoders +
+# FLUX VAE (Kandinsky5T2IPipeline / Kandinsky5I2IPipeline). Same stack, no extra
+# wheel: low-memory builds are fp8 storage.
+kandinsky5 = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
 # union of the per-backend image extras. Prefer the specific extra.
-runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2,flux2-klein,ernie-image,lumina2,longcat,ovis-image]"]
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2,flux2-klein,ernie-image,lumina2,longcat,ovis-image,kandinsky5]"]
 azure = ["azure-storage-blob>=12"]
 # Editing tools (imference_engine.tools): Pillow utilities + the ONNX light
 # models (upscale, background removal, eraser, click-select, faces, RIFE).

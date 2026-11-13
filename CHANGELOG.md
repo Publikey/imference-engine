@@ -61,6 +61,16 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   loader exists for it: `ovisimage.recommend_build` picks fp8 or bf16 storage
   and the offload mode per VRAM (19.5 GB / 13.6 GB resident, 9.6 GB with model
   offload). Env: `OVIS_IMAGE_TRANSFORMER`, `OVIS_IMAGE_ENCODER`.
+- **Kandinsky 5.0 Image Lite backends — NOT GPU-validated** (`kandinsky5`,
+  `kandinsky5-edit`; extra `[kandinsky5]`, in `[runtime]`). MIT 6B flow DiT +
+  Qwen2.5-VL-7B and CLIP-L encoders + FLUX VAE; text-to-image and instruction
+  editing (50 steps, CFG 3.5). Written and unit-tested, including a shim for the
+  pipelines' `.image` output field, but the validation pod was lost before a
+  complete GPU run: the build table is a conservative placeholder (fp8 storage,
+  model offload). Validation commands are in the package README.
+- `validation/e2e_backend.py` and `validation/e2e_lora.py`: the engine-level
+  harnesses used to validate the backends added this month (one configuration
+  per process, `--vram` to exercise every build tier on one card).
 - **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
   GPU-validated on the bf16, GGUF and model-offload builds of both backends
   (klein also under group offload and for editing). `managers/lora_inspect.py` now tells
