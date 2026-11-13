@@ -9,20 +9,21 @@ offload mode changes with the card. Measured on an RTX 3090 at 1024x1024,
 ==========  =======  =========  ========
 build       offload  peak VRAM  s/image
 ==========  =======  =========  ========
-resident    none     21.0 GB     9.2
-offload     model    14.9 GB    17.2
-minimal     group     7.4 GB    host-bound
+resident    none     21.0 GB     8.9
+offload     model    14.9 GB    18.6
+minimal     group     7.4 GB    17-20
 ==========  =======  =========  ========
 
 - ``resident``: transformer and VAE stay on the card; the NF4 encoder is kept
   between requests when the free VRAM allows it (it does on 24 GB at 1 MP).
-- ``offload``: the 13.3 GB transformer is the peak, so it fits 16 GB cards;
-  twice the time per image (the transformer shuttles every request).
+- ``offload``: the 13.3 GB transformer is the peak, so it fits 16 GB cards
+  (run under a 15.5 GiB cap); twice the time per image (the transformer
+  shuttles every request, and the encoder is released before it moves in).
 - ``minimal``: block-streamed transformer for 8-12 GB cards — the recipe
   validated for Qwen-Image-Edit on an 8 GB laptop (6.5 GB peak). Here: 7.4 GB
   with the encoder kept loaded. Its speed is set by the host (CPU and
-  RAM-to-GPU copies), not by the card: 12 min per image on the heavily
-  shared test host, against ~52 s for the Edit build on a laptop.
+  RAM-to-GPU copies), not by the card: 17-20 s per image on a host with
+  free cores, 12 min on a heavily shared one.
 """
 from __future__ import annotations
 

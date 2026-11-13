@@ -5,7 +5,7 @@ starts from a cold Engine and its peak-VRAM reading is its own).
     python validation/e2e_backend.py --backend B --weights W --tag T
         [--base REPO] [--offload none|model|group] [--vram GiB]
         [--steps N --cfg G --neg TEXT --prompt TEXT --size WxH --batch N]
-        [--opt key=value ...] [--source IMG] [--out DIR] [--runs 2]
+        [--opt key=value ...] [--source IMG] [--out DIR] [--runs 2] [--cap-gb N]
 
 - ``--weights auto`` + ``--vram`` exercise a backend's build table: ``--vram``
   overrides the detected VRAM (GiB), so every tier can be run on one card. The
@@ -16,7 +16,8 @@ starts from a cold Engine and its peak-VRAM reading is its own).
   ``HF_HUB_OFFLINE=1`` for a cold load that must never touch HuggingFace).
 
 Prints one ``E2E {json}`` line: build, offload mode, cold-load seconds, seconds per
-call (best of the warm runs), peak allocated / reserved VRAM, output size. Images
+call (best of the warm runs), peak allocated / reserved VRAM, peak host RAM,
+output size. Images
 (and layers, for backends that return some) land in ``<out>/<tag>/``.
 """
 import argparse
@@ -45,6 +46,8 @@ ap.add_argument("--source", default=None)
 ap.add_argument("--tag", required=True)
 ap.add_argument("--out", default="validation/renders")
 ap.add_argument("--runs", type=int, default=2)
+ap.add_argument("--cap-gb", type=float, default=None,
+                help="cap this process's CUDA memory (GiB) to emulate a smaller card")
 a = ap.parse_args()
 
 logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
@@ -78,6 +81,17 @@ elif build is not None and a.weights == "auto":
     for k, v in build.runtime_kwargs().items():
         setattr(cfg, k, v)
 
+
+
+def _peak_rss_gb():
+    """Peak resident host memory of this process (GB); None where unavailable."""
+    try:
+        import resource
+        return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
+    except Exception:  # noqa: BLE001 — no `resource` on Windows
+        return None
+
+
 out = f"{a.out}/{a.tag}"
 os.makedirs(out, exist_ok=True)
 t0 = time.time()
@@ -107,7 +121,16 @@ if a.source:
 else:
     kw.update(width=w, height=h)
 
+if a.cap_gb:
+    # Emulate a smaller card: any allocation past the cap raises a CUDA OOM.
+    total = torch.cuda.get_device_properties(0).total_memory
+    cap = int(a.cap_gb * (1 << 30))
+    torch.cuda.set_per_process_memory_fraction(min(1.0, cap / total))
+    # ...and the code that sizes itself on free VRAM must see that card too.
+    torch.cuda.mem_get_info = lambda *_: (max(0, cap - torch.cuda.memory_reserved()), cap)
+
 times = []
+peak_alloc = peak_rsvd = 0
 for i in range(a.runs):
     torch.cuda.reset_peak_memory_stats()
     t = time.time()
@@ -116,6 +139,10 @@ for i in range(a.runs):
     if i == 0:
         first = time.time() - t0
     assert r.ok, r.errors
+    # The first call can peak higher than the warm ones (encoder still loaded
+    # next to the transformer): report the highest of all calls.
+    peak_alloc = max(peak_alloc, torch.cuda.max_memory_allocated())
+    peak_rsvd = max(peak_rsvd, torch.cuda.max_memory_reserved())
 for j, img in enumerate(r.images):
     img.save(f"{out}/{j}.png")
 layers = getattr(r, "layers", None)
@@ -128,8 +155,11 @@ te = getattr(pipe, "text_encoder", None)
 res = dict(tag=a.tag, build=build.name if (build is not None and a.weights == "auto") else None,
            offload=(cfg.offload_mode if cfg.enable_offload else None),
            cold_s=round(first, 1), s_per_call=round(min(times[1:] or times), 2),
-           peak_vram_gb=round(torch.cuda.max_memory_allocated() / 1e9, 2),
-           reserved_gb=round(torch.cuda.max_memory_reserved() / 1e9, 2),
+           peak_vram_gb=round(peak_alloc / 1e9, 2),
+           reserved_gb=round(peak_rsvd / 1e9, 2),
+           warm_peak_gb=round(torch.cuda.max_memory_allocated() / 1e9, 2),
+           cap_gb=a.cap_gb,
+           host_rss_gb=_peak_rss_gb(),
            size=r.images[0].size, n=len(r.images), layers=[len(g) for g in layers] if layers else None,
            pipe=type(pipe).__name__, te=str(te.dtype) if te is not None else "released")
 json.dump(res, open(f"{out}/result.json", "w"))

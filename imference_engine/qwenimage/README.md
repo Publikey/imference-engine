@@ -92,16 +92,21 @@ Measured on an RTX 3090, 1024x1024 (2026-11-13):
 
 | build | VRAM floor | offload | peak VRAM | 4 steps | 8 steps |
 |---|---|---|---|---|---|
-| `resident` | 22 GiB | none | 21.0 GB | 9.2 s | 17.6 s |
-| `offload` | 15.5 GiB | model | 14.9 GB | 17.2 s | — |
-| `minimal` | below | group | 7.4 GB (encoder kept) | host-bound | — |
+| `resident` | 22 GiB | none | 21.0 GB | 8.9 s | 17.6 s |
+| `offload` | 15.5 GiB | model | 14.9 GB | 18.6 s | — |
+| `minimal` | below | group | 7.4 GB (encoder kept) | 17-20 s | — |
 
 - 1328x1328 (the model's native 1:1 size) takes 14.3 s resident, 21.3 GB peak.
 - Text rendering is exact on the prompts tried, at 4 steps.
-- Group offload is functional but its speed depends on the host's CPU and memory
-  bandwidth, not on the card: on the (heavily shared) test host it took 12 minutes
-  per image, against ~52 s per image measured for the Edit build on a laptop. Treat the
-  `minimal` build as "works, speed to be measured on the target machine".
+- Each build was also run under a hard VRAM cap of its card size minus 0.5 GiB
+  (`validation/e2e_backend.py --cap-gb`), `offload` at 1328x1328 too (15.6 GB reserved).
+- Under model offload the encoder is released before the transformer moves in unless
+  both fit: the keep decision counts the transformer still on the CPU. (Before that
+  fix a 16 GB card ran out of memory on the first image.)
+- Group offload speed depends on the host's CPU and memory bandwidth, not on the
+  card: 17-20 s per image on a host with free cores, 12 minutes on a heavily shared
+  one.
+- Host RAM: 27 GB peak process memory on every build (weight-file page cache included).
 
 | variable | values | default |
 |---|---|---|
