@@ -324,6 +324,21 @@ hidream:
   guidance_scale: 0.0
   seed: 42
 
+joyimage-edit:
+  # Multi-image instruction editing — the harness feeds a source image.
+  mode: repo
+  repo: jdopensource/JoyAI-Image-Edit-Plus-Diffusers
+  filename: null
+  base_model: null
+  offload: true
+  source_image: synthetic
+  prompt: "make the red ball blue, keep everything else unchanged"
+  width: 1024
+  height: 1024
+  num_steps: 30
+  guidance_scale: 4.0
+  seed: 42
+
 anima:
   mode: repo
   repo: circlestone-labs/Anima-Base-v1.0-Diffusers

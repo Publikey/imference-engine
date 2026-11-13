@@ -20,7 +20,7 @@ script, or app.
 ### Why it's nice to use
 
 - **One API, many models.** SDXL · SD 1.5 · Z-Image · FLUX.1 · Chroma ·
-  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0 · LongCat-Image · Ovis-Image · Kandinsky 5 · HiDream-I1, plus **Wan 2.2** text/image-to-video and
+  Qwen-Image · Anima · Krea 2 Turbo · FLUX.2 klein · ERNIE-Image · Lumina-Image 2.0 · LongCat-Image · Ovis-Image · Kandinsky 5 · HiDream-I1 · JoyAI-Image-Edit-Plus, plus **Wan 2.2** text/image-to-video and
   **MiniMax-H3** joint video+audio — each a first-class backend, none needing
   bespoke glue in your code.
 - **Offline-first.** Point `*_MODEL_CDN` at an R2/S3 mirror and cold loads pull
@@ -59,7 +59,7 @@ pip install -e ".[dev]"
 ```
 
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
-· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` · `ovis-image` · `kandinsky5` · `hidream` (and `runtime` = all fifteen), `wan`, `minimax-h3`, `stage` (R2
+· `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` · `ovis-image` · `kandinsky5` · `hidream` · `joyimage` (and `runtime` = all sixteen), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
 `diffusers==0.40.0` pin.
 
@@ -297,6 +297,7 @@ the complete cross-engine reference is in
 | `kandinsky5` | flow DiT (6B) | honored (real CFG) | 3.5 (50 steps) | ignored (flow) | — | ❌ (t2i) | — | bf16 · fp8 storage, picked per VRAM |
 | `kandinsky5-edit` | flow DiT (6B) | honored (real CFG) | 3.5 (50 steps) | ignored (flow) | — | ✅ instruction edit (no `strength`) | — | bf16 · fp8 storage, picked per VRAM |
 | `hidream` | sparse flow DiT (17B) | honored if `guidance > 1` (Full) | **0.0** (Fast, 16 steps) | ignored (set by the base repo) | — | ❌ (t2i) | — | GGUF (bf16 compute) + fp8 encoders, picked per VRAM |
+| `joyimage-edit` | MMDiT (16B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | — | ✅ instruction edit, 1-5 references | — | bf16 · fp8 storage, picked per VRAM |
 | `lumina2` | flow DiT (2.6B) | honored (real CFG) | 4.0 (30 steps) | ignored (flow) | `shift`, `cfg_trunc_ratio`, `system_prompt` | ❌ (t2i) | — | bf16 · GGUF, picked per VRAM |
 
 Notes worth knowing: **FLUX** ignores negatives (guidance-distilled) and defaults
@@ -363,6 +364,10 @@ conservative placeholder — see the package README before using it.
 guidance 0). **Not validated on a GPU yet**: the code is unit-tested, the GGUF build
 table is derived from file sizes only — see the package README before using it.
 
+**JoyAI-Image-Edit-Plus** (Apache-2.0, 16B) is wired as `joyimage-edit`: instruction
+editing from one to five reference images (30 steps, CFG 4.0). **Not validated on a
+GPU yet** — including whether it fits a 24 GB card; see the package README.
+
 Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md)
 · [Z-Image](imference_engine/zimage/README.md) ·
 [FLUX](imference_engine/flux/README.md) ·
@@ -374,6 +379,7 @@ Deep dives: [SDXL + SD 1.5 + shared config](imference_engine/pipelines/README.md
 [ERNIE-Image](imference_engine/ernieimage/README.md) ·
 [Lumina-Image 2.0](imference_engine/lumina2/README.md) ·
 [LongCat-Image](imference_engine/longcat/README.md) ·
+[JoyAI-Image-Edit-Plus](imference_engine/joyimage/README.md) ·
 [HiDream-I1](imference_engine/hidream/README.md) ·
 [Kandinsky 5](imference_engine/kandinsky5/README.md) ·
 [Ovis-Image](imference_engine/ovisimage/README.md) ·
@@ -449,7 +455,7 @@ imference_engine/
     engine_base.py     #   BaseEngine (device resolve, cuda tune, seed)
     backend.py         #   Backend / PipelineBackend ABCs
   pipelines/           # base.py (PipelineBackend) + sdxl.py + sd15.py
-  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/ longcat/ ovisimage/ kandinsky5/ hidream/   # one package per image backend
+  zimage/ flux/ chroma/ qwenimage/ anima/ krea2/ flux2klein/ ernieimage/ lumina2/ longcat/ ovisimage/ kandinsky5/ hidream/ joyimage/   # one package per image backend
   video/               # video architecture layer
     backend.py         #   VideoBackend ABC + VideoBuildContext
     residency.py       #   generic ResidencyManager

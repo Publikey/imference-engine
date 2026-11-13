@@ -346,9 +346,26 @@ hidream = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# JoyAI-Image-Edit-Plus (JD) — 16B MMDiT + Qwen3-VL-8B encoder + Wan VAE
+# (JoyImageEditPlusPipeline). Same stack, no extra wheel: fp8 storage builds.
+joyimage = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
 # union of the per-backend image extras. Prefer the specific extra.
-runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2,flux2-klein,ernie-image,lumina2,longcat,ovis-image,kandinsky5,hidream]"]
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2,flux2-klein,ernie-image,lumina2,longcat,ovis-image,kandinsky5,hidream,joyimage]"]
 azure = ["azure-storage-blob>=12"]
 # Editing tools (imference_engine.tools): Pillow utilities + the ONNX light
 # models (upscale, background removal, eraser, click-select, faces, RIFE).

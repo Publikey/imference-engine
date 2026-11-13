@@ -26,6 +26,12 @@ class PipelineBackend(Backend):
     # is proven (watch the interaction with offload/fp8 hooks per backend).
     supports_loras: bool = False
 
+    # Upper bound on images rendered by ONE pipe(...) call, or None when the
+    # pipeline batches freely (num_images_per_prompt). A backend whose pipeline
+    # produces a single image per call sets 1: the engine then clamps its chunk
+    # size, whatever the VRAM-based batch sizer would allow.
+    max_batch_per_call: Optional[int] = None
+
     @abstractmethod
     def load_pipeline(
         self,

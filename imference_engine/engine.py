@@ -170,6 +170,7 @@ class Engine(BaseEngine):
         from imference_engine.ovisimage.backend import OvisImageBackend
         from imference_engine.kandinsky5.backend import Kandinsky5Backend, Kandinsky5EditBackend
         from imference_engine.hidream.backend import HiDreamBackend
+        from imference_engine.joyimage.backend import JoyImageEditBackend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
@@ -219,6 +220,8 @@ class Engine(BaseEngine):
             Kandinsky5EditBackend.engine: Kandinsky5EditBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             HiDreamBackend.engine: HiDreamBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            JoyImageEditBackend.engine: JoyImageEditBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
@@ -587,6 +590,9 @@ class Engine(BaseEngine):
 
         while idx < batch_total:
             chunk_size = min(max_gpu_batch, batch_total - idx)
+            per_call_cap = getattr(backend, "max_batch_per_call", None)
+            if per_call_cap:
+                chunk_size = min(chunk_size, per_call_cap)
             chunk_seeds = seeds[idx:idx + chunk_size]
             generators = [
                 backend.make_generator(s, self._device.torch_str)

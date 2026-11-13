@@ -63,7 +63,7 @@ def test_dry_run_runs_without_torch():
         capture_output=True, text=True, timeout=60,
     )
     assert out.returncode == 0, out.stderr
-    assert "Validating 19 engine(s)" in out.stdout
+    assert "Validating 20 engine(s)" in out.stdout
     assert "sdxl" in out.stdout and "anima" in out.stdout
 
 

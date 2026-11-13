@@ -79,6 +79,14 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
   repo (`HIDREAM_LLAMA_REPO`); `validation/stage_llama_encoder.py` mirrors it
   with the Llama 3.1 licence texts. Written and unit-tested only — the pod was
   lost before any GPU run; the build table is derived from file sizes.
+- **JoyAI-Image-Edit-Plus backend — NOT GPU-validated** (`joyimage-edit`, extra
+  `[joyimage]`, in `[runtime]`). JD's Apache-2.0 16B MMDiT + Qwen3-VL-8B encoder
+  + Wan VAE: instruction editing from 1 to 5 reference images (30 steps, CFG
+  4.0). fp8 storage with model offload is the only build offered; whether it
+  fits 24 GB is unverified (the pod was lost before any GPU run).
+- `PipelineBackend.max_batch_per_call`: a backend whose pipeline renders one
+  image per call (JoyAI) caps the engine's chunk size, whatever the batch sizer
+  allows.
 - **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
   GPU-validated on the bf16, GGUF and model-offload builds of both backends
   (klein also under group offload and for editing). `managers/lora_inspect.py` now tells
