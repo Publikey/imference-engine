@@ -107,6 +107,13 @@ Measured on an RTX 3090, 1024x1024 (2026-11-13):
   card: 17-20 s per image on a host with free cores, 12 minutes on a heavily shared
   one.
 - Host RAM: 27 GB peak process memory on every build (weight-file page cache included).
+- **Real cards** (2026-11-13, from the CDN): an RTX 5060 Ti 16 GB reports 15.48 GiB,
+  so `auto` gives it `minimal`, not `offload` — and that is the better choice there:
+  17.0 s at 7.9 GB reserved, against 20.8 s at 15.4 GB for `offload` (15.6 GB at
+  1328x1328, on a 16.6 GB card). An RTX 3070 8 GB runs `minimal` in 22.7 s (6.9 GB
+  reserved, encoder released each request). `offload` is what 20 GB cards get.
+- The Edit lite build on the same 16 GB card: model offload 32.7 s at 16.3 GB reserved
+  (0.26 GiB of headroom), group offload 29.5 s at 8.7 GB. Prefer group offload on 16 GB.
 
 | variable | values | default |
 |---|---|---|
