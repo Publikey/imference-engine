@@ -88,7 +88,7 @@ returns the first row whose floor fits; `build.runtime_kwargs()` gives the match
 |---|---|---|---|---|---|---|---|
 | `full` | 22 GiB | bf16 (7.75 GB) | bf16 | none | 18.6 GB | 2.7 | 9 GB |
 | `balanced` | 14 GiB | GGUF Q8_0 (4.3 GB) | fp8 | none | 11.1 GB | 2.9 | 17 GB |
-| `compact` | 11.5 GiB | GGUF Q4_K_M (2.6 GB) | fp8 | none | 9.4 GB | 3.2 | 15 GB |
+| `compact` | 11 GiB | GGUF Q4_K_M (2.6 GB) | fp8 | none | 9.4 GB | 3.2 | 15 GB |
 | `offload` | 7 GiB | GGUF Q8_0 | fp8 | model | 5.1 GB | 7.7 | 17 GB |
 | `minimal` | below 7 GiB | GGUF Q4_K_M | fp8 | group | 2.8 GB | 6.7 | 17 GB |
 

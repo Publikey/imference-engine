@@ -67,9 +67,9 @@ compute-bound: about 1.5 s per step whatever the storage format.
 |---|---|---|---|---|---|---|---|
 | `quality` | 22 GiB | GGUF Q8_0 (8.7 GB) | bf16 | none | 19.4 GB | 12.5 | 18 GB |
 | `balanced` | 15 GiB | GGUF Q5_K_M (5.9 GB) | fp8 | none | 12.9 GB | 14.5 | 18 GB |
-| `offload` | 11.5 GiB | GGUF Q8_0 | fp8 | model | 9.8 GB | 19.7 | 21 GB |
-| `compact` | 7.5 GiB | GGUF Q4_K_M (5.0 GB) | fp8 | model | 6.1 GB | 16.6 | 17 GB |
-| `minimal` | below 7.5 GiB | GGUF Q4_K_M | fp8 | group | 2.7 GB | 17.7 | 19 GB |
+| `offload` | 11 GiB | GGUF Q8_0 | fp8 | model | 9.8 GB | 19.7 | 21 GB |
+| `compact` | 7.25 GiB | GGUF Q4_K_M (5.0 GB) | fp8 | model | 6.1 GB | 16.6 | 17 GB |
+| `minimal` | below 7.25 GiB | GGUF Q4_K_M | fp8 | group | 2.7 GB | 17.7 | 19 GB |
 
 What the measurements showed:
 

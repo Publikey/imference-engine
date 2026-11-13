@@ -69,7 +69,9 @@ def test_auto_resolves_to_the_2512_gguf(monkeypatch):
     (None, "minimal", "group"),
     (32.0, "resident", None),
     (24.0, "resident", None),
-    (16.0, "offload", "model"),
+    (20.0, "offload", "model"),
+    (15.48, "minimal", "group"),      # what a real 16 GB card reports
+    (16.0, "minimal", "group"),
     (12.0, "minimal", "group"),
     (8.0, "minimal", "group"),
 ])

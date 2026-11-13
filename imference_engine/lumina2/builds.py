@@ -48,7 +48,7 @@ BUILDS: tuple = (
                "bf16 transformer + bf16 encoder, all resident"),
     ModelBuild("balanced", BF16_REPO, BF16_FILE, "fp8", None, 15.0, 11.2,
                "bf16 transformer + fp8 encoder, all resident"),
-    ModelBuild("compact", GGUF_REPO, "lumina2-q8_0.gguf", "fp8", None, 11.5, 8.8,
+    ModelBuild("compact", GGUF_REPO, "lumina2-q8_0.gguf", "fp8", None, 11.25, 8.8,
                "GGUF Q8_0 transformer + fp8 encoder, all resident"),
     ModelBuild("offload", GGUF_REPO, "lumina2-q8_0.gguf", "fp8", "model", 5.5, 3.4,
                "GGUF Q8_0 transformer + fp8 encoder, model offload"),

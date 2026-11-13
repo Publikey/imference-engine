@@ -40,11 +40,13 @@ __all__ = ["AUTO", "BUILDS", "FALLBACK", "build_named", "recommend_build"]
 GGUF_REPO = "unsloth/Qwen-Image-2512-GGUF"
 GGUF_FILE = "qwen-image-2512-Q4_K_M.gguf"
 
-# Ordered best-first; the first build whose min_vram_gb fits wins.
+# Ordered best-first; the first build whose min_vram_gb fits wins. The offload
+# floor is deliberately ABOVE 16 GB cards (they report ~15.5 GiB): group offload
+# is faster and half the memory there (RTX 5060 Ti: 17.0 s vs 20.8 s).
 BUILDS: tuple = (
     ModelBuild("resident", GGUF_REPO, GGUF_FILE, "nf4", None, 22.0, 21.0,
                "GGUF Q4_K_M + Lightning + NF4 encoder, transformer resident"),
-    ModelBuild("offload", GGUF_REPO, GGUF_FILE, "nf4", "model", 15.5, 14.9,
+    ModelBuild("offload", GGUF_REPO, GGUF_FILE, "nf4", "model", 17.0, 14.9,
                "GGUF Q4_K_M + Lightning + NF4 encoder, model offload"),
     ModelBuild("minimal", GGUF_REPO, GGUF_FILE, "nf4", "group", 0.0, 7.4,
                "GGUF Q4_K_M + Lightning + NF4 encoder, group offload"),

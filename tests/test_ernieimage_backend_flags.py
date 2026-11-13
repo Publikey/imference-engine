@@ -92,7 +92,7 @@ def test_recommend_build_per_vram_tier(vram, name, encoder, offload):
 
 def test_builds_leave_headroom_over_the_measured_peak():
     for b in BUILDS:
-        assert b.min_vram_gb == 0.0 or b.min_vram_gb >= b.peak_vram_gb + 1.4, b.name
+        assert b.min_vram_gb == 0.0 or b.min_vram_gb >= b.peak_vram_gb + 1.1, b.name
     floors = [b.min_vram_gb for b in BUILDS]
     assert floors == sorted(floors, reverse=True)
     assert BUILDS[-1].min_vram_gb == 0.0

@@ -56,7 +56,7 @@ BUILDS: tuple = (
                "bf16 transformer + bf16 encoder, all resident"),
     KleinBuild("balanced", GGUF_REPO, "flux-2-klein-4b-Q8_0.gguf", "fp8", None, 14.0, 11.1,
                "GGUF Q8_0 transformer + fp8 encoder, all resident"),
-    KleinBuild("compact", GGUF_REPO, "flux-2-klein-4b-Q4_K_M.gguf", "fp8", None, 11.5, 9.4,
+    KleinBuild("compact", GGUF_REPO, "flux-2-klein-4b-Q4_K_M.gguf", "fp8", None, 11.0, 9.4,
                "GGUF Q4_K_M transformer + fp8 encoder, all resident"),
     KleinBuild("offload", GGUF_REPO, "flux-2-klein-4b-Q8_0.gguf", "fp8", "model", 7.0, 5.1,
                "GGUF Q8_0 transformer + fp8 encoder, model offload"),

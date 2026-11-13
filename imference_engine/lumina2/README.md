@@ -109,7 +109,7 @@ Measured on an RTX 3090 at 1024x1024, 30 steps with CFG (2026-11-12).
 |---|---|---|---|---|---|---|
 | `full` | 18 GiB | bf16 (5.2 GB) | bf16 | none | 13.2 GB | 28 |
 | `balanced` | 15 GiB | bf16 | fp8 | none | 11.2 GB | 28 |
-| `compact` | 11.5 GiB | GGUF Q8_0 (2.8 GB) | fp8 | none | 8.8 GB | 31 |
+| `compact` | 11.25 GiB | GGUF Q8_0 (2.8 GB) | fp8 | none | 8.8 GB | 31 |
 | `offload` | 5.5 GiB | GGUF Q8_0 | fp8 | model | 3.4 GB | 33 |
 | `minimal` | below 5.5 GiB | GGUF Q4_K_M (1.5 GB) | fp8 | group | 2.7 GB | 58 |
 
