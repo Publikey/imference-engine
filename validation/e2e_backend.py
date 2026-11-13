@@ -89,6 +89,11 @@ def _peak_rss_gb():
         import resource
         return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6, 1)
     except Exception:  # noqa: BLE001 — no `resource` on Windows
+        pass
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().peak_wset / 1e9, 1)
+    except Exception:  # noqa: BLE001
         return None
 
 
