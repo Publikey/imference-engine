@@ -59,8 +59,14 @@ else:
     kw.update(width=1024, height=1024)
 loras = []
 for spec in a.lora:
-    path, _, w = spec.partition(":")
-    loras.append({"source": path, "weight": float(w) if w else 1.0})
+    # "path" or "path:weight" — the weight is the part after the LAST colon,
+    # and only when it is a number (a Windows path has its own "C:").
+    path, _, w = spec.rpartition(":")
+    try:
+        weight = float(w) if path else 1.0
+    except ValueError:
+        path, weight = "", 1.0
+    loras.append({"source": path or spec, "weight": weight})
 
 out = f"{a.out}/{a.tag}"
 os.makedirs(out, exist_ok=True)
