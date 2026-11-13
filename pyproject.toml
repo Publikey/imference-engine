@@ -217,9 +217,85 @@ krea2 = [
     "huggingface_hub>=0.24",
     "requests>=2.31",
 ]
+# FLUX.2 [klein] 4B — 3.9B rectified-flow DiT + Qwen3-4B text encoder + the
+# FLUX.2 VAE (Flux2KleinPipeline, in diffusers since 0.37). Same diffusers 0.40
+# stack; the scaled-fp8 single file is dequantized engine-side
+# (flux2klein/convert.py). gguf backs the unsloth GGUF builds (Q8/Q5/Q4) — the
+# only wheel the other image extras lack.
+flux2-klein = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "gguf>=0.10",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
+# ERNIE-Image (Baidu) — 8B single-stream flow DiT + Ministral-3-3B text encoder
+# + the FLUX.2 VAE (ErnieImagePipeline, diffusers 0.40). Same stack; gguf backs
+# the unsloth GGUF builds, which are the practical way to run it under 32 GB.
+ernie-image = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "gguf>=0.10",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
+# Lumina-Image 2.0 (Alpha-VLLM) — 2.6B flow DiT + Gemma-2-2b text encoder + the
+# FLUX.1 VAE (Lumina2Pipeline). Same stack; gguf backs the community GGUF builds.
+lumina2 = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "gguf>=0.10",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
+# LongCat-Image (Meituan) — 6B flow DiT + Qwen2.5-VL-7B encoder + FLUX VAE
+# (LongCatImagePipeline / LongCatImageEditPipeline). Same stack, no extra wheel:
+# the low-memory builds are fp8 storage of the bf16 repo weights.
+longcat = [
+    "torch>=2.6",
+    "diffusers==0.40.0",
+    "transformers==5.4.0",
+    "accelerate==1.12.0",
+    "peft==0.19.1",
+    "ftfy==6.3.1",
+    "sentencepiece==0.2.1",
+    "protobuf>=4",
+    "safetensors>=0.4",
+    "Pillow>=10",
+    "numpy",
+    "huggingface_hub>=0.24",
+    "requests>=2.31",
+]
 # Deprecated back-compat alias (workers/CI referencing [runtime]). Equals the
 # union of the per-backend image extras. Prefer the specific extra.
-runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2]"]
+runtime = ["imference-engine[sdxl,sd15,zimage,flux,chroma,qwenimage,anima,krea2,flux2-klein,ernie-image,lumina2,longcat]"]
 azure = ["azure-storage-blob>=12"]
 # Editing tools (imference_engine.tools): Pillow utilities + the ONNX light
 # models (upscale, background removal, eraser, click-select, faces, RIFE).

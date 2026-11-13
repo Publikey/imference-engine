@@ -183,11 +183,11 @@ def outpaint(ctx, inputs, params):
     return [o]
 
 
-EDIT_BACKENDS = ("qwenimage-edit",)
+EDIT_BACKENDS = ("qwenimage-edit", "longcat-edit")
 
 
 def instruct_edit(ctx, inputs, params):
-    """Instruction editing on an edit model (Qwen-Image-Edit): the image (plus
+    """Instruction editing on an edit model (Qwen-Image-Edit, LongCat-Image-Edit): the image (plus
     optional references) is the condition, the instruction is the prompt."""
     from PIL import Image
 

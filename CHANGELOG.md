@@ -5,6 +5,107 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Added
+
+- **FLUX.2 [klein] 4B backend** (`flux2-klein`, extra `[flux2-klein]`, in
+  `[runtime]`). Apache-2.0 3.9B flow DiT + Qwen3-4B encoder + FLUX.2 VAE on
+  the unchanged diffusers 0.40.0 pin. Text-to-image (4 steps, guidance 1.0)
+  and reference editing: `source_image` (one image or a list) is a condition
+  for an instruction, through the same resident pipe — no `strength`, output
+  at the reference's size. klein Base 4B (true CFG, negative prompt) loads
+  with `base_model=black-forest-labs/FLUX.2-klein-base-4B`.
+- **Single-file formats**: BFL bf16, BFL scaled fp8 (dequantized in memory,
+  fp8-resident), unsloth GGUF. NVFP4 is refused. The transformer config
+  always comes from the base repo (diffusers 0.40 single-file detection only
+  knows FLUX.2 [dev]).
+- **Per-machine build selection** (`imference_engine.flux2klein.recommend_build`,
+  pure Python): `weights_path="auto"` fetches the transformer build measured
+  for the card's total VRAM and sets the encoder storage — `full` (bf16,
+  ≥ 22 GiB), `balanced` (Q8_0 + fp8 encoder, ≥ 14), `compact` (Q4_K_M + fp8,
+  ≥ 11.5), `offload` (Q8_0, model offload, ≥ 7), `minimal` (Q4_K_M, group
+  offload). `build.runtime_kwargs()` gives the matching `RuntimeConfig`
+  offload fields. Env: `FLUX2_KLEIN_ENCODER`, `FLUX2_KLEIN_FP8_STORAGE`.
+- **ERNIE-Image backend** (`ernie-image`, extra `[ernie-image]`, in `[runtime]`).
+  Baidu's Apache-2.0 8B flow DiT + Ministral-3-3B encoder + FLUX.2 VAE on the
+  unchanged diffusers 0.40.0 pin. Text-to-image only (8 steps, guidance 1.0 for
+  Turbo); `backend_options={"shift": x}` overrides the fixed flow shift for one
+  request. Loads unsloth GGUF, the Comfy-Org bf16 single file, or a diffusers
+  repo. The upstream prompt enhancer is never loaded (`use_pe=False` on every
+  call). `weights_path="auto"` picks among five measured builds
+  (`imference_engine.ernieimage.recommend_build`): `quality` (Q8_0, ≥ 22 GiB),
+  `balanced` (Q5_K_M + fp8 encoder, ≥ 15), `offload` (Q8_0, model offload,
+  ≥ 11.5), `compact` (Q4_K_M, model offload, ≥ 7.5), `minimal` (Q4_K_M, group
+  offload). Env: `ERNIE_IMAGE_ENCODER`.
+- **Lumina-Image 2.0 backend** (`lumina2`, extra `[lumina2]`, in `[runtime]`).
+  Alpha-VLLM's Apache-2.0 2.6B flow DiT + Gemma-2-2b encoder + FLUX.1 VAE, for
+  the anime finetunes built on it (Neta Lumina, NetaYume). Text-to-image only,
+  true CFG (30 steps, guidance 4.0, negative prompt honored).
+  `backend_options`: `shift`, `cfg_trunc_ratio`, `system_prompt`. Loads
+  transformer-only single files, ComfyUI **all-in-one** files (only the
+  transformer tensors are read — diffusers cannot load them), GGUF, or a
+  diffusers repo. `weights_path="auto"` picks among five measured builds
+  (`imference_engine.lumina2.recommend_build`): `full` (bf16, ≥ 18 GiB),
+  `balanced` (bf16 + fp8 encoder, ≥ 15), `compact` (Q8_0, ≥ 11.5), `offload`
+  (Q8_0, model offload, ≥ 5.5), `minimal` (Q4_K_M, group offload). Env:
+  `LUMINA2_ENCODER`.
+- `validation/stage_lumina_slim.py` builds the mirror-only base
+  `imference/Lumina-Image-2.0-bf16` (Gemma encoder re-saved in bf16: 5.2 GB
+  instead of 10.4, with the Gemma Terms of Use attached); the backend prefers
+  it when `IMAGE_MODEL_CDN` serves it.
+- `core/gguf.py`: `dequantize_non_linear`, shared by the GGUF-loading backends.
+- **LoRAs on FLUX.2 klein and Lumina-Image 2.0** (`loras=` on `generate`),
+  GPU-validated on the bf16, GGUF and model-offload builds of both backends
+  (klein also under group offload and for editing). `managers/lora_inspect.py` now tells
+  FLUX.2 klein from FLUX.1 (block count, projection width, trainer metadata)
+  and Lumina-Image 2.0 from Z-Image (hidden size) — the pairs share a key
+  layout and were previously refused as the other family.
+- **LongCat-Image backends** (`longcat`, `longcat-edit`; extra `[longcat]`, in
+  `[runtime]`). Meituan's Apache-2.0 6B flow DiT + Qwen2.5-VL-7B encoder + FLUX
+  VAE on the unchanged diffusers 0.40.0 pin. `longcat`: text-to-image (50 steps,
+  CFG 4.0; `backend_options.prompt_rewrite` opt-in). `longcat-edit`: instruction
+  editing of `source_image`, LongCat-Image-Edit-Turbo by default (8 steps,
+  guidance 1.0). No GGUF loader exists for this transformer, so
+  `longcat.recommend_build` picks fp8 or bf16 STORAGE (transformer and encoder)
+  and the offload mode per VRAM: 19.6 GB resident, 13.1 / 10.3 GB with model
+  offload. A checkpoint repo contributes only its index, scheduler and
+  transformer; the 16.6 GB encoder is mirrored once (`base_model`). Env:
+  `LONGCAT_TRANSFORMER`, `LONGCAT_ENCODER`.
+- `core/fp8.py`: `apply_fp8_storage` — fp8 encoder storage that keeps
+  `model.dtype` at bf16 (pipelines cast embeddings and latents to it).
+- `validation/stage_r2.py --repo-patterns REPO --patterns …`: stage a repo with
+  explicit patterns and its own manifest.
+- **Qwen-Image-Layered backend** (`qwenimage-layered`): decomposes
+  `source_image` into RGBA layers. `MediaResult.layers[i]` carries the layers
+  (background first) and `media[i]` the recomposed image; backends opt in
+  through the new `PipelineBackend.split_output` hook (default: no layers).
+  `backend_options`: `layers`, `resolution`. Runs as a lite build
+  (`weights_path="auto"`: GGUF Q4_K_M + NF4 encoder, 20 GB on an RTX 3090,
+  ~8 s per step — no Lightning LoRA exists for it).
+- **Qwen-Image-2512 + a text-to-image lite build** on the `qwenimage` backend:
+  a `.gguf` transformer (or `weights_path="auto"`, which fetches the 2512
+  Q4_K_M) loads with lightx2v's Lightning LoRA (4 or 8 steps, CFG 1.0) and the
+  NF4 encoder loaded for the encode phase — the Qwen-Image-Edit recipe, shared
+  through `qwenimage/lite.py`. 9.2 s per 1024² image and 21 GB on an RTX 3090;
+  14.9 GB with model offload. `qwenimage.builds.recommend_build` picks the
+  offload mode per VRAM. Env: `QWEN_IMAGE_LIGHTNING` (4 | 8 | none). img2img
+  works on the lite build. Qwen-Image and Qwen-Image-2512 share one base
+  (`Qwen/Qwen-Image`).
+- **Z-Image base** (undistilled `Tongyi-MAI/Z-Image`, true CFG) validated on the
+  existing `zimage` backend — no code change; recipe and measurements in
+  `imference_engine/zimage/README.md` (use model offload on 24 GB cards).
+- `managers/builds.py`: the build record (`ModelBuild`) and picker shared by the
+  multi-build backends (pure Python).
+- `validation/stage_r2.py`: `flux2-klein`, `ernie-image` and `lumina2` staged by default; `--repo-files` is
+  an engine-neutral alias of `--wan-gguf` for single-file builds.
+
+### Fixed
+
+- **GGUF files that quantize a non-linear layer no longer crash** (ERNIE-Image):
+  diffusers 0.40 only runs `nn.Linear` quantized and left the patch-embedding
+  `Conv2d` as packed bytes. The ERNIE backend dequantizes such weights at load.
+
 ## [0.5.2] — 2026-11-05
 
 ### Fixed

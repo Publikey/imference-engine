@@ -61,9 +61,19 @@ def test_default_engines_are_all_cdn_wired():
     # anima is now wired through local_repo_dir (see AnimaBackend.load_pipeline),
     # so it's staged by default alongside the transformer-only backends —
     # krea2 likewise (its gated krea/Krea-2-Turbo base must live on the mirror
-    # for offline workers).
+    # for offline workers); flux2-klein's base carries the Qwen3-4B encoder +
+    # FLUX.2 VAE every klein build (bf16 / fp8 / GGUF) shares.
     assert set(stage_r2.DEFAULT_ENGINES) == {
-        "flux", "chroma", "sd15", "qwenimage", "anima", "krea2"}
+        "flux", "chroma", "sd15", "qwenimage", "anima", "krea2", "flux2-klein",
+        "ernie-image", "lumina2", "longcat"}
+
+
+def test_flux2_klein_stages_its_base_with_the_backend_patterns():
+    from imference_engine.flux2klein import Flux2KleinBackend
+    repo, patterns = stage_r2.resolve_base("flux2-klein", {
+        "mode": "single_file", "base_model": "black-forest-labs/FLUX.2-klein-4B"})
+    assert repo == "black-forest-labs/FLUX.2-klein-4B"
+    assert patterns == list(Flux2KleinBackend.BASE_PATTERNS)
 
 
 def test_anima_backend_is_cdn_wired():

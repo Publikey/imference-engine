@@ -63,6 +63,12 @@ class MediaResult:
     (numpy array; stereo for MiniMax-H3), or None."""
     sample_rate: Optional[int] = None
     """Sample rate of ``audio`` in Hz, or None."""
+    # Layer decomposition (None unless the backend produces layers —
+    # Qwen-Image-Layered).
+    layers: Optional[list] = None
+    """Per image, the list of RGBA layers it was decomposed into (background
+    first), index-aligned with ``media``: ``layers[i]`` belongs to ``media[i]``
+    (the recomposed image) and is None where that image failed."""
 
     # Modality-appropriate aliases — both point at ``media``.
     @property

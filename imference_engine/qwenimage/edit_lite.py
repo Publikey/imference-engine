@@ -126,6 +126,22 @@ def denoise_reserve_bytes(height: Optional[int], width: Optional[int]) -> int:
     return int(gb * (1 << 30))
 
 
+def incoming_weights_bytes(pipe: Any) -> int:
+    """Weights the denoise still has to bring onto the GPU. Under model offload
+    the transformer sits on the CPU while the prompt is encoded and moves in
+    right after: the free VRAM read at that point must also hold it. Zero when
+    it is resident, and under group offload (streamed block by block)."""
+    tr = getattr(pipe, "transformer", None)
+    if tr is None or not hasattr(tr, "_hf_hook"):      # accelerate's model-offload hook
+        return 0
+    try:
+        if next(tr.parameters()).device.type == "cuda":
+            return 0
+        return sum(p.numel() * p.element_size() for p in tr.parameters())
+    except Exception:  # noqa: BLE001 — unknown layout: count nothing
+        return 0
+
+
 MEGAPIXEL = 1024 * 1024  # diffusers' edit target area (VAE_IMAGE_SIZE)
 
 
@@ -234,7 +250,7 @@ def _pipeline_class():
                 free += max(0, torch.cuda.memory_reserved() - torch.cuda.memory_allocated())
             except Exception:  # noqa: BLE001 — unknown: be safe, free it
                 return False
-            need = denoise_reserve_bytes(height, width)
+            need = denoise_reserve_bytes(height, width) + incoming_weights_bytes(self)
             keep = free >= need
             logger.info("Qwen-Image-Edit: %.1f GiB free, denoise needs ~%.1f GiB -> encoder %s",
                         free / (1 << 30), need / (1 << 30), "kept" if keep else "released")
