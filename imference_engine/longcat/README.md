@@ -69,7 +69,7 @@ CDN-only cache, each build also under a hard VRAM cap of its card size minus 0.5
 |---|---|---|---|---|---|---|---|
 | `resident` | 22 GiB | fp8 | fp8 | none | 19.6 GB | 77 s | 13.0 s |
 | `quality` | 15 GiB | bf16 | fp8 | model | 13.1 GB (13.7 edit) | 93 s | 29.7 s |
-| `offload` | 11.5 GiB | fp8 | fp8 | model | 10.3 GB (10.7 edit) | 92 s | 26.5 s |
+| `offload` | 11.25 GiB | fp8 | fp8 | model | 10.3 GB (10.7 edit) | 92 s | 26.5 s |
 | `minimal` | below | fp8 | fp8 | group | 2.8 GB (5.8 reserved) | — | 21-23 s |
 
 - **fp8 is visually identical to bf16** on the prompts tried, legible text included.

@@ -93,7 +93,7 @@ Measured on an RTX 3090, 1024x1024 (2026-11-13):
 | build | VRAM floor | offload | peak VRAM | 4 steps | 8 steps |
 |---|---|---|---|---|---|
 | `resident` | 22 GiB | none | 21.0 GB | 8.9 s | 17.6 s |
-| `offload` | 15.5 GiB | model | 14.9 GB | 18.6 s | — |
+| `offload` | 17 GiB | model | 14.9 GB | 18.6 s | — |
 | `minimal` | below | group | 7.4 GB (encoder kept) | 17-20 s | — |
 
 - 1328x1328 (the model's native 1:1 size) takes 14.3 s resident, 21.3 GB peak.
@@ -108,7 +108,7 @@ Measured on an RTX 3090, 1024x1024 (2026-11-13):
   one.
 - Host RAM: 27 GB peak process memory on every build (weight-file page cache included).
 - **Real cards** (2026-11-13, from the CDN): an RTX 5060 Ti 16 GB reports 15.48 GiB,
-  so `auto` gives it `minimal`, not `offload` — and that is the better choice there:
+  and the `offload` floor is set above it on purpose, so `auto` gives it `minimal`:
   17.0 s at 7.9 GB reserved, against 20.8 s at 15.4 GB for `offload` (15.6 GB at
   1328x1328, on a 16.6 GB card). An RTX 3070 8 GB runs `minimal` in 22.7 s (6.9 GB
   reserved, encoder released each request). `offload` is what 20 GB cards get.

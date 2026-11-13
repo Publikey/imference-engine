@@ -51,7 +51,7 @@ BUILDS: tuple = (
                "fp8 transformer + fp8 encoder, all resident", transformer="fp8"),
     ModelBuild("quality", REPO, "", "fp8", "model", 15.0, 13.7,
                "bf16 transformer + fp8 encoder, model offload", transformer="bf16"),
-    ModelBuild("offload", REPO, "", "fp8", "model", 11.5, 10.7,
+    ModelBuild("offload", REPO, "", "fp8", "model", 11.25, 10.7,
                "fp8 transformer + fp8 encoder, model offload", transformer="fp8"),
     ModelBuild("minimal", REPO, "", "fp8", "group", 0.0, 2.8,
                "fp8 transformer + fp8 encoder, group offload", transformer="fp8"),
