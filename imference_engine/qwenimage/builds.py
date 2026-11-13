@@ -19,7 +19,10 @@ minimal     group     7.4 GB    17-20
 - ``offload``: the 13.3 GB transformer is the peak, so it fits 16 GB cards
   (run under a 15.5 GiB cap); twice the time per image (the transformer
   shuttles every request, and the encoder is released before it moves in).
-- ``minimal``: block-streamed transformer for 8-12 GB cards — the recipe
+- Real cards report less than their nominal size (16 GB -> 15.48 GiB), so a
+  16 GB card gets ``minimal``. Measured on an RTX 5060 Ti that is the better
+  choice anyway: 17.0 s at 7.9 GB against 20.8 s at 15.4 GB for ``offload``.
+- ``minimal``: block-streamed transformer for 8-16 GB cards — the recipe
   validated for Qwen-Image-Edit on an 8 GB laptop (6.5 GB peak). Here: 7.4 GB
   with the encoder kept loaded. Its speed is set by the host (CPU and
   RAM-to-GPU copies), not by the card: 17-20 s per image on a host with

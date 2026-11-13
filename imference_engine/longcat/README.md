@@ -78,6 +78,10 @@ CDN-only cache, each build also under a hard VRAM cap of its card size minus 0.5
   text-to-image and 18.4 GB for editing, as the model cards say (~17-18 GB).
 - `minimal` ran under a 7.5 GiB cap, as fast as model offload on a host with free CPU
   cores. Group offload speed depends on the host: on a loaded one it took minutes.
+- **Real cards** (edit Turbo, from the CDN): RTX 5060 Ti 16 GB — `quality` 34.1 s,
+  `offload` 31.9 s, `minimal` 25.9 s; RTX 3070 8 GB — `minimal` 31.1 s at 5.8 GB
+  reserved. Group offload was the fastest of the three on that host, at the price of
+  the host RAM below.
 - **Host RAM**: the bf16 weights are read before the fp8 cast. Peak process memory was
   37 GB (`resident`, `offload`), 25 GB (`quality`) and 46 GB (`minimal`), page cache of
   the weight files included. Not verified on a 32 GB machine.
