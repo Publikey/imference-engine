@@ -83,6 +83,25 @@ elif build is not None and a.weights == "auto":
 
 
 
+def _peak_commit_gb():
+    """Peak committed memory of this process (GB) — Windows only: what counts
+    against RAM + page file, which the working set does not show."""
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().peak_pagefile / 1e9, 1)
+    except Exception:  # noqa: BLE001 — not Windows
+        return None
+
+
+def _commit_now_gb():
+    """Committed memory of this process right now (GB), Windows only."""
+    try:
+        import psutil
+        return round(psutil.Process().memory_info().private / 1e9, 1)
+    except Exception:  # noqa: BLE001 — not Windows
+        return None
+
+
 def _peak_rss_gb():
     """Peak resident host memory of this process (GB); None where unavailable."""
     try:
@@ -165,6 +184,8 @@ res = dict(tag=a.tag, build=build.name if (build is not None and a.weights == "a
            warm_peak_gb=round(torch.cuda.max_memory_allocated() / 1e9, 2),
            cap_gb=a.cap_gb,
            host_rss_gb=_peak_rss_gb(),
+           host_commit_gb=_peak_commit_gb(),
+           host_commit_end_gb=_commit_now_gb(),
            size=r.images[0].size, n=len(r.images), layers=[len(g) for g in layers] if layers else None,
            pipe=type(pipe).__name__, te=str(te.dtype) if te is not None else "released")
 json.dump(res, open(f"{out}/result.json", "w"))

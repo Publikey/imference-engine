@@ -145,6 +145,8 @@ class LongCatBackend(PipelineBackend):
             try:
                 transformer.enable_layerwise_casting(
                     storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+                from imference_engine.core.fp8 import release_source_files
+                release_source_files(transformer)
                 logger.info("LongCat transformer: fp8-resident storage enabled")
             except Exception as e:  # noqa: BLE001 — bf16 beats a hard fail
                 logger.warning(f"LongCat fp8-resident storage unavailable ({e}); staying bf16")

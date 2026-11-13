@@ -260,6 +260,8 @@ class Flux2KleinBackend(PipelineBackend):
             try:
                 transformer.enable_layerwise_casting(
                     storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+                from imference_engine.core.fp8 import release_source_files
+                release_source_files(transformer)
                 logger.info("FLUX.2 klein transformer: fp8-resident storage enabled")
             except Exception as e:  # noqa: BLE001 — bf16 beats a hard fail
                 logger.warning(f"FLUX.2 klein fp8-resident storage unavailable ({e}); staying bf16")
@@ -275,6 +277,8 @@ class Flux2KleinBackend(PipelineBackend):
         te = Qwen3ForCausalLM.from_pretrained(
             os.path.join(base_dir, "text_encoder"), local_files_only=True, dtype=torch.bfloat16)
         apply_layerwise_casting(te, storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+        from imference_engine.core.fp8 import release_source_files
+        release_source_files(te)
         logger.info("FLUX.2 klein text encoder: fp8-resident storage enabled")
         return te
 

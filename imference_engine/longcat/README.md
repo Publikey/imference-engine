@@ -82,9 +82,13 @@ CDN-only cache, each build also under a hard VRAM cap of its card size minus 0.5
   `offload` 31.9 s, `minimal` 25.9 s; RTX 3070 8 GB — `minimal` 31.1 s at 5.8 GB
   reserved. Group offload was the fastest of the three on that host, at the price of
   the host RAM below.
-- **Host RAM**: the bf16 weights are read before the fp8 cast. Peak process memory was
-  37 GB (`resident`, `offload`), 25 GB (`quality`) and 46 GB (`minimal`), page cache of
-  the weight files included. Not verified on a 32 GB machine.
+- **Host RAM**: the bf16 weights are read before the fp8 cast, and the memory-mapped
+  bf16 files are released right after it (`core/fp8.release_source_files`). Measured
+  on Windows, RTX 4070 Laptop 8 GB / 32 GB RAM, `minimal` build: 37 GB of committed
+  memory at the load peak, 22 GB once loaded, 33 GB during an edit (5 GB of which is
+  the GPU memory Windows accounts to the process). Before that release the process
+  sat at 47 GB and ran a 32 GB machine out of memory with the desktop app open.
+  It runs on 32 GB with a page file; it is still the heaviest engine on host RAM.
 - Text-to-image is slow because it is undistilled (100 transformer passes): over a
   minute per image. Editing with Turbo is the interactive use.
 

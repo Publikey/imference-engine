@@ -186,9 +186,12 @@ class ErnieImageBackend(PipelineBackend):
         from diffusers.hooks import apply_layerwise_casting
         from transformers import Mistral3Model
 
+        from imference_engine.core.fp8 import release_source_files
+
         te = Mistral3Model.from_pretrained(
             os.path.join(base_dir, "text_encoder"), local_files_only=True, dtype=torch.bfloat16)
         apply_layerwise_casting(te, storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16)
+        release_source_files(te)
         logger.info("ERNIE-Image text encoder: fp8-resident storage enabled")
         return te
 

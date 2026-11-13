@@ -266,6 +266,8 @@ class Lumina2Backend(PipelineBackend):
         apply_layerwise_casting(
             te, storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16,
             skip_modules_pattern=("embed_tokens", "norm"))
+        from imference_engine.core.fp8 import release_source_files
+        release_source_files(te)
         logger.info("Lumina-Image 2.0 text encoder: fp8-resident storage enabled")
         return te
 
