@@ -301,7 +301,7 @@ def load_gguf_transformer(path: str, base_dir: str):
     import torch
     from diffusers import GGUFQuantizationConfig, QwenImageTransformer2DModel
 
-    logger.info("Loading Qwen-Image-Edit GGUF transformer %s", os.path.basename(path))
+    logger.info("Loading Qwen-Image GGUF transformer %s", os.path.basename(path))
     return QwenImageTransformer2DModel.from_single_file(
         path, quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
         config=base_dir, subfolder="transformer", torch_dtype=torch.bfloat16)
