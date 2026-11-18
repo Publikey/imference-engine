@@ -194,6 +194,8 @@ class Lumina2Backend(PipelineBackend):
         components: dict = {"transformer": transformer}
         if self._resolve_encoder_mode() == "fp8":
             components["text_encoder"] = self._load_fp8_encoder(base_dir)
+        else:
+            components["text_encoder"] = self._load_encoder(base_dir)
         return Lumina2Pipeline.from_pretrained(
             base_dir, local_files_only=True, dtype=torch.bfloat16, **components)
 
@@ -248,6 +250,22 @@ class Lumina2Backend(PipelineBackend):
                 f"first missing: {list(missing)[:3]})")
         return transformer
 
+    @staticmethod
+    def _load_encoder(base_dir: str) -> Any:
+        """The Gemma-2-2b encoder in bf16, with EAGER attention.
+
+        Gemma 2 soft-caps its attention logits (``attn_logit_softcapping``); the
+        SDPA path skipped that step. transformers 5.4 picked SDPA by default,
+        later versions (5.22) only offer eager — so the default silently changed
+        the conditioning, and the image, between versions. Eager is the model's
+        reference behaviour and gives bit-identical embeddings on both."""
+        import torch
+        from transformers import Gemma2Model
+
+        return Gemma2Model.from_pretrained(
+            os.path.join(base_dir, "text_encoder"), local_files_only=True,
+            dtype=torch.bfloat16, attn_implementation="eager")
+
     def _load_fp8_encoder(self, base_dir: str) -> Any:
         """The Gemma-2-2b encoder stored in float8_e4m3fn, computing in bf16
         (~3.2 GB instead of 5.2 GB).
@@ -259,10 +277,8 @@ class Lumina2Backend(PipelineBackend):
         embeds, and torch cannot sample float8 noise)."""
         import torch
         from diffusers.hooks import apply_layerwise_casting
-        from transformers import Gemma2Model
 
-        te = Gemma2Model.from_pretrained(
-            os.path.join(base_dir, "text_encoder"), local_files_only=True, dtype=torch.bfloat16)
+        te = self._load_encoder(base_dir)
         apply_layerwise_casting(
             te, storage_dtype=torch.float8_e4m3fn, compute_dtype=torch.bfloat16,
             skip_modules_pattern=("embed_tokens", "norm"))
