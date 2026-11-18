@@ -180,6 +180,40 @@ def test_keep_encoder_decision(monkeypatch):
     assert pipe._keep_encoder(1024, 1024) is False
 
 
+def test_keep_encoder_counts_a_model_offloaded_transformer(monkeypatch):
+    """Under model offload the transformer is still on the CPU when the decision
+    is taken: its weights count against the free VRAM. Group offload (no
+    accelerate hook) and a resident transformer add nothing."""
+    import torch
+
+    from imference_engine.qwenimage import edit_lite
+
+    class _Holder:
+        pass
+
+    tr = torch.nn.Linear(1024, 1024)                 # ~4 MB of fp32 on the CPU
+    holder = _Holder()
+    holder.transformer = tr
+    assert edit_lite.incoming_weights_bytes(holder) == 0          # no offload hook
+    tr._hf_hook = object()
+    assert edit_lite.incoming_weights_bytes(holder) == (1024 * 1024 + 1024) * 4
+    assert edit_lite.incoming_weights_bytes(_Holder()) == 0       # no transformer
+
+    cls = edit_lite._pipeline_class()
+    pipe = cls.__new__(cls)
+    object.__setattr__(pipe, "_encoder_loader", lambda: None)
+    monkeypatch.setattr(cls, "text_encoder", object(), raising=False)
+    monkeypatch.setenv("QWEN_EDIT_KEEP_ENCODER", "auto")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda *a: 0)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda *a: 0)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda *a: (10 << 30, 16 << 30))
+    monkeypatch.setattr(edit_lite, "incoming_weights_bytes", lambda p: 13 << 30)
+    assert pipe._keep_encoder(1024, 1024) is False   # 10 GiB free < 13 GiB + reserve
+    monkeypatch.setattr(edit_lite, "incoming_weights_bytes", lambda p: 0)
+    assert pipe._keep_encoder(1024, 1024) is True
+
+
 def test_prefetch_lite_extras_fetches_lora_and_nf4(monkeypatch, tmp_path):
     from imference_engine.qwenimage import edit_lite
     from imference_engine.runtime import offline

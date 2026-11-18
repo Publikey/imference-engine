@@ -161,13 +161,18 @@ class Engine(BaseEngine):
 
         from imference_engine.anima.backend import AnimaBackend
         from imference_engine.chroma.backend import ChromaBackend
+        from imference_engine.ernieimage.backend import ErnieImageBackend
         from imference_engine.flux.backend import FluxBackend
+        from imference_engine.flux2klein.backend import Flux2KleinBackend
         from imference_engine.krea2.backend import Krea2Backend
+        from imference_engine.longcat.backend import LongCatBackend, LongCatEditBackend
+        from imference_engine.lumina2.backend import Lumina2Backend
         from imference_engine.pipelines.sd15 import SD15Backend
         from imference_engine.pipelines.sdxl import SDXLBackend
         from imference_engine.pipelines.zimage import ZImageBackend
         from imference_engine.qwenimage.backend import QwenImageBackend
         from imference_engine.qwenimage.edit_backend import QwenImageEditBackend
+        from imference_engine.qwenimage.layered_backend import QwenImageLayeredBackend
         cache_dir = (str(self._runtime.model_cache_dir)
                      if self._runtime.model_cache_dir else None)
         cdn_base = self._runtime.model_cdn
@@ -188,9 +193,21 @@ class Engine(BaseEngine):
                 cache_dir=cache_dir, cdn_base=cdn_base),
             QwenImageEditBackend.engine: QwenImageEditBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
+            QwenImageLayeredBackend.engine: QwenImageLayeredBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
             AnimaBackend.engine: AnimaBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
             Krea2Backend.engine: Krea2Backend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            Flux2KleinBackend.engine: Flux2KleinBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            ErnieImageBackend.engine: ErnieImageBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            Lumina2Backend.engine: Lumina2Backend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            LongCatBackend.engine: LongCatBackend(
+                cache_dir=cache_dir, cdn_base=cdn_base),
+            LongCatEditBackend.engine: LongCatEditBackend(
                 cache_dir=cache_dir, cdn_base=cdn_base),
         }
 
@@ -410,8 +427,9 @@ class Engine(BaseEngine):
         a value to override at the request layer.
 
         ``loras`` stacks user LoRAs for the request on backends that support
-        them (``PipelineBackend.supports_loras`` — SDXL, Z-Image, Krea 2 and
-        Anima; other backends log a warning and ignore). Each entry:
+        them (``PipelineBackend.supports_loras`` — SDXL, Z-Image, Krea 2,
+        Anima, FLUX.2 klein and Lumina-Image 2.0; other backends log a warning
+        and ignore). Each entry:
         ``{"source": <local path | http(s) URL>, "weight": 0.8,
         "adapter_name": "style"}`` (``path``/``url`` accepted as aliases of
         ``source``). Adapters are applied WITHOUT fusing and deactivated after
@@ -550,6 +568,9 @@ class Engine(BaseEngine):
             max_gpu_batch = 1
 
         images: list[Optional["Image"]] = []
+        # Per-image layer lists, index-aligned with `images` (backends that
+        # decompose into layers only; all None otherwise).
+        layer_groups: list[Optional[list]] = []
         errors: list[GenerationError] = []
         idx = 0
 
@@ -588,6 +609,7 @@ class Engine(BaseEngine):
                     strength=strength,
                 )
                 produced = pipe(**prompt_kwargs, **kwargs).images
+                produced, produced_layers = backend.split_output(produced)
 
                 if needs_profiling and baseline_vram is not None:
                     import torch
@@ -611,6 +633,7 @@ class Engine(BaseEngine):
                             "(check the VAE / base-component weights)",
                             chunk_seeds[j])
                         images.append(None)
+                        layer_groups.append(None)
                         errors.append(GenerationError(
                             error="degenerate output: uniform image "
                                   "(corrupt VAE or base weights?)",
@@ -619,6 +642,8 @@ class Engine(BaseEngine):
                         ))
                     else:
                         images.append(img)
+                        layer_groups.append(
+                            produced_layers[j] if produced_layers is not None else None)
                 idx += chunk_size
 
             except Exception as e:  # noqa: BLE001
@@ -636,6 +661,7 @@ class Engine(BaseEngine):
                 )
                 for j in range(chunk_size):
                     images.append(None)
+                    layer_groups.append(None)
                     errors.append(GenerationError(
                         error=str(e),
                         batch_index=idx + j,
@@ -643,7 +669,9 @@ class Engine(BaseEngine):
                     ))
                 idx += chunk_size
 
-        return MediaResult(kind="image", media=images, seeds=seeds, errors=errors)
+        return MediaResult(
+            kind="image", media=images, seeds=seeds, errors=errors,
+            layers=layer_groups if any(g is not None for g in layer_groups) else None)
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -44,3 +44,36 @@ result = engine.generate(
     backend_options={"shift": 3.0},
 )
 ```
+
+## Z-Image base (undistilled)
+
+`Tongyi-MAI/Z-Image` is the undistilled checkpoint (Apache-2.0): true CFG, negative
+prompt, and the base for finetunes and LoRA training. It runs on this backend
+unchanged — it is a catalog row, not a code path:
+
+```yaml
+- name: z-image-base
+  engine: zimage
+  weights: /models/z_image_bf16.safetensors
+  base_model: Tongyi-MAI/Z-Image          # NOT -Turbo: its own scheduler config
+  defaults:
+    num_steps: 40            # upstream: 28-50
+    guidance_scale: 4.0      # upstream: 3.0-5.0
+```
+
+Validated on an RTX 3090 (2026-11-13), 1024x1024, 40 steps, CFG 4.0, base components
+from the CDN with HuggingFace blocked:
+
+| mode | peak VRAM | time per image |
+|---|---|---|
+| resident | 23.3 GB | 81 s |
+| `enable_offload=True` (model) | 13.4 GB | 92 s |
+
+- Text-to-image, img2img (`strength`), the negative prompt and model offload all
+  work; the offload render is identical to the resident one.
+- **Run it with model offload on 24 GB cards.** CFG doubles the activations, and
+  resident it sits at the card's limit (24.5 GB reserved); offload costs 13 % in time.
+- About 2 s per step (two transformer passes): ten times slower per image than
+  Turbo's 8 steps without CFG. Turbo stays the default for interactive use.
+- Leave `shift` unset: the base repo's scheduler config applies. The `shift: 3.0` in
+  the Turbo example above is Turbo's recipe.

@@ -47,14 +47,27 @@ def concat(ctx, inputs, params):
     clips = [_path(v) for v in inputs["videos"]]
     spec = ctx.manifest.inputs["videos"]
     infos = [media.check_video(c, spec) for c in clips]
-    w, h = infos[0]["width"] // 2 * 2, infos[0]["height"] // 2 * 2
+    # Output canvas: the first clip's, or the smallest clip's (fewest pixels) so that no clip
+    # is ever scaled up — joining a 720p clip and a 480p one then gives a 480p file.
+    ref = infos[0]
+    if params.get("size") == "smallest":
+        ref = min(infos, key=lambda i: i["width"] * i["height"])
+    w, h = ref["width"] // 2 * 2, ref["height"] // 2 * 2
     fps = params.get("fps") or round(infos[0]["fps"] or 24)
+    # A clip of another aspect ratio is letterboxed ("pad") or fills the canvas ("crop").
+    if params.get("fit") == "crop":
+        fit = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+    else:
+        fit = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+    # skip_join_frame: a clip generated from the last frame of the previous one starts on that
+    # very frame; dropping it avoids a doubled frame at each join.
+    skip_join = bool(params.get("skip_join_frame"))
     # Normalize every clip (size, fps, sar) then the concat filter; audio is
     # dropped (generated clips are silent and mixed audio/no-audio breaks concat).
     chains, labels = [], []
     for i in range(len(clips)):
-        chains.append(f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
-                      f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p[v{i}]")
+        head = "trim=start_frame=1,setpts=PTS-STARTPTS," if skip_join and i > 0 else ""
+        chains.append(f"[{i}:v]{head}{fit},setsar=1,fps={fps},format=yuv420p[v{i}]")
         labels.append(f"[v{i}]")
     graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(clips)}:v=1:a=0[out]"
     args = []

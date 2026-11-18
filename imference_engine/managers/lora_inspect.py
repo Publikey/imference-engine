@@ -17,6 +17,10 @@ Detection order, most to least trustworthy:
 3. **Cross-attention width** — the input dim of an ``attn2.to_k`` down
    projection is the text-embedding width: 2048 SDXL, 768 SD1.x, 1024 SD2.x.
 
+Two pairs of families share a key layout and are told apart by tensor shapes:
+Lumina-Image 2.0 / Z-Image (hidden size 2304 vs 3840) and FLUX.1 / FLUX.2 klein
+(block count and single-block projection width).
+
 Returns ``None`` when nothing matches: unknown layouts (LoKr factors, DiT
 families whose key layout is not mapped here yet) are let through and left for
 diffusers to accept or reject — a guess would block valid files.
@@ -39,6 +43,19 @@ _MAX_HEADER_BYTES = 100 * 1024 * 1024
 # LoRAs share the FLUX block layout).
 SDXL, SD15, SD2, FLUX = "sdxl", "sd15", "sd2", "flux"
 ZIMAGE, KREA2, ANIMA = "zimage", "krea2", "anima"
+FLUX2_KLEIN, LUMINA2 = "flux2-klein", "lumina2"
+
+# Z-Image inherited Lumina-Image 2.0's block names (layers / context_refiner /
+# noise_refiner), so the key layout alone cannot tell their LoRAs apart: the
+# width of a down projection can (the transformer's hidden size).
+_LUMINA_FAMILY_WIDTH = {2304: LUMINA2, 3840: ZIMAGE}
+# FLUX.2 klein reuses FLUX.1's double/single block names. FLUX.1 has 19 double
+# and 38 single blocks and a 15360-wide single-block projection input; klein 4B
+# has 5 and 20 (klein 9B: 8 and 24) and a 12288-wide one.
+_FLUX1_SINGLE_IN = 15360
+_KLEIN_MAX_DOUBLE, _KLEIN_MAX_SINGLE = 8, 24
+_BLOCK_INDEX = re.compile(
+    r"(double_blocks|single_blocks|transformer_blocks|single_transformer_blocks)[._](\d+)[._]")
 
 # Key layouts of the DiT families (original / ComfyUI / kohya / diffusers
 # spellings, from diffusers' lora_conversion_utils). Checked before the UNet
@@ -98,7 +115,7 @@ def inspect_lora(path: str) -> LoraInfo:
     family = _family_from_metadata(metadata)
     if family:
         return LoraInfo(family, "trainer metadata", metadata)
-    family = _family_from_keys(keys)
+    family = _family_from_keys(keys, header)
     if family:
         return LoraInfo(family, "key layout", metadata)
     family = _family_from_cross_attention(header, keys)
@@ -120,8 +137,12 @@ def _family_from_metadata(md: dict) -> Optional[str]:
         return SD15
     if base.startswith("sd_v2"):
         return SD2
+    if base.startswith("flux2") or base.startswith("flux.2") or "klein" in base:
+        return FLUX2_KLEIN
     if base.startswith("flux"):
         return FLUX
+    if base.startswith("lumina"):
+        return LUMINA2
     for prefix, fam in (("zimage", ZIMAGE), ("z_image", ZIMAGE), ("z-image", ZIMAGE),
                         ("krea", KREA2), ("anima", ANIMA)):
         if base.startswith(prefix):
@@ -134,16 +155,65 @@ def _family_from_metadata(md: dict) -> Optional[str]:
         return SD15
     if arch.startswith("stable-diffusion-v2"):
         return SD2
+    if arch.startswith(("flux-2", "flux2", "flux.2")) or "klein" in arch:
+        return FLUX2_KLEIN
     if arch.startswith("flux"):
         return FLUX
+    if "lumina" in arch:
+        return LUMINA2
     for needle, fam in (("z-image", ZIMAGE), ("zimage", ZIMAGE), ("krea", KREA2), ("anima", ANIMA)):
         if needle in arch:
             return fam
     return None
 
 
-def _family_from_keys(keys: list[str]) -> Optional[str]:
-    for pattern, fam in ((_ZIMAGE_KEYS, ZIMAGE), (_KREA2_KEYS, KREA2), (_ANIMA_KEYS, ANIMA)):
+def _down_widths(header: Optional[dict], keys: list[str]) -> set:
+    """Input widths of the LoRA down projections (``lora_A`` / ``lora_down``)."""
+    widths: set = set()
+    for k in keys:
+        if not k.endswith(("lora_A.weight", "lora_down.weight")):
+            continue
+        shape = ((header or {}).get(k) or {}).get("shape") or []
+        if len(shape) >= 2:
+            widths.add(int(shape[1]))
+    return widths
+
+
+def _flux_generation(keys: list[str], widths: set) -> str:
+    """FLUX.1 vs FLUX.2 klein for a LoRA in the double/single block layout."""
+    if any("to_qkv_mlp_proj" in k for k in keys):     # FLUX.2-only module name
+        return FLUX2_KLEIN
+    if _FLUX1_SINGLE_IN in widths:
+        return FLUX
+    double = single = -1
+    for k in keys:
+        m = _BLOCK_INDEX.search(k)
+        if not m:
+            continue
+        idx = int(m.group(2))
+        if m.group(1) in ("double_blocks", "transformer_blocks"):
+            double = max(double, idx)
+        else:
+            single = max(single, idx)
+    if double >= _KLEIN_MAX_DOUBLE or single >= _KLEIN_MAX_SINGLE:
+        return FLUX
+    # Fits klein's block count. A FLUX.1 LoRA trained on its first blocks only
+    # would too, so the width of the single-block projection settles it when
+    # the file has one (12288 on klein 4B).
+    if 12288 in widths or 16384 in widths:
+        return FLUX2_KLEIN
+    return FLUX
+
+
+def _family_from_keys(keys: list[str], header: Optional[dict] = None) -> Optional[str]:
+    if any(_ZIMAGE_KEYS.search(k) or re.search(r"(^|[._])layers[._]\d+[._]attn[._]", k)
+           for k in keys):
+        widths = _down_widths(header, keys)
+        for width, fam in _LUMINA_FAMILY_WIDTH.items():
+            if width in widths:
+                return fam
+        return ZIMAGE
+    for pattern, fam in ((_KREA2_KEYS, KREA2), (_ANIMA_KEYS, ANIMA)):
         if any(pattern.search(k) for k in keys):
             return fam
     if any(k.startswith("lora_te2_") or "text_encoder_2." in k for k in keys):
@@ -153,7 +223,7 @@ def _family_from_keys(keys: list[str]) -> Optional[str]:
         return SDXL
     if any("double_blocks" in k or "single_blocks" in k
            or "single_transformer_blocks" in k for k in keys):
-        return FLUX
+        return _flux_generation(keys, _down_widths(header, keys))
     return None
 
 

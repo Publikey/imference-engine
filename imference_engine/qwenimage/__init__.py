@@ -8,5 +8,6 @@ consumer VRAM.
 """
 from imference_engine.qwenimage.backend import QwenImageBackend
 from imference_engine.qwenimage.edit_backend import QwenImageEditBackend
+from imference_engine.qwenimage.layered_backend import QwenImageLayeredBackend
 
-__all__ = ["QwenImageBackend", "QwenImageEditBackend"]
+__all__ = ["QwenImageBackend", "QwenImageEditBackend", "QwenImageLayeredBackend"]

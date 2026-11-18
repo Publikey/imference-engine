@@ -133,6 +133,25 @@ qwenimage-edit:
   guidance_scale: 4.0
   seed: 42
 
+qwenimage-layered:
+  # Decomposes an image into RGBA layers — no text-to-image mode, so the harness
+  # feeds a source image. unsloth GGUF Q4_K_M (12.8 GB) + the NF4 encoder (lite
+  # build); base_model supplies the alpha-aware VAE, processor, tokenizer,
+  # scheduler and config. 50 steps of true CFG: minutes per image.
+  mode: single_file
+  repo: unsloth/Qwen-Image-Layered-GGUF
+  filename: qwen-image-layered-Q4_K_M.gguf
+  base_model: Qwen/Qwen-Image-Layered
+  offload: false
+  source_image: synthetic
+  prompt: "a red ball on green grass under a blue sky"
+  negative_prompt: " "
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 4.0
+  seed: 42
+
 krea2:
   mode: single_file
   # Comfy-Org repackage of the official Krea 2 Turbo — the fp8_scaled file is
@@ -149,6 +168,98 @@ krea2:
   height: 1024
   num_steps: 8            # Turbo recipe (TDM-distilled)
   guidance_scale: 0.0     # Krea convention: 0 = guidance off (the Turbo norm)
+  seed: 42
+
+flux2-klein:
+  mode: single_file
+  # BFL's own transformer-only single file (native keys, bf16, 7.75 GB,
+  # Apache-2.0, ungated). base_model supplies the Qwen3-4B encoder + FLUX.2 VAE +
+  # tokenizer + scheduler AND the transformer config (diffusers 0.40's
+  # single-file detection only knows FLUX.2 [dev]). Swap `repo`/`filename` for
+  # black-forest-labs/FLUX.2-klein-4b-fp8 / flux-2-klein-4b-fp8.safetensors or an
+  # unsloth/FLUX.2-klein-4B-GGUF file to validate the quantized builds.
+  repo: black-forest-labs/FLUX.2-klein-4B
+  filename: flux-2-klein-4b.safetensors
+  base_model: black-forest-labs/FLUX.2-klein-4B
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 4            # step-distilled
+  guidance_scale: 1.0     # distilled: guidance is fixed, no negative prompt
+  seed: 42
+
+ernie-image:
+  mode: single_file
+  # unsloth GGUF Q8_0 of the Turbo transformer (8.7 GB, Apache-2.0): bf16 is
+  # 16 GB and does not fit a 24 GB card next to the 7.7 GB encoder. base_model
+  # supplies the Ministral-3-3B encoder + FLUX.2 VAE + tokenizer + scheduler and
+  # the transformer config. Text-to-image only.
+  repo: unsloth/ERNIE-Image-Turbo-GGUF
+  filename: ernie-image-turbo-Q8_0.gguf
+  base_model: baidu/ERNIE-Image-Turbo
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 8            # Turbo (DMD-distilled)
+  guidance_scale: 1.0     # no CFG on Turbo
+  seed: 42
+
+lumina2:
+  mode: single_file
+  # Comfy-Org bf16 repackage of the OFFICIAL checkpoint (consolidated.pth) — the
+  # weights the ComfyUI ecosystem and the anime finetunes (Neta / NetaYume) build
+  # on. NOTE: the `transformer/` folder of Alpha-VLLM/Lumina-Image-2.0 holds
+  # DIFFERENT weights (every tensor differs from consolidated.pth), so this file
+  # is the reference, not the repo's diffusers transformer. base_model supplies
+  # the Gemma-2-2b encoder + FLUX.1 VAE + tokenizer + scheduler + config.
+  repo: Comfy-Org/Lumina_Image_2.0_Repackaged
+  filename: split_files/diffusion_models/lumina_2_model_bf16.safetensors
+  base_model: Alpha-VLLM/Lumina-Image-2.0
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  negative_prompt: "blurry, low quality, deformed"
+  width: 1024
+  height: 1024
+  num_steps: 30           # undistilled, true CFG (2 passes per step)
+  guidance_scale: 4.0
+  seed: 42
+
+longcat:
+  # Diffusers repo (no single-file loader for the LongCat transformer). It is
+  # both the text-to-image checkpoint and the shared base (Qwen2.5-VL encoder,
+  # FLUX VAE, tokenizer, processor). The build table picks fp8 storage and the
+  # offload mode for the card, so `offload` here is ignored by `weights: auto`
+  # callers and only matters for this harness.
+  mode: single_file
+  repo: meituan-longcat/LongCat-Image
+  filename: null
+  weights_local: auto
+  base_model: meituan-longcat/LongCat-Image
+  offload: false
+  prompt: "a photo of a red fox in a snowy forest, golden hour, sharp focus, 85mm"
+  width: 1024
+  height: 1024
+  num_steps: 50
+  guidance_scale: 4.0
+  seed: 42
+
+longcat-edit:
+  # Instruction editing (Edit-Turbo: 8 steps, guidance 1.0) — the harness feeds
+  # a source image. Only model_index / scheduler / transformer come from the
+  # checkpoint repo; the encoder + VAE are the shared LongCat-Image base.
+  mode: repo
+  repo: meituan-longcat/LongCat-Image-Edit-Turbo
+  filename: null
+  base_model: meituan-longcat/LongCat-Image
+  offload: false
+  source_image: synthetic
+  prompt: "make the red ball blue, keep everything else unchanged"
+  width: 1024
+  height: 1024
+  num_steps: 8
+  guidance_scale: 1.0
   seed: 42
 
 anima:
