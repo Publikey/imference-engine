@@ -1,9 +1,9 @@
 {
   "id": "video-concat",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Join videos",
   "category": "video",
-  "description": "Concatenate several clips into one MP4 (scaled to the first clip's size).",
+  "description": "Concatenate several clips into one MP4 (scaled to the first clip's size, or to the smallest clip's).",
   "inputs": {
     "videos": {
       "type": "video",
@@ -22,6 +22,29 @@
       "min": 1,
       "max": 60,
       "description": "Output frame rate (default: first clip)."
+    },
+    "size": {
+      "type": "enum",
+      "values": [
+        "first",
+        "smallest"
+      ],
+      "default": "first",
+      "description": "Output canvas: the first clip's size, or the smallest clip's (no clip is scaled up)."
+    },
+    "fit": {
+      "type": "enum",
+      "values": [
+        "pad",
+        "crop"
+      ],
+      "default": "pad",
+      "description": "A clip of another aspect ratio is letterboxed (pad) or fills the canvas (crop)."
+    },
+    "skip_join_frame": {
+      "type": "bool",
+      "default": false,
+      "description": "Drop the first frame of every clip after the first (a clip continued from the previous one's last frame repeats it)."
     }
   },
   "outputs": {

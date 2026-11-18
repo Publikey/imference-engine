@@ -355,7 +355,21 @@ def test_video_tools(tmp_path, clip):
     d = probe_video(str(r.outputs[0].path))["duration"]
     assert 0.8 <= d <= 1.25
     r = run_tool("video-concat", {"videos": [str(clip), str(clip)]}, {}, output_dir=str(out))
-    assert 3.5 <= probe_video(str(r.outputs[0].path))["duration"] <= 4.5
+    joined = probe_video(str(r.outputs[0].path))
+    assert 3.5 <= joined["duration"] <= 4.5 and (joined["width"], joined["height"]) == (96, 64)
+    # size=smallest: the canvas of the smallest clip, whatever its position (no clip scaled up);
+    # fit=crop fills it; skip_join_frame drops the repeated first frame of the second clip
+    small = tmp_path / "small.mp4"
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=48x32:rate=10",
+                    "-t", "2", "-pix_fmt", "yuv420p", str(small)], check=True)
+    r = run_tool("video-concat", {"videos": [str(clip), str(small)]}, {}, output_dir=str(out))
+    first = probe_video(str(r.outputs[0].path))
+    assert (first["width"], first["height"]) == (96, 64)
+    r = run_tool("video-concat", {"videos": [str(clip), str(small)]},
+                 {"size": "smallest", "fit": "crop", "skip_join_frame": True}, output_dir=str(out))
+    shrunk = probe_video(str(r.outputs[0].path))
+    assert (shrunk["width"], shrunk["height"]) == (48, 32)
+    assert 0.05 <= first["duration"] - shrunk["duration"] <= 0.15   # one frame at 10 fps
     r = run_tool("video-convert", {"video": str(clip)}, {"format": "gif", "width": 48}, output_dir=str(out))
     assert r.outputs[0].path.suffix == ".gif" and Image.open(r.outputs[0].path).size[0] == 48
     with pytest.raises(ToolError):

@@ -9,6 +9,13 @@ is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**
 
 ### Added
 
+- **`video-concat` 1.1.0**: three optional params, defaults unchanged. `size`
+  (`first` | `smallest`): the output canvas is the first clip's, or the smallest
+  clip's so that no clip is scaled up (a 720p clip joined to a 480p one gives a
+  480p file). `fit` (`pad` | `crop`): a clip of another aspect ratio is
+  letterboxed or fills the canvas. `skip_join_frame`: drops the first frame of
+  every clip after the first (a clip continued from the previous one's last
+  frame repeats it).
 - **FLUX.2 [klein] 4B backend** (`flux2-klein`, extra `[flux2-klein]`, in
   `[runtime]`). Apache-2.0 3.9B flow DiT + Qwen3-4B encoder + FLUX.2 VAE on
   the unchanged diffusers 0.40.0 pin. Text-to-image (4 steps, guidance 1.0)
