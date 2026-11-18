@@ -62,20 +62,36 @@ def concat(ctx, inputs, params):
     # skip_join_frame: a clip generated from the last frame of the previous one starts on that
     # very frame; dropping it avoids a doubled frame at each join.
     skip_join = bool(params.get("skip_join_frame"))
-    # Normalize every clip (size, fps, sar) then the concat filter; audio is
-    # dropped (generated clips are silent and mixed audio/no-audio breaks concat).
+    # Audio: kept when at least one clip has a track (unless audio=false). The concat filter
+    # needs one audio stream per clip, so a silent clip gets silence of its own length.
+    audible = [media.has_audio(c) for c in clips] if params.get("audio", True) else []
+    keep_audio = any(audible)
+    # Normalize every clip (size, fps, sar; audio to 48 kHz stereo) then the concat filter.
     chains, labels = [], []
     for i in range(len(clips)):
-        head = "trim=start_frame=1,setpts=PTS-STARTPTS," if skip_join and i > 0 else ""
+        skipped = skip_join and i > 0
+        head = "trim=start_frame=1,setpts=PTS-STARTPTS," if skipped else ""
         chains.append(f"[{i}:v]{head}{fit},setsar=1,fps={fps},format=yuv420p[v{i}]")
         labels.append(f"[v{i}]")
-    graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(clips)}:v=1:a=0[out]"
+        if keep_audio:
+            # the dropped frame's worth of sound goes with it, so picture and sound stay in step
+            lead = 1.0 / (infos[i]["fps"] or fps) if skipped else 0.0
+            if audible[i]:
+                cut = f"atrim=start={lead:.4f},asetpts=PTS-STARTPTS," if lead else ""
+                chains.append(f"[{i}:a:0]{cut}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}]")
+            else:
+                length = max(0.04, (infos[i]["duration"] or 0) - lead)
+                chains.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={length:.3f}[a{i}]")
+            labels.append(f"[a{i}]")
+    graph = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(clips)}:v=1:a={1 if keep_audio else 0}[out]"
+    graph += "[aout]" if keep_audio else ""
     args = []
     for c in clips:
         args += ["-i", c]
     out = ctx.work_dir / "concat.mp4"
     ctx.progress(RUNNING, 0.1)
-    media.run_ffmpeg(args + ["-filter_complex", graph, "-map", "[out]", *_H264, "-an", str(out)], timeout=ctx.timeout)
+    sound = ["-map", "[aout]", "-c:a", "aac", "-b:a", "160k"] if keep_audio else ["-an"]
+    media.run_ffmpeg(args + ["-filter_complex", graph, "-map", "[out]", *_H264, *sound, str(out)], timeout=ctx.timeout)
     ctx.progress(RUNNING, 1.0)
     return [ToolOutput(name="video", type="video", format="mp4", path=out)]
 

@@ -5,6 +5,16 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [Unreleased]
+
+### Changed
+
+- **`video-concat` 1.2.0 keeps the audio.** When at least one clip has an audio
+  track the joined file has one (48 kHz stereo AAC); a silent clip gets silence
+  of its own length. New param `audio` (default `true`); `false` gives the
+  former silent output. Clips that are all silent still give a silent file.
+  `media.has_audio(path)` is the new probe.
+
 ## [0.6.0] — 2026-11-18
 
 ### Added

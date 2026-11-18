@@ -228,6 +228,19 @@ def probe_video(path: str) -> dict:
             "fps": float(f.group(1)) if f else 0.0}
 
 
+def has_audio(path: str) -> bool:
+    """True when the file carries at least one audio stream (ffprobe, or the
+    ``ffmpeg -i`` stream list when only ffmpeg is available)."""
+    probe = ffprobe_bin()
+    if probe:
+        r = subprocess.run([probe, "-v", "error", "-select_streams", "a", "-show_entries", "stream=index",
+                            "-of", "csv=p=0", path], capture_output=True, text=True)
+        if r.returncode == 0:
+            return bool(r.stdout.strip())
+    r = subprocess.run([ffmpeg_bin(), "-hide_banner", "-i", path], capture_output=True, text=True)
+    return any(" Audio: " in line and line.lstrip().startswith("Stream #") for line in (r.stderr or "").splitlines())
+
+
 def _is_still(format_name: str) -> bool:
     """ffmpeg's image demuxers (png_pipe, image2, jpeg_pipe, webp_pipe...) —
     a still image is not a video input (GIF is: its demuxer is "gif")."""

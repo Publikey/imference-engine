@@ -1,6 +1,6 @@
 {
   "id": "video-concat",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "name": "Join videos",
   "category": "video",
   "description": "Concatenate several clips into one MP4 (scaled to the first clip's size, or to the smallest clip's).",
@@ -45,6 +45,11 @@
       "type": "bool",
       "default": false,
       "description": "Drop the first frame of every clip after the first (a clip continued from the previous one's last frame repeats it)."
+    },
+    "audio": {
+      "type": "bool",
+      "default": true,
+      "description": "Keep the audio when at least one clip has a track (a silent clip gets silence). False = silent output."
     }
   },
   "outputs": {

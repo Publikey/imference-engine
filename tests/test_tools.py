@@ -370,6 +370,21 @@ def test_video_tools(tmp_path, clip):
     shrunk = probe_video(str(r.outputs[0].path))
     assert (shrunk["width"], shrunk["height"]) == (48, 32)
     assert 0.05 <= first["duration"] - shrunk["duration"] <= 0.15   # one frame at 10 fps
+    # audio: kept as soon as one clip has a track (the silent clip gets silence), in any order;
+    # silent clips alone, or audio=false, give a silent file
+    from imference_engine.tools.media import has_audio
+    loud = tmp_path / "loud.mp4"
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=96x64:rate=10",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "2",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(loud)], check=True)
+    assert has_audio(str(loud)) and not has_audio(str(clip))
+    assert not has_audio(str(first_path := r.outputs[0].path))
+    for videos in ([loud, clip], [clip, loud], [loud, loud]):
+        r = run_tool("video-concat", {"videos": [str(v) for v in videos]}, {"skip_join_frame": True}, output_dir=str(out))
+        assert has_audio(str(r.outputs[0].path))
+        assert 3.5 <= probe_video(str(r.outputs[0].path))["duration"] <= 4.5
+    r = run_tool("video-concat", {"videos": [str(loud), str(clip)]}, {"audio": False}, output_dir=str(out))
+    assert not has_audio(str(r.outputs[0].path))
     r = run_tool("video-convert", {"video": str(clip)}, {"format": "gif", "width": 48}, output_dir=str(out))
     assert r.outputs[0].path.suffix == ".gif" and Image.open(r.outputs[0].path).size[0] == 48
     with pytest.raises(ToolError):
