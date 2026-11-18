@@ -7,7 +7,7 @@ name = "imference-engine"
 version = "0.6.1"
 description = "Unified Diffusers-based inference engine: SDXL, SD 1.5, Z-Image, FLUX, Chroma, Qwen-Image, Anima, and Wan video behind one API."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Publikey" }]
 
 # Runtime deps. PyTorch and diffusers are required for any real use; they're
@@ -72,10 +72,10 @@ dependencies = [
 # (the v2 API) and coexists with torchao 0.18.
 sdxl = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -87,10 +87,10 @@ sdxl = [
 ]
 zimage = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -104,10 +104,10 @@ zimage = [
 # wheel). Byte-for-byte identical to [sdxl]; split for naming symmetry only.
 sd15 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -125,10 +125,10 @@ sd15 = [
 # RuntimeConfig(enable_offload=True) on consumer VRAM.
 flux = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -141,10 +141,10 @@ flux = [
 # Chroma — FLUX-derived, single T5 encoder. Same stack as [flux]/[zimage].
 chroma = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -159,10 +159,10 @@ chroma = [
 # ships it). Very heavy — pair with cpu-offload / a quantized build.
 qwenimage = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -184,10 +184,10 @@ qwenimage-edit = [
 # for Qwen3. Modular-only; see imference_engine/anima/README.md.
 anima = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -204,10 +204,10 @@ anima = [
 # wheel needed. Byte-for-byte identical to the other image extras.
 krea2 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -224,10 +224,10 @@ krea2 = [
 # only wheel the other image extras lack.
 flux2-klein = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -243,10 +243,10 @@ flux2-klein = [
 # the unsloth GGUF builds, which are the practical way to run it under 32 GB.
 ernie-image = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -261,10 +261,10 @@ ernie-image = [
 # FLUX.1 VAE (Lumina2Pipeline). Same stack; gguf backs the community GGUF builds.
 lumina2 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -280,10 +280,10 @@ lumina2 = [
 # the low-memory builds are fp8 storage of the bf16 repo weights.
 longcat = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -331,7 +331,7 @@ dev = ["pytest>=8", "pytest-mock", "ruff"]
 # op registration is torch-version-gated, not vendor-gated.
 wan = [
     "torch>=2.6",
-    "diffusers==0.40.0",
+    "diffusers==0.43.0",
     "transformers>=5.4",
     "accelerate>=1.12",
     "peft>=0.19.1",
@@ -359,7 +359,7 @@ wan = [
 # (prod stays on the validated 2.11+/cu128 combo).
 minimax-h3 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
+    "diffusers==0.43.0",
     # transformers floor 5.3: released 0.40.0's H3 text-encoder step calls
     # Qwen3VLProcessor.create_mm_token_type_ids and passes mm_token_type_ids
     # into the Qwen3-VL forward — the processor method lands in 5.2.0 but the
