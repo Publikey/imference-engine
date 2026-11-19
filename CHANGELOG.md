@@ -5,6 +5,36 @@ All notable changes to imference-engine. Workers pin a **tagged** version (see
 Format loosely follows [Keep a Changelog](https://keepachangelog.com); versioning
 is semver (pre-1.0: breaking changes may ride a minor bump — read **Breaking**).
 
+## [0.7.0] — 2026-11-19
+
+### Changed
+
+- **ML stack: diffusers 0.43.0, transformers 5.22.2, accelerate 1.15.0, peft
+  0.21.2** (from 0.40.0 / 5.4.0 / 1.12.0 / 0.19.1). **Python 3.11 or newer is
+  required** (diffusers 0.42 dropped 3.10). Validated against the previous
+  stack with the same seeds: the image backends and their LoRAs render
+  pixel-identical images at the same speed and VRAM; Wan 2.2 and MiniMax-H3
+  pass in text-to-video and image-to-video. Not run on the new stack: SD 1.5,
+  FLUX.1, Chroma, Qwen-Image bf16 (no checkpoint on the CDN).
+- **`[wan]` and `[minimax-h3]` pin transformers, accelerate and peft** like the
+  image extras. They only set floors before, so a worker got whatever was
+  newest on the day it was built.
+- **Wan output changes with transformers** (5.4.0 → 5.22.2), not with
+  diffusers: same scene and quality, different details for a given seed.
+  Workers already built with a recent transformers see no change.
+- **Lumina-Image 2.0 renders slightly different images for a given seed**
+  (see Fixed).
+
+### Fixed
+
+- **Lumina-Image 2.0: the Gemma-2 encoder runs with eager attention.**
+  transformers 5.4 picked SDPA by default, which skips Gemma 2's attention
+  logit soft-capping; newer versions only offer eager. The conditioning, and
+  the image, silently depended on the transformers version.
+- **MiniMax-H3 image-to-video no longer fails with "tensors on cuda:0 and
+  cpu"**: a transformers 5.4.0 defect in the Qwen3-VL vision tower under leaf
+  offload, gone with the 5.22.2 pin.
+
 ## [0.6.1] — 2026-11-18
 
 ### Changed

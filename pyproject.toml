@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "imference-engine"
-version = "0.6.1"
+version = "0.7.0"
 description = "Unified Diffusers-based inference engine: SDXL, SD 1.5, Z-Image, FLUX, Chroma, Qwen-Image, Anima, and Wan video behind one API."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "Publikey" }]
 
 # Runtime deps. PyTorch and diffusers are required for any real use; they're
@@ -38,44 +38,35 @@ dependencies = [
 # ML versions are pinned to the gen-image-worker prod combo. Tightly coupled:
 # diffusers+transformers+accelerate+peft must be upgraded together with care
 # (single_file loaders, CLIP layouts, and LoRA hooks all shift between minors).
-# diffusers is on 0.40.0 EVERYWHERE — image, wan AND minimax-h3 now share one
-# diffusers (0.40.0 ships H3's PR #14355, so H3's dedicated-venv era is over).
-# ⚠️ VALIDATION STATUS: all 7 image backends AND Wan were validated e2e on
-# 0.39 (RTX PRO 5000 Blackwell, torch 2.12); the 0.39 -> 0.40 fold is NOT yet
-# re-validated — run validation/validate.py + validate_wan.py +
-# validate_h3.py before tagging/shipping. 0.40 changes to watch: mixed-rank
-# LoRA scaling without alpha keys now loads at intended scale (check the LoRA
-# hooks), torch_dtype is deprecated for dtype (engine code already migrated),
-# Flax removed (unused here), DDUF deprecated (unused here).
+# diffusers is on 0.43.0 EVERYWHERE — image, wan AND minimax-h3 share one
+# diffusers, and EVERY extra pins the same transformers / accelerate / peft
+# (the video extras only set floors before 2026-11-19: a worker built on a
+# given day got whatever was newest).
+# Validated 2026-11-18/19 against the previous 0.40.0 / 5.4.0 / 0.19.1 / 1.12.0
+# stack, same seeds, weights from the CDN (validation/README.md):
+#   - image (SDXL, Z-Image, Krea 2, Anima, FLUX.2 klein, ERNIE, Qwen-Image
+#     2512 / Layered / Edit, LongCat, + LoRAs): pixel-identical, same timings.
+#   - Lumina 2: identical once Gemma 2 is loaded with eager attention
+#     (transformers 5.4 picked SDPA, which skips the logit soft-capping).
+#   - Wan t2v / i2v and MiniMax-H3 t2v / i2v: pass. Wan output follows the
+#     transformers version (5.4.0 vs 5.22.2), not diffusers / peft / accelerate.
+#   - NOT run on this stack: SD 1.5, FLUX.1, Chroma, Qwen-Image bf16 (no
+#     checkpoint on the CDN).
+# Python >= 3.11 (diffusers 0.42 dropped 3.10). diffusers 0.42.1 carries a
+# security fix for component resolution in from_pretrained.
+# transformers 5.4.0 must NOT come back: its Qwen3-VL vision tower fails under
+# leaf offload (H3 image-to-video: "tensors on cuda:0 and cpu").
 #
-# Per-backend extras: each image backend has its own named runtime, mirroring
-# [wan]. NOTE: [sdxl] and [zimage] are byte-for-byte IDENTICAL — Z-Image rides
-# the same diffusers 0.40 / transformers stack as SDXL in one Engine (its Qwen
-# text encoder needs no wheel SDXL lacks). The split is a packaging boundary /
-# naming symmetry, not a real dependency fork (unlike [wan], which genuinely
-# adds gguf/imageio). Only the runtime KNOBS differ: use_tiny_vae is SDXL-only.
-#
-# protobuf backs transformers' slow→fast sentencepiece tokenizer conversion.
-# It is REQUIRED whenever a base repo ships only spiece.model with no
-# tokenizer.json (Chroma1-HD does); without it transformers 5.1 falls back to
-# a tiktoken extractor that cannot parse the file. A clean venv from these
-# extras only ever worked for Chroma when protobuf happened to be present
-# transitively — caught on a clean pod during the 0.40 validation (2026-08-26).
-#
-# peft is 0.19.1 (bumped from the 0.18.1 prod combo during the 0.40
-# validation): peft 0.18.1's LoRA torchao dispatcher imports
-# LinearActivationQuantizedTensor, which torchao 0.18 removed — so ANY
+# peft: 0.18.1's LoRA torchao dispatcher imports
+# LinearActivationQuantizedTensor, which torchao 0.18 removed — any
 # load_lora_weights crashes the moment torchao is importable in the venv.
-# Invisible before the 0.40 fold (H3's torchao lived in a separate venv);
-# fatal now that [wan] + [minimax-h3] share one venv (Wan's Lightning LoRA is
-# the exposed surface). 0.19.1 dispatches via torchao.utils.TorchAOBaseTensor
-# (the v2 API) and coexists with torchao 0.18.
+# Stay >= 0.19.1 (dispatch via torchao.utils.TorchAOBaseTensor, the v2 API).
 sdxl = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -87,10 +78,10 @@ sdxl = [
 ]
 zimage = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -104,10 +95,10 @@ zimage = [
 # wheel). Byte-for-byte identical to [sdxl]; split for naming symmetry only.
 sd15 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -125,10 +116,10 @@ sd15 = [
 # RuntimeConfig(enable_offload=True) on consumer VRAM.
 flux = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -141,10 +132,10 @@ flux = [
 # Chroma — FLUX-derived, single T5 encoder. Same stack as [flux]/[zimage].
 chroma = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -159,10 +150,10 @@ chroma = [
 # ships it). Very heavy — pair with cpu-offload / a quantized build.
 qwenimage = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -184,10 +175,10 @@ qwenimage-edit = [
 # for Qwen3. Modular-only; see imference_engine/anima/README.md.
 anima = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -204,10 +195,10 @@ anima = [
 # wheel needed. Byte-for-byte identical to the other image extras.
 krea2 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -224,10 +215,10 @@ krea2 = [
 # only wheel the other image extras lack.
 flux2-klein = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -243,10 +234,10 @@ flux2-klein = [
 # the unsloth GGUF builds, which are the practical way to run it under 32 GB.
 ernie-image = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -261,10 +252,10 @@ ernie-image = [
 # FLUX.1 VAE (Lumina2Pipeline). Same stack; gguf backs the community GGUF builds.
 lumina2 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -280,10 +271,10 @@ lumina2 = [
 # the low-memory builds are fp8 storage of the bf16 repo weights.
 longcat = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers==5.4.0",
-    "accelerate==1.12.0",
-    "peft==0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "ftfy==6.3.1",
     "sentencepiece==0.2.1",
     "protobuf>=4",
@@ -321,20 +312,18 @@ stage = ["boto3>=1.34"]
 dev = ["pytest>=8", "pytest-mock", "ruff"]
 
 # Wan2.2 video stack (diffusers + gguf). Shares the same diffusers pin as
-# [runtime] (both 0.40.0) — the repo keeps ONE diffusers across image + video,
-# so this moved with the 0.39->0.40 fold too. Wan was re-validated e2e on 0.39
-# (validation/README.md); re-validate on 0.40 with validate_wan.py like the
-# image engines. Kept a SEPARATE extra only for
+# [runtime] — the repo keeps ONE diffusers across image + video, and the same
+# transformers / accelerate / peft pins. Kept a SEPARATE extra only for
 # the extra gguf/imageio video deps. Install: pip install "imference-engine[wan]".
 # torch>=2.6 is required (the FA3 custom op breaks the import on torch 2.4);
 # install the CUDA (cu124) or ROCm (rocm6.4) build from your base image — the
 # op registration is torch-version-gated, not vendor-gated.
 wan = [
     "torch>=2.6",
-    "diffusers==0.40.0",
-    "transformers>=5.4",
-    "accelerate>=1.12",
-    "peft>=0.19.1",
+    "diffusers==0.43.0",
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
+    "peft==0.21.2",
     "gguf>=0.10",
     "ftfy>=6.3",
     "sentencepiece>=0.2",
@@ -350,23 +339,19 @@ wan = [
 
 # MiniMax-H3 joint video+audio stack (33B DiT + Qwen3-VL-32B conditioner,
 # torchao int8). H3's diffusers integration (PR #14355) SHIPPED in diffusers
-# 0.40.0 — the SAME pin as every other extra now, so H3 no longer needs a
-# dedicated venv (it spent its pre-release life on a PR-head install that
-# conflicted with the old repo-wide 0.39.0 pin). H3 was validated e2e on the
-# PR head that became 0.40.0 (2026-08-05); re-run validation/validate_h3.py
-# on the release pin before shipping. Released 0.40.0 dropped the PR head's
-# torch.nn.functional.ScalingType import, so torch>=2.6 is honest again
-# (prod stays on the validated 2.11+/cu128 combo).
+# 0.40.0 and it shares the repo-wide pins with every other extra. Validated
+# on 0.43.0 / transformers 5.22.2 / torch 2.11 cu128 (2026-11-19, int8 CDN
+# mirror, block offload); prod stays on the 2.11+/cu128 torch.
 minimax-h3 = [
     "torch>=2.6",
-    "diffusers==0.40.0",
+    "diffusers==0.43.0",
     # transformers floor 5.3: released 0.40.0's H3 text-encoder step calls
     # Qwen3VLProcessor.create_mm_token_type_ids and passes mm_token_type_ids
     # into the Qwen3-VL forward — the processor method lands in 5.2.0 but the
     # MODEL only accepts the kwarg from 5.3.0 (the PR head validated 2026-08-05
-    # did neither). The image extras pin ==5.4.0 (the stack-validated combo).
-    "transformers>=5.3",
-    "accelerate>=1.12",
+    # did neither). Pinned like the image extras.
+    "transformers==5.22.2",
+    "accelerate==1.15.0",
     # torchao floor: 0.18 is what serialized the R2 int8 mirror tree AND the
     # version whose v2 API peft 0.19.1's LoRA dispatcher expects (see the peft
     # note above the image extras).

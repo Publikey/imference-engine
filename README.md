@@ -34,10 +34,12 @@ script, or app.
   callers override only what they mean to.
 - **Transport-agnostic.** `generate()` returns frames, seeds and per-image
   errors. What happens next — upload, webhook, hand to Electron — is yours.
-- **Validated.** The v0.4.x stack (diffusers 0.40.0 · transformers 5.4.0 ·
-  peft 0.19.1) is GPU-validated end-to-end: seven image backends + Wan 2.2
-  t2v/i2v + MiniMax-H3 (2026-08-26), and Krea 2 Turbo — official scaled-fp8
-  AND a civitai fp8 finetune — (2026-08-27). See [`validation/`](validation/).
+- **Validated.** The current stack (diffusers 0.43.0 · transformers 5.22.2 ·
+  peft 0.21.2 · accelerate 1.15.0, Python ≥ 3.11) was checked against the
+  previous one on 2026-11-18/19, same seeds: the image backends render
+  pixel-identical images, Wan 2.2 and MiniMax-H3 pass in both modes. Not run
+  on this stack: SD 1.5, FLUX.1, Chroma, Qwen-Image bf16. See
+  [`validation/`](validation/).
 
 ---
 
@@ -61,7 +63,7 @@ pip install -e ".[dev]"
 Extras: `sdxl` · `sd15` · `zimage` · `flux` · `chroma` · `qwenimage` · `anima`
 · `krea2` · `flux2-klein` · `ernie-image` · `lumina2` · `longcat` (and `runtime` = all twelve), `wan`, `minimax-h3`, `stage` (R2
 staging, boto3), `dev`. Every extra shares the one repo-wide
-`diffusers==0.40.0` pin.
+`diffusers==0.43.0` pin (and the same transformers / accelerate / peft pins).
 
 > **Weighted prompts** (sd-embed, `(word:1.3)` / `BREAK`) are optional and
 > GitHub-only — install separately so its unconstrained torch pin can't clobber
